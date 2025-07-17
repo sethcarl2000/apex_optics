@@ -1,0 +1,5 @@
+#ignore build dir
+src/build
+
+#ignore data directory
+data
