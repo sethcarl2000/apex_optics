@@ -265,16 +265,11 @@ int test_forward_model( bool is_RHRS=false,
 
                 return tracks_sv;
 
-            }, {"tracks_fp"})
-        
-            .Define("x_sv", [](const RVec<Track_t> &vec)
-            {
-                RVec<double> ret; ret.reserve(vec.size()); 
-                for (const Track_t& trk : vec) ret.push_back( trk.x ); 
-                return ret; 
-            }, {"tracks_sv"}); 
+            }, {"tracks_fp"});
 
-    auto hist = df_reco.Histo1D({"h", "test", 200, -1, 1}, "x_sv"); 
+    auto df_br1 = add_branch_from_Track_t(df_reco, &Track_t::x, "tracks_sv", "x_sv"); 
+            
+    auto hist = df_br1.Histo1D({"h", "test", 200, -1, 1}, "x_sv"); 
 
     hist->DrawCopy(); 
 
