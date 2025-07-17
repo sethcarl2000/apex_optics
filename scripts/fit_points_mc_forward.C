@@ -179,6 +179,7 @@ int fit_points_mc_forward(  const char* path_infile="",
     string output_format = "%s "; for (int i=0; i<nDoF; i++) output_format += "%i "; 
     output_format += "%+.8e\n"; 
 
+    outfile << "poly-DoF " << nDoF << endl; 
     
     for (auto it = poly_coeffs.begin(); it != poly_coeffs.end(); it++) {
         
