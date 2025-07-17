@@ -90,7 +90,7 @@ int fit_points_mc_forward(  const char* path_infile="",
 
         .Define("X_elems", [poly](double x, double y, double dxdz, double dydz)
     {
-        return poly->Eval_noCoeff({x,y,dxdz,dydz}); 
+        return poly->Eval_noCoeff({x, y, dxdz - x/6., dydz}); 
     }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
         
         .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
