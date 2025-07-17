@@ -30,8 +30,6 @@ int parse_poly_from_file(const char* path_dbfile, const char* poly_name, NPoly *
     //
     //      poly-DoF 4
     
-    int start_nElems = poly->Get_nElems(); 
-
     const char* const here = "parse_poly_from_file"; 
 
     //open the db file
@@ -61,11 +59,13 @@ int parse_poly_from_file(const char* path_dbfile, const char* poly_name, NPoly *
     iss_init >> poly_DoF; 
 
     if (poly_DoF != poly->Get_nDoF()) {
-        Error(here, "Polynomial DoF parsed from file (%i) differs from that of poly passed by reference to function (%i)", 
+        Error(here, "Poly DoF in db file (%i) does not match DoF of passed Poly (%i)", 
             poly_DoF, poly->Get_nDoF()); 
         return -1; 
     }
-    
+
+    int start_nElems = poly->Get_nElems(); 
+
     //now, we can ready the rest of the file. 
     while (getline(dbfile, line)) {
 
@@ -95,9 +95,9 @@ int parse_poly_from_file(const char* path_dbfile, const char* poly_name, NPoly *
     return poly->Get_nElems() - start_nElems; //noop
 }
 
-int test_forward_model( const char* path_infile="",
+int test_forward_model( const char* path_infile="data/mc/out_fp_L_V1.root",
                         const char* path_dbfile="data/csv/db_test.dat",  
-                        const char* tree_name="track_data" ) 
+                        const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "test_forward_model"; 
 
@@ -128,11 +128,38 @@ int test_forward_model( const char* path_infile="",
 
 
     //check if we can open data file
-    map<string, NPoly> pols; 
+    map<string, unique_ptr<NPoly>> pols; 
     
-    //add the polynomials we want to parse
-    pols["x_sv"] = new 
+    const int poly_DoF = 4; 
 
+    //add the polynomials we want to parse
+    pols["x_sv"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+    pols["y_sv"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+    pols["dxdz_sv"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+    pols["dydz_sv"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+
+    //parse all elements for each of these
+    cout << "parsing elements for all polynomials...\n" << flush; 
+    
+    for (auto it = pols.begin(); it != pols.end(); it++) { 
+        
+        string poly_name = it->first; 
+        
+        //try to parse all elements for this polynomial
+        int elems_found = parse_poly_from_file(path_dbfile, poly_name.data(), it->second.get()); 
+
+        if (elems_found < 0) {
+            Error(here, "fatal error trying to parse polynomial '%s'. db file: '%s'", poly_name.data(), path_dbfile); 
+            return 1; 
+        }
+
+        if (elems_found < 1) {
+            Warning(here, "did not parse any elements for polynomial '%s', check name.", poly_name.data()); 
+        }
+
+        printf("-- %5i elems found for poly %s\n", elems_found, poly_name.data()); 
+    }
+    cout << "parsing done." << endl; 
 
 
     ROOT::EnableImplicitMT(); 
