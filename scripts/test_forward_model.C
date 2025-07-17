@@ -176,19 +176,56 @@ int test_forward_model( bool is_RHRS=false,
     ROOT::RDataFrame df(tree_name, path_infile); 
 
     //probably not the most elegant way to do this, but here we are. 
-    const NPoly *pol_x      = pols["x_sv"]; 
-    const NPoly *pol_y      = pols["y_sv"]; 
-    const NPoly *pol_dxdz   = pols["dxdz_sv"]; 
-    const NPoly *pol_dydz   = pols["dydz_sv"]; 
+    const NPoly *pol_x      = pols["x_sv"].get(); 
+    const NPoly *pol_y      = pols["y_sv"].get(); 
+    const NPoly *pol_dxdz   = pols["dxdz_sv"].get(); 
+    const NPoly *pol_dydz   = pols["dydz_sv"].get(); 
     
-
+    const char* bn_x_tra    = is_RHRS ? "R_tr_tra_x"  : "L_tr_tra_x"; 
+    const char* bn_y_tra    = is_RHRS ? "R_tr_tra_y"  : "L_tr_tra_y"; 
+    const char* bn_dxdz_tra = is_RHRS ? "R_tr_tra_th" : "L_tr_tra_th"; 
+    const char* bn_dydz_tra = is_RHRS ? "R_tr_tra_ph" : "L_tr_tra_ph"; 
+    
     auto df_reco = df 
         
-        .Define("tracks_target", [pol_x,pol_y,pol_dxdz,pol_dydz]
-            (RVec<double> v)
-            {
+        .Define("tracks_fp", 
+            []
+            (RVec<double> &v_x,
+             RVec<double> &v_y,
+             RVec<double> &v_dxdz,
+             RVec<double> &v_dydz)
+            {   
+                //Here, we will collect all VDC trajectory information into a single struct, and convert from TRANSPORT Coordinates (tra)
+                // to FOCAL PLANE Coordinates (fp). 
+
+                //create the vector of our 'Track_t' struct. '.reserve()' tells the vector what size it should expect to eventually be. 
+                RVec<Track_t> tracks; 
+                tracks.reserve(v_x.size());
+
+                //fill our new vector
+                for (int i=0; i<v_x.size(); i++) {
+                    tracks.push_back({
+                        .x = v_x.at(i),
+                        .y = v_y.at(i),
+                        .dxdz = v_dxdz.at(i) - v_x.at(i)/6.,  //the only difference between TRANSPORT (tra) and FOCAL-PLANE (fp) coordinates.
+                        .dydz = v_dydz.at(i) 
+                    });    
+                }
                 
-            }, {})
+                return tracks; 
+
+            }, {bn_x_tra, bn_y_tra, bn_dxdz_tra, bn_dydz_tra}) 
+        
+        .Define("test", [](const RVec<Track_t> &tracks)
+            {
+                RVec<double> ret; 
+                for (const Track_t& trk : tracks) ret.push_back( trk.x ); 
+                return ret; 
+            }, {"tracks_fp"});  
+
+    auto hist = df_reco.Histo1D({"h", "test", 200, -1, 1}, "test"); 
+
+    hist->DrawCopy(); 
 
     return 0; 
 }
