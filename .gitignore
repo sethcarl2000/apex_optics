@@ -2,4 +2,5 @@
 src/build
 
 #ignore data directory
-data
+data/mc
+data/replay
