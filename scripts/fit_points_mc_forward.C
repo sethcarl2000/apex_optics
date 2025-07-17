@@ -1,12 +1,17 @@
 #include <memory>
 #include <string> 
+#include <map>
+#include <fstream>
+#include <iomanip> 
 #include "TFile.h"
 #include "TVector3.h"
 
 
 using namespace std; 
 
-int fit_points_mc_forward(const char* path_infile="", const char* tree_name="tracks_fp") 
+int fit_points_mc_forward(  const char* path_infile="",
+                            const char* path_outfile="data/csv/db_test.dat",  
+                            const char* tree_name="tracks_fp") 
 {
     const char* const here = "fit_points_mc_forward"; 
 
@@ -88,17 +93,17 @@ int fit_points_mc_forward(const char* path_infile="", const char* tree_name="tra
         return poly->Eval_noCoeff({x,y,dxdz,dydz}); 
     }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
         
-        .Define("x_sieve",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
-        .Define("y_sieve",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
-        .Define("dxdz_sieve",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
-        .Define("dydz_sieve",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"}); 
+        .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
+        .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
+        .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
+        .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"}); 
          
     //now, put these outputs into a vector (so we know to make a seperate polynomial for each of them). 
     vector<string> output_branches = {
-        "x_sieve", 
-        "y_sieve",
-        "dxdz_sieve",
-        "dydz_sieve"
+        "x_sv", 
+        "y_sv",
+        "dxdz_sv",
+        "dydz_sv"
     };  
 
 
@@ -151,13 +156,55 @@ int fit_points_mc_forward(const char* path_infile="", const char* tree_name="tra
     
     cout << "done." << endl; 
 
-    //now, we can actually solve the linear equation for the tensor coefficients 
-    vector<double> poly_coeffs[n_out_branches]; 
+    //now, we can actually solve the linear equation for the tensor coefficients. 
+    //we put this in 'std::map' form, so that we can access any of the 'coefficient vectors' indexed by the name of the input branch. 
+    map<string, vector<double>> poly_coeffs; 
 
-    cout << "--Solving linear equation..." << flush; 
-    for (int obr=0; obr<n_out_branches; obr++) {
-        poly_coeffs[obr] = A.Solve( b_vec[obr] ); 
+    cout << "--Solving linear system(s)..." << flush; 
+    int obr=0; 
+    for (const string& out_branch : output_branches) {
+        poly_coeffs[out_branch] = A.Solve( b_vec[obr++] ); 
     }
+    cout << "done." << endl; 
+
+    fstream outfile(path_outfile, ios::out | ios::trunc); 
+
+    if (!outfile.is_open()) {
+        Error(here, "unable to open output file: '%s'", path_outfile); 
+        return 1; 
+    }
+
+    cout << "--writing output file..." << flush; 
+    //now, we make the output file. 
+    string output_format = "%s "; for (int i=0; i<nDoF; i++) output_format += "%i "; 
+    output_format += "%+.8e\n"; 
+
+    
+    for (auto it = poly_coeffs.begin(); it != poly_coeffs.end(); it++) {
+        
+        //get the name of the polynomial
+        const char* poly_name = it->first.data(); 
+        
+        const vector<double>& coeffs = it->second; 
+
+        char buffer[25]; 
+        //now, we will print all the elements.
+        for (int i=0; i<n_elems; i++) {
+            outfile << poly_name; 
+            
+            const NPoly::NPolyElem* elem = poly->Get_elem(i);            
+            
+            for (int pow : elem->powers) {
+                sprintf(buffer, " %3i", pow);
+                outfile << buffer;  
+            }
+
+            //the '%+.9e' format produces scientific-notation floating-point output with 10 sig figures. 
+            sprintf(buffer, "   %+.9e", coeffs.at(i)); 
+            outfile << buffer << endl; 
+        }
+    }   
+    outfile.close(); 
     cout << "done." << endl; 
     
     delete poly; 
