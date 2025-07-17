@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <string> 
+#include <map>
 #include "TROOT.h"
 #include "TFile.h"
 #include "TTree.h"
@@ -59,15 +60,19 @@ int parse_poly_from_file(const char* path_dbfile, const char* poly_name, NPoly *
     int poly_DoF; 
     iss_init >> poly_DoF; 
 
+    if (poly_DoF != poly->Get_nDoF()) {
+        Error(here, "Polynomial DoF parsed from file (%i) differs from that of poly passed by reference to function (%i)", 
+            poly_DoF, poly->Get_nDoF()); 
+        return -1; 
+    }
+    
     //now, we can ready the rest of the file. 
     while (getline(dbfile, line)) {
 
         //parse the string into token (delimited by whitespace!)
         istringstream iss(line); 
 
-        string elem_name; 
-
-        iss >> elem_name; 
+        string elem_name; iss >> elem_name; 
 
         //this line is not the poly you're looking for
         if (elem_name != poly_name) continue; 
@@ -123,12 +128,12 @@ int test_forward_model( const char* path_infile="",
 
 
     //check if we can open data file
-    fstream dbfile(path_dbfile, ios::in); 
+    map<string, NPoly> pols; 
     
-    if (!dbfile.is_open()) {
-        Error(here, "could not open db file '%s'", path_dbfile); 
-        return 1; 
-    }
+    //add the polynomials we want to parse
+    pols["x_sv"] = new 
+
+
 
     ROOT::EnableImplicitMT(); 
     Info(here, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
