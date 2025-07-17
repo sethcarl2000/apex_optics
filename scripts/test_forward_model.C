@@ -292,7 +292,14 @@ int test_forward_model( bool is_RHRS=false,
         {"dydz_sv", &Track_t::dydz}
     }); 
 
-    auto hist = df_sv.Histo1D({"h", "test", 200, -1, 1}, {"y_sv"}); 
+    auto df_fp = add_branch_from_Track_t(df_sv,   "tracks_fp", {
+        {"x_fp",    &Track_t::x},
+        {"y_fp",    &Track_t::y},
+        {"dxdz_fp", &Track_t::dxdz},
+        {"dydz_fp", &Track_t::dydz}
+    }); 
+
+    auto hist = df_fp.Histo1D({"h", "test", 200, -0.7, 0.7}, {"x_fp"}); 
             
     hist->DrawCopy(); 
 
