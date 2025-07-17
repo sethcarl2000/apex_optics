@@ -99,21 +99,43 @@ struct Track_t {
     double x,y,dxdz,dydz; 
 }; 
 
-
+//_______________________________________________________________________________________________________________________________________________
 //this is a helper function which automates the creation of branches, which are just members of the Track_t struct. 
-ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, double Track_t::*field, const char* bn_in, const char* bn_out)
+ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch_in, map<string, double Track_t::*> branches)
 {
-    return df.Define(bn_out, [field](const RVec<Track_t>& tracks)
-        {
-            RVec<double> ret; ret.reserve(tracks.size()); 
+    const int n_nodes = branches.size() + 1; 
+    RVec<ROOT::RDF::RNode> df_nodes; 
 
-            for (const Track_t& track : tracks) ret.push_back( track.*field ); 
+    df_nodes.push_back(df); 
 
-            return ret; 
-        }, {bn_in}); 
+    int i_branch=0; 
+    for (auto it = branches.begin(); it != branches.end(); it++) {
+        
+        //name of this output branch
+        const char* branch_name = it->first.data(); 
+
+        double Track_t::*coord = it->second; 
+
+        //define a new branch with name 'branch_name' which corresponds to 'Track_t::coord' 
+        auto new_node = df_nodes.at(df_nodes.size()-1)
+
+            .Define(branch_name, [coord](const RVec<Track_t>& tracks)
+            {
+                RVec<double> ret; ret.reserve(tracks.size()); 
+
+                for (const Track_t& track : tracks) ret.push_back( track.*coord ); 
+
+                return ret; 
+
+            }, {branch_in}); 
+
+        df_nodes.push_back(new_node); 
+    }
+    
+    return df_nodes.at(df_nodes.size()-1); 
 }
 
-
+//_______________________________________________________________________________________________________________________________________________
 int test_forward_model( bool is_RHRS=false, 
                         const char* path_infile="data/replay/replay.4768.root",
                         const char* path_dbfile="data/csv/db_test.dat",  
@@ -190,10 +212,6 @@ int test_forward_model( bool is_RHRS=false,
     //Now, we are ready to process the tree using RDataFrame
     ROOT::RDataFrame df(tree_name, path_infile); 
 
-    
-
-
-
     //probably not the most elegant way to do this, but here we are. 
     const NPoly *pol_x      = pols["x_sv"].get(); 
     const NPoly *pol_y      = pols["y_sv"].get(); 
@@ -267,10 +285,15 @@ int test_forward_model( bool is_RHRS=false,
 
             }, {"tracks_fp"});
 
-    auto df_br1 = add_branch_from_Track_t(df_reco, &Track_t::x, "tracks_sv", "x_sv"); 
-            
-    auto hist = df_br1.Histo1D({"h", "test", 200, -1, 1}, "x_sv"); 
+    auto df_sv = add_branch_from_Track_t(df_reco, "tracks_sv", {
+        {"x_sv",    &Track_t::x},
+        {"y_sv",    &Track_t::y},
+        {"dxdz_sv", &Track_t::dxdz},
+        {"dydz_sv", &Track_t::dydz}
+    }); 
 
+    auto hist = df_sv.Histo1D({"h", "test", 200, -1, 1}, {"y_sv"}); 
+            
     hist->DrawCopy(); 
 
     return 0; 
