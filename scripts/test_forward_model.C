@@ -157,7 +157,7 @@ int test_forward_model( const char* path_infile="data/mc/out_fp_L_V1.root",
             Warning(here, "did not parse any elements for polynomial '%s', check name.", poly_name.data()); 
         }
 
-        printf("-- %5i elems found for poly %s\n", elems_found, poly_name.data()); 
+        printf("-- %3i elems found for poly '%s'\n", it->second->Get_nElems(), poly_name.data()); 
     }
     cout << "parsing done." << endl; 
 
