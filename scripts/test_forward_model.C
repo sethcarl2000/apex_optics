@@ -99,6 +99,21 @@ struct Track_t {
     double x,y,dxdz,dydz; 
 }; 
 
+
+//this is a helper function which automates the creation of branches, which are just members of the Track_t struct. 
+ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, double Track_t::*field, const char* bn_in, const char* bn_out)
+{
+    return df.Define(bn_out, [field](const RVec<Track_t>& tracks)
+        {
+            RVec<double> ret; ret.reserve(tracks.size()); 
+
+            for (const Track_t& track : tracks) ret.push_back( track.*field ); 
+
+            return ret; 
+        }, {bn_in}); 
+}
+
+
 int test_forward_model( bool is_RHRS=false, 
                         const char* path_infile="data/replay/replay.4768.root",
                         const char* path_dbfile="data/csv/db_test.dat",  
@@ -175,6 +190,10 @@ int test_forward_model( bool is_RHRS=false,
     //Now, we are ready to process the tree using RDataFrame
     ROOT::RDataFrame df(tree_name, path_infile); 
 
+    
+
+
+
     //probably not the most elegant way to do this, but here we are. 
     const NPoly *pol_x      = pols["x_sv"].get(); 
     const NPoly *pol_y      = pols["y_sv"].get(); 
@@ -216,14 +235,46 @@ int test_forward_model( bool is_RHRS=false,
 
             }, {bn_x_tra, bn_y_tra, bn_dxdz_tra, bn_dydz_tra}) 
         
-        .Define("test", [](const RVec<Track_t> &tracks)
+        .Define("tracks_sv", 
+            [pol_x,pol_y,pol_dxdz,pol_dydz]
+            (const RVec<Track_t> &tracks_fp)
             {
-                RVec<double> ret; 
-                for (const Track_t& trk : tracks) ret.push_back( trk.x ); 
-                return ret; 
-            }, {"tracks_fp"});  
+                //as before, create a vector of Track_t structs to store the sieve tracks. 
+                RVec<Track_t> tracks_sv; 
+                tracks_sv.reserve(tracks_fp.size());
 
-    auto hist = df_reco.Histo1D({"h", "test", 200, -1, 1}, "test"); 
+                //loop through all tracks; use the 'forward' polynomials to reconstruct 'sieve' data. 
+                for (const Track_t& trk_fp : tracks_fp) {
+
+                    //convert the Track_t struct to an RVec<double>
+                    RVec<double> X_fp = {
+                        trk_fp.x,
+                        trk_fp.y,
+                        trk_fp.dxdz,
+                        trk_fp.dydz
+                    }; 
+                    
+                    //use our polynomials to compute the sieve coordinates
+                    tracks_sv.push_back({
+                        .x    = pol_x->Eval(X_fp),
+                        .y    = pol_y->Eval(X_fp),
+                        .dxdz = pol_dxdz->Eval(X_fp),
+                        .dydz = pol_dydz->Eval(X_fp)
+                    }); 
+                }
+
+                return tracks_sv;
+
+            }, {"tracks_fp"})
+        
+            .Define("x_sv", [](const RVec<Track_t> &vec)
+            {
+                RVec<double> ret; ret.reserve(vec.size()); 
+                for (const Track_t& trk : vec) ret.push_back( trk.x ); 
+                return ret; 
+            }, {"tracks_sv"}); 
+
+    auto hist = df_reco.Histo1D({"h", "test", 200, -1, 1}, "x_sv"); 
 
     hist->DrawCopy(); 
 
