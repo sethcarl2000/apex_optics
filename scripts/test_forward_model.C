@@ -95,9 +95,14 @@ int parse_poly_from_file(const char* path_dbfile, const char* poly_name, NPoly *
     return poly->Get_nElems() - start_nElems; //noop
 }
 
-int test_forward_model( const char* path_infile="data/mc/out_fp_L_V1.root",
+struct Track_t { 
+    double x,y,dxdz,dydz; 
+}; 
+
+int test_forward_model( bool is_RHRS=false, 
+                        const char* path_infile="data/replay/replay.4768.root",
                         const char* path_dbfile="data/csv/db_test.dat",  
-                        const char* tree_name="tracks_fp" ) 
+                        const char* tree_name="track_data" ) 
 {
     const char* const here = "test_forward_model"; 
 
@@ -161,12 +166,29 @@ int test_forward_model( const char* path_infile="data/mc/out_fp_L_V1.root",
     }
     cout << "parsing done." << endl; 
 
+    //now, we're ready to deal with the data. 
+
 
     ROOT::EnableImplicitMT(); 
     Info(here, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
 
     //Now, we are ready to process the tree using RDataFrame
     ROOT::RDataFrame df(tree_name, path_infile); 
+
+    //probably not the most elegant way to do this, but here we are. 
+    const NPoly *pol_x      = pols["x_sv"]; 
+    const NPoly *pol_y      = pols["y_sv"]; 
+    const NPoly *pol_dxdz   = pols["dxdz_sv"]; 
+    const NPoly *pol_dydz   = pols["dydz_sv"]; 
+    
+
+    auto df_reco = df 
+        
+        .Define("tracks_target", [pol_x,pol_y,pol_dxdz,pol_dydz]
+            (RVec<double> v)
+            {
+                
+            }, {})
 
     return 0; 
 }
