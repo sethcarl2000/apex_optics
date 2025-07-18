@@ -5,19 +5,20 @@
 #include <iomanip> 
 #include "TFile.h"
 #include "TVector3.h"
+#include "TParameter.h"
 
 
 using namespace std; 
 
-int fit_points_mc_forward(  const char* path_infile="",
-                            const char* path_outfile="data/csv/db_test.dat",  
-                            const char* tree_name="tracks_fp") 
+int fit_points_mc_forward(  bool is_RHRS=false,
+                            const char* path_infile="",
+                            const char* stem_outfile="data/csv/db_fwd",  
+                            const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "fit_points_mc_forward"; 
 
     auto infile = new TFile(path_infile, "READ");
 
-    
     //check if we can load the apex optics lib
     if (gSystem->Load("libApexOptics") < 0) {
         Error(here, "libApexOptics could not be loaded."); 
@@ -42,7 +43,7 @@ int fit_points_mc_forward(  const char* path_infile="",
         Error(here, "could not find TTree '%s'", tree_name); 
         return 1; 
     }
-       
+
     delete tree; 
     infile->Close(); 
     delete infile; 
@@ -167,20 +168,39 @@ int fit_points_mc_forward(  const char* path_infile="",
     }
     cout << "done." << endl; 
 
+    //construct the full path to the outfile from the stem provided
+    string path_outfile(stem_outfile); 
+
+    char buffer[25];
+    //specify the arm to use 
+    path_outfile += (is_RHRS ? "_R" : "_L"); 
+
+    //specify the order of the polynomial
+    sprintf(buffer, "_%iord", poly_order); 
+    path_outfile += string(buffer); 
+
+    path_outfile += ".dat";
+
+
+
     fstream outfile(path_outfile, ios::out | ios::trunc); 
 
     if (!outfile.is_open()) {
-        Error(here, "unable to open output file: '%s'", path_outfile); 
+        Error(here, "unable to open output file: '%s'", path_outfile.data()); 
         return 1; 
     }
 
-    cout << "--writing output file..." << flush; 
+    printf("--writing output file '%s'...", path_outfile.data()); cout << flush; 
     //now, we make the output file. 
     string output_format = "%s "; for (int i=0; i<nDoF; i++) output_format += "%i "; 
     output_format += "%+.8e\n"; 
 
+    //write the poly DoF
     outfile << "poly-DoF " << nDoF << endl; 
-    
+    //write the arm
+    outfile << "is-RHRS " << (is_RHRS ? "1" : "0") << endl; 
+
+
     for (auto it = poly_coeffs.begin(); it != poly_coeffs.end(); it++) {
         
         //get the name of the polynomial

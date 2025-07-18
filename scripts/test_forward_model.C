@@ -136,9 +136,8 @@ ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch
 }
 
 //_______________________________________________________________________________________________________________________________________________
-int test_forward_model( bool is_RHRS=false, 
-                        const char* path_infile="data/replay/replay.4768.root",
-                        const char* path_dbfile="data/csv/db_test.dat",  
+int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
+                        const char* path_dbfile="data/csv/db_mc_fp_sv_V1_L_2ord.dat",  
                         const char* tree_name="track_data" ) 
 {
     const char* const here = "test_forward_model"; 
@@ -168,11 +167,50 @@ int test_forward_model( bool is_RHRS=false,
     infile->Close(); 
     delete infile; 
 
-
-    //check if we can open data file
-    map<string, unique_ptr<NPoly>> pols; 
+    //try to get some meta data from the db file: 
+    ifstream dbfile(path_dbfile); 
     
-    const int poly_DoF = 4; 
+    //check if the file can be opened
+    if (!dbfile.is_open()) {
+        Error(here, "unable to open db file '%s'", path_dbfile); 
+        return -1; 
+    }
+
+    //now, read the file
+    string line;
+    istringstream iss_init;
+    string token; 
+    int int_buffer; 
+    
+    //read the DoF of the poly
+    getline(dbfile, line); iss_init = istringstream(line);
+    
+    iss_init >> token; 
+    if (token != "poly-DoF") {
+        Error(here, "Missing 'poly-DoF [n]' header at top of dbfile '%s'", path_dbfile); 
+        return -1; 
+    }
+    iss_init >> int_buffer; 
+    const int poly_DoF = int_buffer; 
+
+
+    //read which arm to use
+    getline(dbfile, line); iss_init = istringstream(line);
+    
+    iss_init >> token; 
+    if (token != "is-RHRS") {
+        Error(here, "Missing 'is-RHRS [1/0]' header at top of dbfile '%s'", path_dbfile); 
+        return -1; 
+    }
+    iss_init >> int_buffer; 
+    const bool is_RHRS = (int_buffer==1); 
+
+    dbfile.close(); 
+
+
+
+    //now, read the polynomials from the data file
+    map<string, unique_ptr<NPoly>> pols; 
 
     //add the polynomials we want to parse
     pols["x_sv"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
@@ -299,9 +337,19 @@ int test_forward_model( bool is_RHRS=false,
         {"dydz_fp", &Track_t::dydz}
     }); 
 
-    auto hist = df_fp.Histo1D({"h", "test", 200, -0.7, 0.7}, {"x_fp"}); 
-            
-    hist->DrawCopy(); 
+    auto hist_xy        
+        = df_fp.Histo2D({"h_xy", "Sieve-plane projection;x_sv;y_sv", 200, -0.04, 0.05, 200, -0.04, 0.02}, "x_sv", "y_sv"); 
+    
+    
+    auto hist_angles    
+        = df_fp.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_sv;dy/dz_sv", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
+    
+    
+    new TCanvas; 
+    hist_xy->DrawCopy("col2");
+
+    new TCanvas; 
+    hist_angles->DrawCopy("col2"); 
 
     return 0; 
 }
