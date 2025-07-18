@@ -347,7 +347,7 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
 
         .Histo2D({"h_xy", "Sieve-plane projection;x_sv;y_sv", 200, -0.040, 0.045, 200, -0.045, 0.010}, 
                 "x_react_vtx_fix", "y_react_vtx_fix");
-     
+    
         
     auto hist_angles    
         = df_fp.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_sv;dy/dz_sv", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
