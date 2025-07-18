@@ -337,10 +337,10 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
         {"dydz_fp", &Track_t::dydz}
     }); 
 
+    //create both histograms
     auto hist_xy        
         = df_fp.Histo2D({"h_xy", "Sieve-plane projection;x_sv;y_sv", 200, -0.04, 0.05, 200, -0.04, 0.02}, "x_sv", "y_sv"); 
-    
-    
+        
     auto hist_angles    
         = df_fp.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_sv;dy/dz_sv", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
     
