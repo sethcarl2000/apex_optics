@@ -347,6 +347,9 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
     char c_title[255]; 
     sprintf(c_title, "data:'%s', db:'%s'", path_infile, path_dbfile); 
 
+    //set the color pallete
+    gStyle->SetPalette(kSunset); 
+
     new TCanvas("c1", c_title); 
     hist_xy->DrawCopy("col2");
 
