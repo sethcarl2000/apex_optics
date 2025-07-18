@@ -200,12 +200,17 @@ int fit_points_mc_forward(  bool is_RHRS=false,
     //write the arm
     outfile << "is-RHRS " << (is_RHRS ? "1" : "0") << endl; 
 
+    map<string, NPoly*> poly_models; 
 
     for (auto it = poly_coeffs.begin(); it != poly_coeffs.end(); it++) {
         
         //get the name of the polynomial
         const char* poly_name = it->first.data(); 
         
+        //add this to our list of models
+        NPoly *poly_model = new NPoly(nDoF); 
+        poly_models[it->first] = poly_model; 
+
         const vector<double>& coeffs = it->second; 
 
         char buffer[25]; 
@@ -223,11 +228,23 @@ int fit_points_mc_forward(  bool is_RHRS=false,
             //the '%+.9e' format produces scientific-notation floating-point output with 10 sig figures. 
             sprintf(buffer, "   %+.9e", coeffs.at(i)); 
             outfile << buffer << endl; 
+
+            //add this element to our model polynomial
+            poly_model->Add_element(elem->powers, coeffs.at(i));
         }
     }   
     outfile.close(); 
     cout << "done." << endl; 
+
+
+    //draw the reults of all models
     
+
+
+    //delete our template polynomial
     delete poly; 
+
+    //delete our poly models
+    for (NPoly *pol : poly_models) delete pol; 
     return 0;
 }
