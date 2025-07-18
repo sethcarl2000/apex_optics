@@ -10,10 +10,10 @@
 
 using namespace std; 
 
-int fit_points_mc_forward(  bool is_RHRS=false,
-                            const char* path_infile="",
-                            const char* stem_outfile="data/csv/db_fwd",  
-                            const char* tree_name="tracks_fp" ) 
+int fitpoints_mc_fp_sv( bool is_RHRS=false,
+                        const char* path_infile="",
+                        const char* stem_outfile="data/csv/db_fwd",  
+                        const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "fit_points_mc_forward"; 
 
@@ -93,7 +93,7 @@ int fit_points_mc_forward(  bool is_RHRS=false,
     {
         return poly->Eval_noCoeff({x, y, dxdz - x/6., dydz}); 
     }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
-        
+
         .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
         .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
         .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
@@ -236,15 +236,56 @@ int fit_points_mc_forward(  bool is_RHRS=false,
     outfile.close(); 
     cout << "done." << endl; 
 
-
-    //draw the reults of all models
     
+    //draw the reults of all models
+    vector<ROOT::RDF::RNode> error_nodes{ df_output }; 
+    for (auto it = poly_models.begin(); it != poly_models.end(); it++) {
+
+        //get the polynomial and its name
+        const char* poly_name = it->first.data(); 
+        NPoly *poly           = it->second; 
+        
+        //name the new output branch 
+        char br_output_name[50];
+        sprintf(br_output_name, "error_%s", poly_name);
+
+        auto new_node = error_nodes.at(error_nodes.size()-1) 
+
+            .Define(br_output_name, [poly](double target, double x, double y, double dxdz, double dydz)
+            {
+                return (target - poly->Eval({x, y, dxdz - x/6., dydz}))*1e3; 
+
+            }, {poly_name, "x_fp", "y_fp", "dxdz_fp", "dydz_fp"}); 
+
+        error_nodes.push_back(new_node); 
+    }
+
+    auto df_error = error_nodes.at(error_nodes.size()-1); 
+
+
+    auto c = new TCanvas("c", "Errors of different coords", 1200, 800); 
+
+    c->Divide(2,2, 0.005,0.005); 
+    
+    c->cd(1); 
+    auto h_x = df_error.Histo1D({"h_x", "Error of x_sv;mm", 200, -10, 10}, "error_x_sv"); 
+    h_x->DrawCopy(); 
+    c->cd(2); 
+    auto h_y = df_error.Histo1D({"h_x", "Error of y_sv;mm", 200, -10, 10}, "error_y_sv"); 
+    h_y->DrawCopy(); 
+    c->cd(3); 
+    auto h_dxdz = df_error.Histo1D({"h_x", "Error of dxdz_sv;mrad", 200, -2, 2}, "error_dxdz_sv"); 
+    h_dxdz->DrawCopy(); 
+    c->cd(4); 
+    auto h_dydz = df_error.Histo1D({"h_x", "Error of dydz_sv;mrad", 200, -2, 2}, "error_dydz_sv"); 
+    h_dydz->DrawCopy(); 
 
 
     //delete our template polynomial
     delete poly; 
 
     //delete our poly models
-    for (NPoly *pol : poly_models) delete pol; 
+    for (auto it = poly_models.begin(); it != poly_models.end(); it++ ) delete it->second;
+
     return 0;
 }
