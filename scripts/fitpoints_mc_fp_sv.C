@@ -264,7 +264,7 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
 
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords: %s", path_outfile.data()); 
-    auto c = new TCanvas("c", path_outfile, 1200, 800); 
+    auto c = new TCanvas("c", b_c_title, 1200, 800); 
 
     c->Divide(2,2, 0.005,0.005); 
     
