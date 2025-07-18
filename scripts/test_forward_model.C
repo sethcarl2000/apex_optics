@@ -339,7 +339,7 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
 
     //create both histograms
     auto hist_xy        
-        = df_fp.Histo2D({"h_xy", "Sieve-plane projection;x_sv;y_sv", 200, -0.050, 0.055, 200, -0.035, 0.030}, "x_sv", "y_sv"); 
+        = df_fp.Histo2D({"h_xy", "Sieve-plane projection;x_sv;y_sv", 200, -0.040, 0.045, 200, -0.035, 0.020}, "x_sv", "y_sv"); 
         
     auto hist_angles    
         = df_fp.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_sv;dy/dz_sv", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
@@ -353,8 +353,8 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
     new TCanvas("c1", c_title); 
     hist_xy->DrawCopy("col2");
 
-    new TCanvas("c2", c_title); 
-    hist_angles->DrawCopy("col2"); 
+    /*new TCanvas("c2", c_title); 
+    hist_angles->DrawCopy("col2"); */ 
 
     return 0; 
 }
