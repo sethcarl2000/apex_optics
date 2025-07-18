@@ -341,10 +341,11 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
     auto hist_xy        
         = df_fp
         
+        //correct for react-vertex position
         .Define("x_react_vtx_fix", [](RVec<double> x, TVector3 r){return x + r.x();}, {"x_sv", "react_vertex_TCS"})
         .Define("y_react_vtx_fix", [](RVec<double> y, TVector3 r){return y + r.y();}, {"y_sv", "react_vertex_TCS"})
 
-        .Histo2D({"h_xy", "Sieve-plane projection;x_sv;y_sv", 200, -0.040, 0.045, 200, -0.035, 0.020}, 
+        .Histo2D({"h_xy", "Sieve-plane projection;x_sv;y_sv", 200, -0.040, 0.045, 200, -0.045, 0.010}, 
                 "x_react_vtx_fix", "y_react_vtx_fix");
      
         
