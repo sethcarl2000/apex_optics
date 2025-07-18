@@ -11,6 +11,7 @@
 using namespace std; 
 
 int fitpoints_mc_fp_sv( bool is_RHRS=false,
+                        const int poly_order=2,
                         const char* path_infile="",
                         const char* stem_outfile="data/csv/db_fwd",  
                         const char* tree_name="tracks_fp" ) 
@@ -54,9 +55,7 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     //Now, we are ready to process the tree using RDataFrame
     ROOT::RDataFrame df(tree_name, path_infile); 
 
-    //order of fitting polynomial to use
-    const int poly_order = 2;     
-
+    
     const int nDoF = 4; //the 4 DoF are: x_fp, y_fp, dxdz_fp, dydz_fp
 
     auto poly = new NPoly(nDoF,poly_order); 
@@ -84,8 +83,6 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
         for (const auto& A_elem : A_vec) A = A + A_elem; 
         return A;  
     }; 
-
-    double initval=0.;
 
     auto df_output = df
 
