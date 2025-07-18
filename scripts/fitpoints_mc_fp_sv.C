@@ -10,6 +10,7 @@
 
 using namespace std; 
 
+//creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int fitpoints_mc_fp_sv( bool is_RHRS=false,
                         const int poly_order=2,
                         const char* path_infile="",
