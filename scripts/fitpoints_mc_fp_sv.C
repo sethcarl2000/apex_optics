@@ -68,22 +68,6 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     //this will be used for the least-squares calculation to find the best coefficients
     RMatrix A_init(n_elems, n_elems, 0.); 
 
-    //this function adds the data from each event to the least-square matrix
-    auto aggregate_matrix = [n_elems](RMatrix A, ROOT::RVec<double> vec)
-    {   
-        for (int i=0; i<n_elems; i++)
-            for (int j=0; j<n_elems; j++) A.get(i,j) += vec.at(i) * vec.at(j); 
-        
-        return A; 
-    }; 
-
-    //this function aggregates the matrices produces from each thread
-    auto merge_matrix = [n_elems](vector<RMatrix> &A_vec) 
-    {
-        RMatrix A(n_elems, n_elems, 0.); 
-        for (const auto& A_elem : A_vec) A = A + A_elem; 
-        return A;  
-    }; 
 
     auto df_output = df
 
