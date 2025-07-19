@@ -126,28 +126,37 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
         "dpp_q1"
     };  
 
-    vector<string> obranches_sv = {
+    vector<string> branches_sv = {
         "x_sv", 
         "y_sv",
         "dxdz_sv",
-        "dydz_sv"
+        "dydz_sv" 
     }; 
 
 
     //these 'result pointers' will let us see the result for each element of the least-squares fit matrix
-    //first, find the best coffeficients for the polynomials. 
-    auto find_bestfit_poly_coeffs = [](ROOT::RDF::RNode df, NPoly *poly, vector<string> inputs, vector<string> outputs)
+    //first, find the best coffeficients for the polynomials.
+    
+    //this is a helper function which will take the names of of the 'X_elems_*' branches as input, along with the target 
+    //output branches, and return a std::map<string, NPoly*>, where the key of each element is the name of the polynomial. 
+    auto find_bestfit_poly_coeffs = []( ROOT::RDF::RNode df, 
+                                        NPoly *poly_template, 
+                                        const char* X_elems_name, 
+                                        vector<string> outputs )
     {
         const char* const here = "find_bestfit_poly_coeffs";
 
-        const int nDoF = poly->Get_nDoF(); 
-        const int n_elems = poly->Get_nElems();
+        const int nDoF    = poly_template->Get_nDoF(); 
+        const int n_elems = poly_template->Get_nElems();
+
+        const int n_outputs = outputs.size(); 
 
         ROOT::RDF::RResultPtr<double> A_elems[n_elems][n_elems]; 
 
         for (int i=0; i<n_elems_fpq1; i++) {
             for (int j=0; j<n_elems_fpq1; j++) {
-                A_elems[i][j] = df_output.Define("a_val", [i,j](const ROOT::RVec<double> &X){ return X[i]*X[j]; }, {"X_elems"}).Sum("a_val"); 
+                A_elems[i][j] = df
+                    .Define("val", [i,j](const ROOT::RVec<double> &X){ return X[i]*X[j]; }, {X_elems_name}).Sum("val"); 
             }
         }
 
@@ -155,18 +164,17 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
         //the 'outside' vector will have .size()=num_of_output_branches (output_branches.size()), and the 'inside' vector  
         // will have .size()=num_of_input_branches
         const int n_out_branches = outputs.size(); 
-        ROOT::RDF::RResultPtr<double> B_ptr[n_elems][n_out_branches];  
+        ROOT::RDF::RResultPtr<double> B_ptr[n_elems][n_outputs];  
         
         int i_out=0; 
-        for (const string& str : output_branches) {
+        for (const string& str : outputs) {
 
             //'book' the calculations for each element
             for (int i=0; i<n_elems; i++) {
                 //this RResultPtr<double> will be the sum of the branch 'str' (see the construction of the output_branches vector above)
                 //we call '.data()' method to get a 'char*' that the string is wrapping
-                B_ptr[i][i_out] = df_output
-                    .Define("val", [i](const ROOT::RVec<double> &X, double y){ return X[i] * y; }, {"X_elems", str.data()})
-                    .Sum("val"); 
+                B_ptr[i][i_out] = df
+                    .Define("val", [i](const ROOT::RVec<double> &X, double y){ return X[i] * y; }, {X_elems_name, str.data()}).Sum("val"); 
             }
             i_out++; 
         }
@@ -188,7 +196,6 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
                 A.get(i,j) = *(A_elems[i][j]);
             }  
         }
-        
         cout << "done." << endl; 
 
         //now, we can actually solve the linear equation for the tensor coefficients. 
@@ -202,9 +209,38 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
         }
         cout << "done." << endl; 
 
+        //now, create the std::map which will store our output polynomials, indexed by their names. 
+        map<string, NPoly*> poly_map;
+        
+        for (auto it = poly_coeffs.begin(); it != poly_coeffs.end(); it++) {
 
+            //get polynomial name and vector of coefficients
+            string         poly_name = it->first; 
+            vector<double> coeff_vec = it->second; 
+
+            //create a new NPoly, and add it to our output map  
+            NPoly *poly = new NPoly(nDoF); 
+            poly_map[poly_name] = poly; 
+                
+            for (int i=0; i<poly_template->Get_nElems(); i++) { 
+                
+                NPoly::NPolyElem *elem = poly_template->Get_elem(i); 
+                poly->Add_element( elem->powers, coeff_vec.at(i) );
+            }
+            
+        }
+
+        return poly_map; 
     }; 
     
+    cout << "Creating polynomials for fp => q1..." << endl; 
+    polys_fpq1 = find_bestfit_poly_coeffs(df_output, poly_fpq1, "X_elems_fpq1", branches_q1); 
+    cout << "done." << endl;    
+
+    cout << "Creating polynomials for q1 => sv..." << endl; 
+    polys_q1sv = find_bestfit_poly_coeffs(df_output, poly_q1sv, "X_elems_q1sv", branches_sv); 
+    cout << "done." << endl;  
+
 
     //construct the full path to the outfile from the stem provided
     string path_outfile(stem_outfile); 
