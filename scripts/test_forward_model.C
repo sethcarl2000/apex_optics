@@ -59,9 +59,11 @@ int parse_poly_from_file(const char* path_dbfile, const char* poly_name, NPoly *
     iss_init >> poly_DoF; 
 
     if (poly_DoF != poly->Get_nDoF()) {
-        Error(here, "Poly DoF in db file (%i) does not match DoF of passed Poly (%i)", 
-            poly_DoF, poly->Get_nDoF()); 
-        return -1; 
+        //Error(here, "Poly DoF in db file (%i) does not match DoF of passed Poly (%i)", 
+        //    poly_DoF, poly->Get_nDoF()); 
+        //return -1;
+        //this polynomial cannot belong to this file, it has the wrong DoF! 
+        return 0;  
     }
 
     int start_nElems = poly->Get_nElems(); 
@@ -136,8 +138,11 @@ ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch
 }
 
 //_______________________________________________________________________________________________________________________________________________
+//if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
+// provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
 int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
-                        const char* path_dbfile="data/csv/db_mc_fp_sv_V1_L_2ord.dat",  
+                        const char* path_dbfile_1="data/csv/db_mc_V2_q1_sv_L_2ord.dat",  
+                        const char* path_dbfile_2="data/csv/db_mc_V2_fp_q1_L_2ord.dat",
                         const char* tree_name="track_data" ) 
 {
     const char* const here = "test_forward_model"; 
@@ -167,14 +172,40 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
     infile->Close(); 
     delete infile; 
 
+    bool use_fp_q1_sv_mode(false);
+    if (string(path_dbfile_2)=="") {
+        
+        use_fp_q1_sv_mode=false; 
+        Info(here, "Using the fp=>sv polynomial model."); 
+    } else {
+
+        use_fp_q1_sv_mode=true; 
+        Info(here, "Using the fp=>q1=>sv polynomial model.");     
+    }
+
+
     //try to get some meta data from the db file: 
-    ifstream dbfile(path_dbfile); 
+    ifstream dbfile1(path_dbfile_1); 
     
     //check if the file can be opened
-    if (!dbfile.is_open()) {
-        Error(here, "unable to open db file '%s'", path_dbfile); 
+    if (!dbfile1.is_open()) {
+        Error(here, "unable to open db file '%s'", path_dbfile_1); 
         return -1; 
     }
+
+    //if we're going to use the second db file, check that one too. 
+    ifstream dbfile2; 
+    if (use_fp_q1_sv_mode) {
+
+        dbfile2 = ifstream(path_dbfile_2);
+        //check if the file can be opened
+        if (!dbfile2.is_open()) {
+            Error(here, "unable to open db file '%s'", path_dbfile_2); 
+            return -1; 
+        }  
+        dbfile2.close(); 
+    }
+ 
 
     //now, read the file
     string line;
@@ -183,53 +214,66 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
     int int_buffer; 
     
     //read the DoF of the poly
-    getline(dbfile, line); iss_init = istringstream(line);
+    getline(dbfile1, line); iss_init = istringstream(line);
     
     iss_init >> token; 
     if (token != "poly-DoF") {
-        Error(here, "Missing 'poly-DoF [n]' header at top of dbfile '%s'", path_dbfile); 
+        Error(here, "Missing 'poly-DoF [n]' header at top of dbfile '%s'", path_dbfile_1); 
         return -1; 
     }
     iss_init >> int_buffer; 
-    const int poly_DoF = int_buffer; 
+    int poly_DoF = int_buffer; 
 
 
     //read which arm to use
-    getline(dbfile, line); iss_init = istringstream(line);
+    getline(dbfile1, line); iss_init = istringstream(line);
     
     iss_init >> token; 
     if (token != "is-RHRS") {
-        Error(here, "Missing 'is-RHRS [1/0]' header at top of dbfile '%s'", path_dbfile); 
+        Error(here, "Missing 'is-RHRS [1/0]' header at top of dbfile '%s'", path_dbfile_1); 
         return -1; 
     }
     iss_init >> int_buffer; 
     const bool is_RHRS = (int_buffer==1); 
 
-    dbfile.close(); 
-
-
+    dbfile1.close(); 
 
     //now, read the polynomials from the data file
     map<string, unique_ptr<NPoly>> pols; 
 
     //add the polynomials we want to parse
+    poly_DoF = (use_fp_q1_sv_mode ? 5 : 4); 
     pols["x_sv"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
     pols["y_sv"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
     pols["dxdz_sv"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
     pols["dydz_sv"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
 
+    if (use_fp_q1_sv_mode) {
+        //add the polynomials we want to parse
+        poly_DoF = 4; 
+        pols["x_q1"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+        pols["y_q1"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+        pols["dxdz_q1"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+        pols["dydz_q1"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+        pols["dpp_q1"]  = unique_ptr<NPoly>(new NPoly(poly_DoF));
+    }
     //parse all elements for each of these
     cout << "parsing elements for all polynomials...\n" << flush; 
     
     for (auto it = pols.begin(); it != pols.end(); it++) { 
         
         string poly_name = it->first; 
+
+        //try to parse all elements for this polynomial. search both db_files. 
+        int elems_found = 0; 
+        elems_found += parse_poly_from_file(path_dbfile_1, poly_name.data(), it->second.get()); 
         
-        //try to parse all elements for this polynomial
-        int elems_found = parse_poly_from_file(path_dbfile, poly_name.data(), it->second.get()); 
+        if (use_fp_q1_sv_mode) {
+            elems_found += parse_poly_from_file(path_dbfile_2, poly_name.data(), it->second.get()); 
+        } 
 
         if (elems_found < 0) {
-            Error(here, "fatal error trying to parse polynomial '%s'. db file: '%s'", poly_name.data(), path_dbfile); 
+            Error(here, "fatal error trying to parse polynomial '%s'.", poly_name.data()); 
             return 1; 
         }
 
@@ -239,8 +283,9 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
 
         printf("-- %3i elems found for poly '%s'\n", it->second->Get_nElems(), poly_name.data()); 
     }
-    cout << "parsing done." << endl; 
 
+    cout << "parsing done." << endl; 
+    return 0; 
     //now, we're ready to deal with the data. 
 
 
@@ -353,7 +398,7 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
         = df_fp.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_sv;dy/dz_sv", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
     
     char c_title[255]; 
-    sprintf(c_title, "data:'%s', db:'%s'", path_infile, path_dbfile); 
+    sprintf(c_title, "data:'%s', db:'%s'", path_infile, path_dbfile_1); 
 
     //set the color pallete
     gStyle->SetPalette(kSunset); 
