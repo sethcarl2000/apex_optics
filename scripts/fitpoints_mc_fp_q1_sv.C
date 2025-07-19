@@ -234,13 +234,14 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     }; 
     
     cout << "Creating polynomials for fp => q1..." << endl; 
-    polys_fpq1 = find_bestfit_poly_coeffs(df_output, poly_fpq1, "X_elems_fpq1", branches_q1); 
+    map<string, NPoly*> polymap_fpq1 = find_bestfit_poly_coeffs(df_output, poly_fpq1, "X_elems_fpq1", branches_q1); 
     cout << "done." << endl;    
 
     cout << "Creating polynomials for q1 => sv..." << endl; 
-    polys_q1sv = find_bestfit_poly_coeffs(df_output, poly_q1sv, "X_elems_q1sv", branches_sv); 
+    map<string, NPoly*> polys_q1sv = find_bestfit_poly_coeffs(df_output, poly_q1sv, "X_elems_q1sv", branches_sv); 
     cout << "done." << endl;  
 
+#if 0
 
     //construct the full path to the outfile from the stem provided
     string path_outfile(stem_outfile); 
@@ -254,7 +255,6 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     path_outfile += string(buffer); 
 
     path_outfile += ".dat";
-
 
 
     fstream outfile(path_outfile, ios::out | ios::trunc); 
@@ -345,22 +345,28 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     c->cd(1); 
     auto h_x = df_error.Histo1D({"h_x", "Error of x_sv;mm", 200, -10, 10}, "error_x_sv"); 
     h_x->DrawCopy(); 
+
     c->cd(2); 
     auto h_y = df_error.Histo1D({"h_y", "Error of y_sv;mm", 200, -10, 10}, "error_y_sv"); 
     h_y->DrawCopy(); 
+
     c->cd(3); 
     auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_sv;mrad", 200, -2, 2}, "error_dxdz_sv"); 
     h_dxdz->DrawCopy(); 
+
     c->cd(4); 
     auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_sv;mrad", 200, -2, 2}, "error_dydz_sv"); 
     h_dydz->DrawCopy(); 
 
+#endif 
 
-    //delete our template polynomial
-    delete poly; 
+    //delete our template polynomial, and all model polynomials
+    delete poly_fpq1; 
+    for (auto it = polymap_fpq1.begin(); it != polymap_fpq1.end(); it++ ) delete it->second;
 
-    //delete our poly models
-    for (auto it = poly_models.begin(); it != poly_models.end(); it++ ) delete it->second;
+    delete poly_q1sv; 
+    for (auto it = polymap_q1sv.begin(); it != polymap_q1sv.end(); it++ ) delete it->second;
+
 
     return 0;
 }
