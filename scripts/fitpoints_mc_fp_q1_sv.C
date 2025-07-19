@@ -13,14 +13,14 @@ using namespace std;
 //creates db '.dat' files for two sepearate polynomials:
 // the fp_q1 polynomials map from FOCAL PLANE coordinates to Q1 FRONT coordinates.
 // the q1_sv polynomials map from Q1 FRONT coordinates to SIEVE coordinates. 
-int fitpoints_mc_fp_sv( bool is_RHRS=false,
-                        const int poly_fpq1_order=2,
-                        const int poly_q1sv_order=2,
-                        const char* path_infile="",
-                        const char* stem_outfile="data/csv/db",  
-                        const char* tree_name="tracks_fp" ) 
+int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
+                            const int poly_fpq1_order=2,
+                            const int poly_q1sv_order=2,
+                            const char* path_infile="",
+                            const char* stem_outfile="data/csv/db_mc",  
+                            const char* tree_name="tracks_fp" ) 
 {
-    const char* const here = "fit_points_mc_forward"; 
+    const char* const here = "fitpoints_mc_fp_q1_sv"; 
 
     auto infile = new TFile(path_infile, "READ");
 
@@ -139,6 +139,7 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     
     //this is a helper function which will take the names of of the 'X_elems_*' branches as input, along with the target 
     //output branches, and return a std::map<string, NPoly*>, where the key of each element is the name of the polynomial. 
+    //______________________________________________________________________________________________________________________________
     auto find_bestfit_poly_coeffs = []( ROOT::RDF::RNode df, 
                                         NPoly *poly_template, 
                                         const char* X_elems_name, 
