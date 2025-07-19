@@ -314,7 +314,7 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
     //write all elements of the output file
     create_dbfile_from_polymap(is_RHRS, path_outfile, polymap_fpq1); 
 
-    
+
     //create the q1 => sv output file ___________________________________________
     path_outfile = string(stem_outfile); 
 
@@ -331,125 +331,6 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
 
     //write all elements of the output file
     create_dbfile_from_polymap(is_RHRS, path_outfile, polymap_q1sv); 
-
-#if 0
-
-    //construct the full path to the outfile from the stem provided
-    string path_outfile(stem_outfile); 
-
-    char buffer[25];
-    //specify the arm to use 
-    path_outfile += (is_RHRS ? "_R" : "_L"); 
-
-    //specify the order of the polynomial
-    sprintf(buffer, "_%iord", poly_order); 
-    path_outfile += string(buffer); 
-
-    path_outfile += ".dat";
-
-
-    fstream outfile(path_outfile, ios::out | ios::trunc); 
-
-    if (!outfile.is_open()) {
-        Error(here, "unable to open output file: '%s'", path_outfile.data()); 
-        return 1; 
-    }
-
-    printf("--writing output file '%s'...", path_outfile.data()); cout << flush; 
-    //now, we make the output file. 
-    string output_format = "%s "; for (int i=0; i<nDoF; i++) output_format += "%i "; 
-    output_format += "%+.8e\n"; 
-
-    //write the poly DoF
-    outfile << "poly-DoF " << nDoF << endl; 
-    //write the arm
-    outfile << "is-RHRS " << (is_RHRS ? "1" : "0") << endl; 
-
-    map<string, NPoly*> poly_models; 
-
-    for (auto it = poly_coeffs.begin(); it != poly_coeffs.end(); it++) {
-        
-        //get the name of the polynomial
-        const char* poly_name = it->first.data(); 
-        
-        //add this to our list of models
-        NPoly *poly_model = new NPoly(nDoF); 
-        poly_models[it->first] = poly_model; 
-
-        const vector<double>& coeffs = it->second; 
-
-        char buffer[25]; 
-        //now, we will print all the elements.
-        for (int i=0; i<n_elems; i++) {
-            outfile << poly_name; 
-            
-            const NPoly::NPolyElem* elem = poly->Get_elem(i);            
-            
-            for (int pow : elem->powers) {
-                sprintf(buffer, " %3i", pow);
-                outfile << buffer;  
-            }
-
-            //the '%+.9e' format produces scientific-notation floating-point output with 10 sig figures. 
-            sprintf(buffer, "   %+.9e", coeffs.at(i)); 
-            outfile << buffer << endl; 
-
-            //add this element to our model polynomial
-            poly_model->Add_element(elem->powers, coeffs.at(i));
-        }
-    }   
-    outfile.close(); 
-    cout << "done." << endl; 
-
-    
-    //draw the reults of all models
-    vector<ROOT::RDF::RNode> error_nodes{ df_output }; 
-    for (auto it = poly_models.begin(); it != poly_models.end(); it++) {
-
-        //get the polynomial and its name
-        const char* poly_name = it->first.data(); 
-        NPoly *poly           = it->second; 
-        
-        //name the new output branch 
-        char br_output_name[50];
-        sprintf(br_output_name, "error_%s", poly_name);
-
-        auto new_node = error_nodes.at(error_nodes.size()-1) 
-
-            .Define(br_output_name, [poly](double target, double x, double y, double dxdz, double dydz)
-            {
-                return (target - poly->Eval({x, y, dxdz - x/6., dydz}))*1e3; 
-
-            }, {poly_name, "x_fp", "y_fp", "dxdz_fp", "dydz_fp"}); 
-
-        error_nodes.push_back(new_node); 
-    }
-
-    auto df_error = error_nodes.at(error_nodes.size()-1); 
-
-    char b_c_title[120]; 
-    sprintf(b_c_title, "Errors of different coords: %s", path_outfile.data()); 
-    auto c = new TCanvas("c", b_c_title, 1200, 800); 
-
-    c->Divide(2,2, 0.005,0.005); 
-    
-    c->cd(1); 
-    auto h_x = df_error.Histo1D({"h_x", "Error of x_sv;mm", 200, -10, 10}, "error_x_sv"); 
-    h_x->DrawCopy(); 
-
-    c->cd(2); 
-    auto h_y = df_error.Histo1D({"h_y", "Error of y_sv;mm", 200, -10, 10}, "error_y_sv"); 
-    h_y->DrawCopy(); 
-
-    c->cd(3); 
-    auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_sv;mrad", 200, -2, 2}, "error_dxdz_sv"); 
-    h_dxdz->DrawCopy(); 
-
-    c->cd(4); 
-    auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_sv;mrad", 200, -2, 2}, "error_dydz_sv"); 
-    h_dydz->DrawCopy(); 
-
-#endif 
 
     //delete our template polynomial, and all model polynomials
     delete poly_fpq1; 
