@@ -69,11 +69,6 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
     auto poly_fpq1 = new NPoly(nDoF_fpq1, poly_fpq1_order); 
     auto poly_q1sv = new NPoly(nDoF_q1sv, poly_q1sv_order); 
 
-    
-    //get number of coefficients
-    const int n_elems = poly->Get_nElems(); 
-
-
     auto df_output = df
 
         .Define("X_elems_fpq1", [poly_fpq1](double x, double y, double dxdz, double dydz)
@@ -87,11 +82,11 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
 
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
 
-        .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_Q1"})
-        .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_Q1"})
-        .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_Q1"})
-        .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_Q1"}); 
-        .Define("dpp_sv",    [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_Q1"})
+        .Define("x_q1",      [](TVector3 v){ return v.x(); },        {"position_Q1"})
+        .Define("y_q1",      [](TVector3 v){ return v.y(); },        {"position_Q1"})
+        .Define("dxdz_q1",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_Q1"})
+        .Define("dydz_q1",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_Q1"})
+        .Define("dpp_q1",    [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_Q1"})
 
         .Define("X_elems_q1sv", [poly_q1sv, hrs_momentum](TVector3 pos, TVector3 mom)
         {
@@ -100,7 +95,7 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
                 pos.y(),                                //y_q1
                 mom.x()/mom.z(),                        //dxdz_q1
                 mom.y()/mom.z(),                        //dydz_q1
-                (mom.Mag()-hrs_momentum)/hrs_momentum   //dpp_q1
+                (mom.Mag() - hrs_momentum)/hrs_momentum //dpp_q1
             });
 
         }, {"position_Q1", "momentum_Q1"})
@@ -154,8 +149,8 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
 
         ROOT::RDF::RResultPtr<double> A_elems[n_elems][n_elems]; 
 
-        for (int i=0; i<n_elems_fpq1; i++) {
-            for (int j=0; j<n_elems_fpq1; j++) {
+        for (int i=0; i<n_elems; i++) {
+            for (int j=0; j<n_elems; j++) {
                 A_elems[i][j] = df
                     .Define("val", [i,j](const ROOT::RVec<double> &X){ return X[i]*X[j]; }, {X_elems_name}).Sum("val"); 
             }
@@ -183,13 +178,13 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
         //this matrix will be used to find the best coefficients for each element 
         RMatrix A(n_elems, n_elems); 
 
-        vector<double> b_vec[n_out_branches]; 
+        vector<double> b_vec[n_outputs]; 
 
         cout << "--filling matrix..." << flush; 
         //now, fill the matrix, and the 'b' values
         for (int i=0; i<n_elems; i++) {
 
-            for (int obr=0; obr<output_branches.size(); obr++) {
+            for (int obr=0; obr<n_outputs; obr++) {
                 b_vec[obr].push_back( *(B_ptr[i][obr]) ); 
             }
 
@@ -204,8 +199,9 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
         map<string, vector<double>> poly_coeffs; 
 
         cout << "--Solving linear system(s)..." << flush; 
+        //use the RMatrix::Solve() method to solve the system of lin. equations corresponding to each 'output'. Store the answer in our map. 
         int obr=0; 
-        for (const string& out_branch : output_branches) {
+        for (const string& out_branch : outputs) {
             poly_coeffs[out_branch] = A.Solve( b_vec[obr++] ); 
         }
         cout << "done." << endl; 
@@ -228,18 +224,19 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
                 NPoly::NPolyElem *elem = poly_template->Get_elem(i); 
                 poly->Add_element( elem->powers, coeff_vec.at(i) );
             }
-            
         }
 
         return poly_map; 
     }; 
+    //______________________________________________________________________________________________________________________________
     
+
     cout << "Creating polynomials for fp => q1..." << endl; 
     map<string, NPoly*> polymap_fpq1 = find_bestfit_poly_coeffs(df_output, poly_fpq1, "X_elems_fpq1", branches_q1); 
     cout << "done." << endl;    
 
     cout << "Creating polynomials for q1 => sv..." << endl; 
-    map<string, NPoly*> polys_q1sv = find_bestfit_poly_coeffs(df_output, poly_q1sv, "X_elems_q1sv", branches_sv); 
+    map<string, NPoly*> polymap_q1sv = find_bestfit_poly_coeffs(df_output, poly_q1sv, "X_elems_q1sv", branches_sv); 
     cout << "done." << endl;  
 
 #if 0
