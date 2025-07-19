@@ -239,6 +239,104 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
     map<string, NPoly*> polymap_q1sv = find_bestfit_poly_coeffs(df_output, poly_q1sv, "X_elems_q1sv", branches_sv); 
     cout << "done." << endl;  
 
+
+
+    //if you hand this helper function an 'fstream' object, and a sdt::map<string, NPoly*>, it will output all the elements of each
+    // polynomial into the dbfile. 
+    //______________________________________________________________________________________________________________________________
+    auto create_dbfile_from_polymap = [is_RHRS](string path_outfile, map<string, NPoly*> polymap) 
+    {            
+        const char* const here = "create_dbfile_from_polymap"; 
+
+        fstream outfile(path_outfile, ios::out | ios::trunc); 
+
+        if (!outfile.is_open()) {
+            Error(here, "unable to open output file: '%s'", path_outfile.data()); 
+            return 1; 
+        }
+
+        printf("--writing output file '%s'...", path_outfile.data()); cout << flush; 
+        //now, we make the output file. 
+
+        //write the poly DoF
+        const int nDoF = polymap.begin()->second->Get_nDoF(); 
+        outfile << "poly-DoF " << nDoF << endl; 
+        //write the arm
+        outfile << "is-RHRS " << (is_RHRS ? "1" : "0") << endl; 
+        
+        //assumes dbfile was opened successfully! 
+        for (auto it = polymap.begin(); it != polymap.end(); it++) {
+        
+            //get the name of the polynomial
+            const char* poly_name   = it->first.data(); 
+            NPoly      *poly        = it->second; 
+
+            char buffer[25]; 
+            //now, we will print all the elements.
+            for (int i=0; i<poly->Get_nElems(); i++) {
+                outfile << poly_name; 
+                
+                const NPoly::NPolyElem* elem = poly->Get_elem(i);            
+                
+                for (int pow : elem->powers) {
+                    sprintf(buffer, " %3i", pow);
+                    outfile << buffer;  
+                }
+
+                //the '%+.9e' format produces scientific-notation floating-point output with 10 sig figures. 
+                sprintf(buffer, "   %+.9e", elem->coeff); 
+                outfile << buffer << endl; 
+            }
+        }
+
+        outfile.close();
+        cout << "done." << endl; 
+        return 0; 
+    };
+    //______________________________________________________________________________________________________________________________
+    
+
+
+        //construct the full path to the outfile from the stem provided
+    string path_outfile; 
+    char buffer[25];
+    
+    //create the fp => q1 output file ___________________________________________
+    path_outfile = string(stem_outfile); 
+
+    //specify the arm to use 
+    path_outfile += "_fp_q1"; 
+
+    path_outfile += (is_RHRS ? "_R" : "_L"); 
+
+    //specify the order of the polynomial
+    sprintf(buffer, "_%iord", poly_fpq1_order); 
+    path_outfile += string(buffer); 
+
+    path_outfile += ".dat";
+
+    //write all elements of the output file
+    create_dbfile_from_polymap(path_outfile, polymap_fpq1); 
+
+
+    //create the q1 => sv output file ___________________________________________
+    path_outfile = string(stem_outfile); 
+
+    //specify the arm to use 
+    path_outfile += "_q1_sv"; 
+
+    path_outfile += (is_RHRS ? "_R" : "_L"); 
+
+    //specify the order of the polynomial
+    sprintf(buffer, "_%iord", poly_q1sv_order); 
+    path_outfile += string(buffer); 
+
+    path_outfile += ".dat";
+
+    //write all elements of the output file
+    create_dbfile_from_polymap(path_outfile, polymap_q1sv); 
+
+
 #if 0
 
     //construct the full path to the outfile from the stem provided
