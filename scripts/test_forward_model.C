@@ -98,7 +98,7 @@ int parse_poly_from_file(const char* path_dbfile, const char* poly_name, NPoly *
 }
 
 struct Track_t { 
-    double x,y,dxdz,dydz; 
+    double x,y,dxdz,dydz,dpp; 
 }; 
 
 //_______________________________________________________________________________________________________________________________________________
@@ -242,21 +242,21 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
     map<string, unique_ptr<NPoly>> pols; 
 
     //add the polynomials we want to parse
+    // -- q1=>sv -or- fp=>sv
     poly_DoF = (use_fp_q1_sv_mode ? 5 : 4); 
     pols["x_sv"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
     pols["y_sv"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
     pols["dxdz_sv"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
     pols["dydz_sv"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
-
-    if (use_fp_q1_sv_mode) {
-        //add the polynomials we want to parse
-        poly_DoF = 4; 
-        pols["x_q1"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
-        pols["y_q1"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
-        pols["dxdz_q1"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
-        pols["dydz_q1"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
-        pols["dpp_q1"]  = unique_ptr<NPoly>(new NPoly(poly_DoF));
-    }
+    
+    // -- fp=>q1
+    poly_DoF = 4; 
+    pols["x_q1"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+    pols["y_q1"]    = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+    pols["dxdz_q1"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+    pols["dydz_q1"] = unique_ptr<NPoly>(new NPoly(poly_DoF)); 
+    pols["dpp_q1"]  = unique_ptr<NPoly>(new NPoly(poly_DoF));
+    
     //parse all elements for each of these
     cout << "parsing elements for all polynomials...\n" << flush; 
     
@@ -277,15 +277,10 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
             return 1; 
         }
 
-        if (elems_found < 1) {
-            Warning(here, "did not parse any elements for polynomial '%s', check name.", poly_name.data()); 
-        }
-
         printf("-- %3i elems found for poly '%s'\n", it->second->Get_nElems(), poly_name.data()); 
     }
 
     cout << "parsing done." << endl; 
-    return 0; 
     //now, we're ready to deal with the data. 
 
 
@@ -300,6 +295,13 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
     const NPoly *pol_y      = pols["y_sv"].get(); 
     const NPoly *pol_dxdz   = pols["dxdz_sv"].get(); 
     const NPoly *pol_dydz   = pols["dydz_sv"].get(); 
+
+    const NPoly* pol_x_q1    = pols["x_q1"].get(); 
+    const NPoly* pol_y_q1    = pols["y_q1"].get(); 
+    const NPoly* pol_dxdz_q1 = pols["dxdz_q1"].get(); 
+    const NPoly* pol_dydz_q1 = pols["dydz_q1"].get(); 
+    const NPoly* pol_dpp_q1  = pols["dpp_q1"].get(); 
+
     
     const char* bn_x_tra    = is_RHRS ? "R_tr_tra_x"  : "L_tr_tra_x"; 
     const char* bn_y_tra    = is_RHRS ? "R_tr_tra_y"  : "L_tr_tra_y"; 
@@ -328,7 +330,8 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
                         .x = v_x.at(i),
                         .y = v_y.at(i),
                         .dxdz = v_dxdz.at(i) - v_x.at(i)/6.,  //the only difference between TRANSPORT (tra) and FOCAL-PLANE (fp) coordinates.
-                        .dydz = v_dydz.at(i) 
+                        .dydz = v_dydz.at(i), 
+                        .dpp  = 0. 
                     });    
                 }
                 
@@ -337,7 +340,9 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
             }, {bn_x_tra, bn_y_tra, bn_dxdz_tra, bn_dydz_tra}) 
         
         .Define("tracks_sv", 
-            [pol_x,pol_y,pol_dxdz,pol_dydz]
+            [use_fp_q1_sv_mode,
+             pol_x,pol_y,pol_dxdz,pol_dydz, 
+             pol_x_q1, pol_y_q1, pol_dxdz_q1, pol_dydz_q1, pol_dpp_q1]
             (const RVec<Track_t> &tracks_fp)
             {
                 //as before, create a vector of Track_t structs to store the sieve tracks. 
@@ -355,13 +360,37 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
                         trk_fp.dydz
                     }; 
                     
-                    //use ouqqr polynomials to compute the sieve coordinates
-                    tracks_sv.push_back({
-                        .x    = pol_x->Eval(X_fp),
-                        .y    = pol_y->Eval(X_fp),
-                        .dxdz = pol_dxdz->Eval(X_fp),
-                        .dydz = pol_dydz->Eval(X_fp)
-                    }); 
+                    if (use_fp_q1_sv_mode) {
+                        //frist evaluate fp=>q1, then q1=>sv
+                        RVec<double> X_q1{
+                            pol_x_q1->Eval(X_fp), 
+                            pol_y_q1->Eval(X_fp),
+                            pol_dxdz_q1->Eval(X_fp),
+                            pol_dydz_q1->Eval(X_fp),
+                            pol_dpp_q1->Eval(X_fp)
+                        };
+
+                        //use ouqqr polynomials to compute the sieve coordinates
+                        tracks_sv.push_back({
+                            .x    = pol_x->Eval(X_q1),
+                            .y    = pol_y->Eval(X_q1),
+                            .dxdz = pol_dxdz->Eval(X_q1),
+                            .dydz = pol_dydz->Eval(X_q1),
+                            .dpp  = 0.
+                        });
+
+                    } else {
+                        //use ouqqr polynomials to compute the sieve coordinates
+                        tracks_sv.push_back({
+                            .x    = pol_x->Eval(X_fp),
+                            .y    = pol_y->Eval(X_fp),
+                            .dxdz = pol_dxdz->Eval(X_fp),
+                            .dydz = pol_dydz->Eval(X_fp),
+                            .dpp  = 0.
+                        });
+
+                    }//if (use_fp_q1_sv_mode)
+
                 }
 
                 return tracks_sv;
