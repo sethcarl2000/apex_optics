@@ -341,16 +341,19 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
             }, {bn_x_tra, bn_y_tra, bn_dxdz_tra, bn_dydz_tra}); 
 
     //now, create a 'frame' for each different tweak of the parameter we've chosen.
-    const int n_frames = 10; 
-    const char* tweak_coord = "x_q1"; 
-    const double tweak_range = 0; //+/- magnitude of perturbation range
+    const int n_frames = 20; 
+    const char* tweak_coord = "y_q1"; 
+    const double tweak_range = 10e-3; //+/- magnitude of perturbation range
+
+#define MAKE_OUTGIF true
     
-    const double dx = tweak_range/((double)n_frames - 1); 
+    //compute change in 'tweak' parameter
+    const double dx = n_frames>0 ? 2.*tweak_range/((double)n_frames - 1) : 0.; 
     
-    double tweak = -tweak_range; 
+    double perturb = -tweak_range; 
     
     //what fps do you want the gif to run at? 
-    double gif_fps = 12.0; 
+    double gif_fps = 10.0; 
 
     //for some reason, the 'TCanvas::SaveAs' method takes centi-seconds (ms/10) as the argument for how long each frame is. 
     // for example, if you wanted your gif to me 10 fps, each frame would last 100 ms, so you would need to say: 
@@ -375,7 +378,7 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
         auto df_frame = df_tracks_fp 
 
             .Define("tracks_sv", 
-                [tweak,
+                [perturb,
                 use_fp_q1_sv_mode,
                 pol_x,pol_y,pol_dxdz,pol_dydz, 
                 pol_x_q1, pol_y_q1, pol_dxdz_q1, pol_dydz_q1, pol_dpp_q1]
@@ -401,8 +404,8 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
                         if (use_fp_q1_sv_mode) {
                             //frist evaluate fp=>q1, then q1=>sv
                             RVec<double> X_q1 = {
-                                pol_x_q1->Eval(X_fp) + tweak,     //x_q1
-                                pol_y_q1->Eval(X_fp),     //y_q1
+                                pol_x_q1->Eval(X_fp),     //x_q1
+                                pol_y_q1->Eval(X_fp) + perturb,     //y_q1
                                 pol_dxdz_q1->Eval(X_fp),  //dxdz_q1
                                 pol_dydz_q1->Eval(X_fp),  //dydz_q1
                                 pol_dpp_q1->Eval(X_fp)    //dpp_q1
@@ -435,6 +438,7 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
 
                 }, {"tracks_fp"});
 
+
         auto df_sv = add_branch_from_Track_t(df_frame, "tracks_sv", {
             {"x_sv",    &Track_t::x},
             {"y_sv",    &Track_t::y},
@@ -450,7 +454,7 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
         }); 
 
         char histo_name[200]; 
-        sprintf(histo_name, "Sieve-plane proj: %s %+.8f;x_sv;y_sv", tweak_coord, tweak); 
+        sprintf(histo_name, "Sieve-plane proj: %s %+.8f;x_sv;y_sv", tweak_coord, perturb); 
 
         //create both histograms
         auto hist_xy        
@@ -464,11 +468,13 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
                     "x_react_vtx_fix", "y_react_vtx_fix");
 
         hist_xy->DrawCopy("col2");
-
+ 
+#if MAKE_OUTGIF
         canv->SaveAs(saveas_outgif); 
+#endif 
 
-        printf(" --- completed frame %4i", i); cout << endl;
-        tweak += dx;  
+        printf(" --- completed frame %-4i: %s %+.4e", i, tweak_coord, perturb); cout << endl;
+        perturb += dx;  
     }
 
     
