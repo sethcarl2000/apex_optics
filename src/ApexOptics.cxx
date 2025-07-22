@@ -55,8 +55,6 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
         return unique_ptr<NPoly>(nullptr); 
     }
 
-    return unique_ptr<NPoly>(nullptr); 
-    
 
     //now that we know all the necessary columns exist, we can proceed: 
     //first, define the vector of inputs. 
