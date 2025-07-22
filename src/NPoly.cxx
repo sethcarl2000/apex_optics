@@ -189,6 +189,41 @@ vecd NPoly::Gradient(const vecd &coeff, const vecd &X) const
   return grad;
 }
 //_____________________________________________________________________________
+double NPoly::Eval(const vecd &X) const 
+{
+  //same as above, but use the coefficients 'hard-coded' to each element
+  
+  if ((int)X.size() != Get_nDoF()) { 
+    Error("Eval(vecd)", "Size of input vector (%i) does not match poly nDoF (%i)",
+	  (int)X.size(), (int)Get_nDoF());
+    return -1e30;
+  }
+      
+  //now, actually evaluate
+  RVec<double> ret(Get_nDoF(), 0.); 
+
+  //for each element, raise each val in X to the right power, the multiply
+  // by the coressponding coeff.
+  for (const auto &elem : fElems) {
+    
+    double elem_val=1.;
+    
+    for (int d=0; d<Get_nDoF(); d++) {
+      if (elem.powers[d]>0) elem_val *= pow( X[d], elem.powers[d] );
+    }
+    //multiply by the coefficient of this element
+    elem_val *= elem.coeff; 
+
+    //use the power rule to take the derivative w/r/t each input variable
+    for (int d=0; d<Get_nDOF(); d++) {
+      ret[d] +=  ((elem.powers[d] > 0) ? ((double)elem.powers[d])/X[d] : 0.) * elem_val; 
+    }
+  }//for (const auto &elem : fElems)
+      
+  return val;
+}
+//_____________________________________________________________________________
+//_____________________________________________________________________________
 RVec<int> NPoly::Get_elemPowers(unsigned int i) const
 {
   if (i >= Get_nElems()) {

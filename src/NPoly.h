@@ -27,8 +27,12 @@ class NPoly : public TObject {
   double Eval(const ROOT::RVec<double> &coeff, const ROOT::RVec<double> &X) const; 
   double Eval(const ROOT::RVec<double> &X) const;
   
+  //compute the gradient w/r/t each of the input coordinates
   ROOT::RVec<double> Gradient(const ROOT::RVec<double> &coeff, const ROOT::RVec<double> &X) const; 
   
+  //compute the gradient w/r/t each of the input coordinates
+  ROOT::RVec<double> Gradient(const ROOT::RVec<double> &X) const; 
+
   //handle elements + get information
   void Add_element(const ROOT::RVec<int> &pows, double coefficient=1.);
   
