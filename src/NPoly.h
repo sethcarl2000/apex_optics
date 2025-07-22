@@ -42,6 +42,9 @@ class NPoly : public TObject {
   //get this polynomial's input DoF
   inline unsigned int Get_nDoF() const { return fnDoF; }
 
+  //Maximum exponent power from any element
+  inline unsigned int Get_maxPower() const { return f_maxPower; }
+
   struct NPolyElem {
     ROOT::RVec<int>  powers; //powers for each (x,y,th,ph) in target-coordinates  
     double coeff;            //in most cases, coefficients are not needed per poly.
@@ -57,6 +60,8 @@ class NPoly : public TObject {
 private:
   
   int fOrder,fnDoF;
+
+  int f_maxPower; 
   
   ROOT::RVec<NPolyElem> fElems;
   

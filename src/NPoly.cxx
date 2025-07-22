@@ -23,7 +23,7 @@ using namespace std;
 
 //_____________________________________________________________________________
 NPoly::NPoly(const int nDoF, const int order) :
-  fnDoF(nDoF)
+  fnDoF(nDoF), f_maxPower(0)
 {  
   if (order>0) {
     fOrder = order;
@@ -123,6 +123,12 @@ double NPoly::Eval(const vecd &X) const
   //now, actually evaluate
   double val=0.; 
 
+  const int max_pow = Get_maxPower(); 
+  double X_pows[Get_nDoF()][max_pow]; 
+  for (int d=0; d<Get_nDoF(); d++) {
+    for (int p=0; p<max_pow; p++) X_pows[d][p] = pow(X[d], p); 
+  }
+
   //for each element, raise each val in X to the right power, the multiply
   // by the coressponding coeff.
   for (const auto &elem : fElems) {
@@ -130,7 +136,7 @@ double NPoly::Eval(const vecd &X) const
     double elem_val=1.;
     
     for (int d=0; d<Get_nDoF(); d++) {
-      if (elem.powers[d]>0) elem_val *= pow( X[d], elem.powers[d] );
+      if (elem.powers[d]>0) elem_val *= X_pows[d][elem.powers[d]];
     }
     //check to see if this is the one element for which all pows. are zero
     val += elem_val * elem.coeff; 
@@ -198,7 +204,7 @@ vecd NPoly::Gradient(const vecd &X) const
 	  (int)X.size(), (int)Get_nDoF());
     return {};
   }
-      
+  
   //now, actually evaluate
   RVec<double> ret(Get_nDoF(), 0.); 
 
@@ -261,6 +267,9 @@ void NPoly::Add_element(const RVec<int> &pows, double coefficient)
 	  (int)pows.size(), (int)fnDoF);
     return;
   }
+  //record the maximum exponent power in this polynomial 
+  for (const int& pow : pows) if (pow > f_maxPower) f_maxPower=pow; 
+
   fElems.push_back({.powers=pows, .coeff=coefficient}); 
 }
 //_____________________________________________________________________________
@@ -290,7 +299,8 @@ void NPoly::AutoConstructPoly(const int max_power, const int nDoF)
       for (int d=0; d<nDoF; d++) cout << elem->powers.at(d) << ","; 
       cout << endl; */ 
 
-    fElems.push_back({.powers=pows, .coeff=1.});
+    this->Add_element(pows, 1.);
+    //fElems.push_back({.powers=pows, .coeff=1.});
     
     //now, increase to the next set of powers
     for (int it1=powers.size()-1; it1>=0; it1--) { 
