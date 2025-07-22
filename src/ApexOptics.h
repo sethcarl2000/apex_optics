@@ -15,12 +15,16 @@
 #include "NPoly.h"
 #include <vector>
 #include <string>
+#include <memory>
 
 namespace ApexOptics {
 
     //given an array of input branches, and a 'target' output branch, will attempt to 
     // fit a polynomial (of order poly_order) from the inputs to the output. 
-    NPoly Create_NPoly_fit(ROOT::RDF::RNode df, const int poly_order, const std::vector<std::string> &inputs, const char* output); 
+    std::unique_ptr<NPoly> Create_NPoly_fit(ROOT::RDF::RNode df, 
+                                            const int poly_order, 
+                                            const std::vector<std::string> &inputs, 
+                                            const char* output); 
 
 };
 

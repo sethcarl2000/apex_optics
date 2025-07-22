@@ -12,13 +12,17 @@ using namespace std;
 using namespace ROOT::VecOps; 
 
 //__________________________________________________________________________________________________________________
-NPoly ApexOptics::Create_NPoly_fit(ROOT::RDF::RNode df, const int poly_order, const vector<string> &inputs, const char* output)
+unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df, 
+                                                const int poly_order, 
+                                                const vector<string> &inputs, 
+                                                const char* output )
 {
     const int nDoF = inputs.size();  
 
-    if (nDoF < 1 ) return NPoly(0); 
+    if (nDoF < 1 ) return unique_ptr<NPoly>(new NPoly(0)); 
 
     //first, define the vector of inputs. 
+    // since this function can take a variable number of inputs, we need to 'tack' each input onto a single vector. 
     vector<ROOT::RDF::RNode> df_vec{df.Define("inputs", [](double _inp){return RVec<double>{};}, {inputs[0].data()})}; 
 
     int i_branch=0; 
@@ -37,7 +41,6 @@ NPoly ApexOptics::Create_NPoly_fit(ROOT::RDF::RNode df, const int poly_order, co
     }
 
    
-
     //now that we have put all the inputs into a vector, we can continue. 
     auto df_output = df_vec.at(df_vec.size()-1)
     
@@ -47,7 +50,7 @@ NPoly ApexOptics::Create_NPoly_fit(ROOT::RDF::RNode df, const int poly_order, co
         } {"inputs"}); 
 
 
-    NPoly *poly = new NPoly(nDoF, poly_order); 
+    auto poly = unique_ptr<NPoly>(new NPoly(nDoF, poly_order)); 
 
     const int n_elems = poly->Get_nElems(); 
 
@@ -55,7 +58,7 @@ NPoly ApexOptics::Create_NPoly_fit(ROOT::RDF::RNode df, const int poly_order, co
 
     for (int i=0; i<n_elems; i++) {
         for (int j=0; j<n_elems; j++) {
-            A_ptr[i][j] = df
+            A_ptr[i][j] = df_output
                 .Define("val", [i,j](const ROOT::RVec<double> &X){ return X[i]*X[j]; }, {"X_elems"}).Sum("val"); 
         }
     }
@@ -69,7 +72,7 @@ NPoly ApexOptics::Create_NPoly_fit(ROOT::RDF::RNode df, const int poly_order, co
     for (int i=0; i<n_elems; i++) {
 
         //this RResultPtr<double> will be the sum of the branch 'str' (see the construction of the output_branches vector above)
-        B_ptr[i] = df
+        B_ptr[i] = df_output
             .Define("val", [i](const ROOT::RVec<double> &X, double y){ return X[i] * y; }, {"X_elems", output}).Sum("val"); 
     }
     
@@ -108,7 +111,7 @@ NPoly ApexOptics::Create_NPoly_fit(ROOT::RDF::RNode df, const int poly_order, co
 
 
 
-    return NPoly(nDoF); 
+    return poly; 
 }
 //__________________________________________________________________________________________________________________
 
