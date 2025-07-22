@@ -16,7 +16,6 @@
 #include "TObject.h"
 #include <ROOT/RVec.hxx> 
 
-struct NPolyElem; 
 
 class NPoly : public TObject {
   
@@ -26,6 +25,11 @@ class NPoly : public TObject {
   NPoly(int nDoF, int order=0); 
   ~NPoly();
   
+  struct NPolyElem {
+    ROOT::RVec<int>  powers; //powers for each (x,y,th,ph) in target-coordinates  
+    double coeff;            //in most cases, coefficients are not needed per poly.
+  };
+
   //return the value of each element evaluated against the input vector
   ROOT::RVec<double> Eval_noCoeff(const ROOT::RVec<double> &X) const;
   
@@ -50,11 +54,7 @@ class NPoly : public TObject {
   //Maximum exponent power from any element
   inline unsigned int Get_maxPower() const { return f_maxPower; }
 
-  struct NPolyElem {
-    ROOT::RVec<int>  powers; //powers for each (x,y,th,ph) in target-coordinates  
-    double coeff;            //in most cases, coefficients are not needed per poly.
-  };
-
+ 
   //Get a pointer to an individual element
   NPolyElem*          Get_elem      (unsigned int i); 
   //Get the RVec<int> of the powers of each input var for this element
