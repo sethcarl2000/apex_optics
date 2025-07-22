@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <cstdio>
 #include <cmath>
-#include <fstream> 
+#include <fstream>
 #include <ROOT/RVec.hxx> 
 #include <ROOT/RResultPtr.hxx>
 #include "RMatrix.h"
@@ -153,6 +153,7 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     delete poly_template; 
     return poly; 
 }
+
 //__________________________________________________________________________________________________________________
 int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
 {            
@@ -204,8 +205,88 @@ int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, ma
     return 0; 
 }
 //__________________________________________________________________________________________________________________
+//this will be a temporary funct., that I may absorb into NPoly.cxx. 
+int Parse_NPoly_from_file(const char* path_dbfile, const char* poly_name, NPoly *poly) 
+{
+    //uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuer89999999999999999999999999999999999uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
+    // -bear 
+
+    //parse each line separately. in each line, each 'token' is separated by whitespace. 
+    //each line must have the following format: 
+    //
+    //      dxdz_sv   0   0   2   0   -3.044778720e-01
+    //
+    //The first token is the name of the polynomial to which this element belongs.
+    // the next 4 tokens are the power to which this polynomial must be raised. 
+    // the last token is the coefficient of this element.
+    
+    //The file must be headed by the line: 
+    //
+    //      poly-DoF 4
+    
+    const char* const here = "ApexOptics::Parse_NPoly_from_file"; 
+
+    //open the db file
+    ifstream dbfile(path_dbfile); 
+    
+    if (!dbfile.is_open()) {
+        fprintf(stderr, "Error in <%s>: Unable to open db file '%s'", here, path_dbfile); 
+        return -1; 
+    }
+
+    //now, read the file
+    string line; 
+    
+    //get the DoF of this poly
+    getline(dbfile, line); 
+    istringstream iss_init(line);
+    
+    string token; 
+
+    iss_init >> token; 
+    if (token != "poly-DoF") {
+        fprintf(stderr, "Error in <%s>: Missing 'poly-DoF [n]' header at top of dbfile '%s'\n", here, path_dbfile); 
+        return -1; 
+    }
+
+    int poly_DoF; 
+    iss_init >> poly_DoF; 
+
+
+    //this file can't contain any elements of this polynomial; it has the wrong DoF. 
+    if (poly_DoF != poly->Get_nDoF()) return 0;  
     
 
+    int start_nElems = poly->Get_nElems(); 
+
+    //now, we can ready the rest of the file. 
+    while (getline(dbfile, line)) {
+
+        //parse the string into token (delimited by whitespace!)
+        istringstream iss(line); 
+
+        string elem_name; iss >> elem_name; 
+
+        //this line is not the poly you're looking for
+        if (elem_name != poly_name) continue; 
+        
+        //now, we can read the powers / coefficient
+        RVec<int> powers(poly_DoF, 0); 
+        double coeff; 
+
+        //read the powers
+        for (int &pow : powers) iss >> pow;
+
+        //read the coefficient
+        iss >> coeff; 
+
+        poly->Add_element(powers, coeff); 
+    }
+    
+    dbfile.close(); 
+
+    return poly->Get_nElems() - start_nElems;
+}    
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
