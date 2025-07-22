@@ -189,14 +189,14 @@ vecd NPoly::Gradient(const vecd &coeff, const vecd &X) const
   return grad;
 }
 //_____________________________________________________________________________
-double NPoly::Eval(const vecd &X) const 
+vecd NPoly::Gradient(const vecd &X) const 
 {
   //same as above, but use the coefficients 'hard-coded' to each element
   
   if ((int)X.size() != Get_nDoF()) { 
     Error("Eval(vecd)", "Size of input vector (%i) does not match poly nDoF (%i)",
 	  (int)X.size(), (int)Get_nDoF());
-    return -1e30;
+    return {};
   }
       
   //now, actually evaluate
@@ -215,12 +215,12 @@ double NPoly::Eval(const vecd &X) const
     elem_val *= elem.coeff; 
 
     //use the power rule to take the derivative w/r/t each input variable
-    for (int d=0; d<Get_nDOF(); d++) {
+    for (int d=0; d<Get_nDoF(); d++) {
       ret[d] +=  ((elem.powers[d] > 0) ? ((double)elem.powers[d])/X[d] : 0.) * elem_val; 
     }
   }//for (const auto &elem : fElems)
       
-  return val;
+  return ret;
 }
 //_____________________________________________________________________________
 //_____________________________________________________________________________
