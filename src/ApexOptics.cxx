@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <cstdio>
 #include <cmath>
+#include <fstream> 
 #include <ROOT/RVec.hxx> 
 #include <ROOT/RResultPtr.hxx>
 #include "RMatrix.h"
@@ -153,7 +154,57 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     return poly; 
 }
 //__________________________________________________________________________________________________________________
+int Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
+{            
+    const char* const here = "ApexOptics::Create_dbfile_from_polymap"; 
 
+    fstream outfile(path_outfile, ios::out | ios::trunc); 
+
+    if (!outfile.is_open()) {
+        fprintf(stderr, "Error in <%s>: Unable to open output file: '%s'", here, path_outfile.data()); 
+        return 1; 
+    }
+
+    printf("--writing output file '%s'...", path_outfile.data()); cout << flush; 
+    //now, we make the output file. 
+
+    //write the poly DoF
+    const int nDoF = polymap.begin()->second->Get_nDoF(); 
+    outfile << "poly-DoF " << nDoF << endl; 
+    //write the arm
+    outfile << "is-RHRS " << (is_RHRS ? "1" : "0") << endl; 
+    
+    //assumes dbfile was opened successfully! 
+    for (auto it = polymap.begin(); it != polymap.end(); it++) {
+    
+        //get the name of the polynomial
+        const char* poly_name   = it->first.data(); 
+        NPoly      *poly        = it->second; 
+
+        char buffer[25]; 
+        //now, we will print all the elements.
+        for (int i=0; i<poly->Get_nElems(); i++) {
+            outfile << poly_name; 
+            
+            const NPoly::NPolyElem* elem = poly->Get_elem(i);            
+            
+            for (int pow : elem->powers) {
+                sprintf(buffer, " %3i", pow);
+                outfile << buffer;  
+            }
+
+            //the '%+.9e' format produces scientific-notation floating-point output with 10 sig figures. 
+            sprintf(buffer, "   %+.9e", elem->coeff); 
+            outfile << buffer << endl; 
+        }
+    }
+
+    outfile.close();
+    cout << "done." << endl; 
+    return 0; 
+}
+//__________________________________________________________________________________________________________________
+    
 
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
