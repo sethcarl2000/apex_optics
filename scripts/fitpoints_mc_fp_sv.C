@@ -236,7 +236,7 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
 
     path_outfile += ".dat";
 
-    create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
+    ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
 
 
     

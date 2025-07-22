@@ -190,7 +190,7 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
     path_outfile += ".dat";
 
     //write all elements of the output file
-    create_dbfile_from_polymap(is_RHRS, path_outfile, polymap_fpq1); 
+    ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap_fpq1); 
 
 
     //create the q1 => sv output file ___________________________________________
@@ -208,7 +208,7 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
     path_outfile += ".dat";
 
     //write all elements of the output file
-    create_dbfile_from_polymap(is_RHRS, path_outfile, polymap_q1sv); 
+    ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap_q1sv); 
 
     //delete our template polynomial, and all model polynomials
     for (auto it = polymap_fpq1.begin(); it != polymap_fpq1.end(); it++ ) delete it->second;
