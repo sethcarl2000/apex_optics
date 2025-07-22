@@ -6,17 +6,16 @@
 #include <cmath>
 #include <ROOT/RVec.hxx> 
 #include <ROOT/RResultPtr.hxx>
-#include "TMatrixD.h"
-#include "TVectorD.h"
+#include "RMatrix.h"
 
 using namespace std; 
 using namespace ROOT::VecOps; 
 
 //__________________________________________________________________________________________________________________
-unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df, 
-                                                const int poly_order, 
-                                                const vector<string> &inputs, 
-                                                const char* output )
+NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df, 
+                                     const int poly_order, 
+                                     const vector<string> &inputs, 
+                                     const char* output )
 {
     const char* const here = "ApexOptics::Create_NPoly_fit"; 
     
@@ -24,7 +23,7 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
 
     if (nDoF < 1 ) {
         fprintf(stderr, "Error in <%s>: No inputs given.\n", here); 
-        return unique_ptr<NPoly>(nullptr); 
+        return nullptr; 
     }
 
     //check for the existence of all required columns    
@@ -52,7 +51,7 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
             fprintf(stderr, "'%s' ", col.data()); 
         }
         cerr << "\n"; 
-        return unique_ptr<NPoly>(nullptr); 
+        return nullptr; 
     }
 
 
@@ -114,8 +113,8 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     }
     
     //this matrix will be used to find the best coefficients for each element 
-    TMatrixD A(n_elems, n_elems); 
-    TVectorD B(n_elems); 
+    RMatrix A(n_elems, n_elems); 
+    vector<double> B; 
 
     //now, fill the matrix, and the 'b' values. 
     // When we request access to the RResultPtr objects created above (which is what the B_ptr and A_ptr arrays are), 
@@ -123,27 +122,21 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     cout << "--filling matrix..." << flush; 
     for (int i=0; i<n_elems; i++) {
         
-        B(i) =  *(B_ptr[i]); 
+        B.push_back( *(B_ptr[i]) ); 
         
         for (int j=0; j<n_elems; j++) {
-            A(i,j) = *(A_ptr[i][j]);
+            A.get(i,j) = *(A_ptr[i][j]);
         }  
     }
     cout << "done." << endl; 
-
-    //check to see if TMatrixD considers this matrix to be singular 
-    if (fabs(A.Determinant()) < 1e-10) {
-        fprintf(stderr, "Error in <%s>: A-matrix is singular (|det| < 1e-16)", here); 
-        return unique_ptr<NPoly>(nullptr); 
-    }
 
     //now, we can actually solve the linear equation for the tensor coefficients. 
     cout << "--Solving linear system(s)..." << flush; 
     
     //Solve the linear system of equations to get our best-fit coefficients
-    auto coeffs = A.Invert() * B; 
+    auto coeffs = A.Solve( B ); 
 
-    auto poly = unique_ptr<NPoly>(new NPoly(nDoF)); 
+    auto poly = new NPoly(nDoF); 
 
     for (int i=0; i<n_elems; i++) { 
         
@@ -151,7 +144,7 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
         NPoly::NPolyElem *elem = poly_template->Get_elem(i); 
 
         //now, we just add our coefficient we just computed to it
-        poly->Add_element( elem->powers, coeffs(i) ); 
+        poly->Add_element( elem->powers, coeffs.at(i) ); 
     }
 
     cout << "done." << endl; 
