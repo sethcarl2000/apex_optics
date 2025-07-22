@@ -6,6 +6,7 @@
 #include "TFile.h"
 #include "TVector3.h"
 #include "TParameter.h"
+#include "ApexOptics.h"
 
 
 using namespace std; 
@@ -14,7 +15,7 @@ using namespace std;
 int fitpoints_mc_fp_sv( bool is_RHRS=false,
                         const int poly_order=2,
                         const char* path_infile="",
-                        const char* stem_outfile="data/csv/db_fwd",  
+                        const char* stem_outfile="data/csv/test",  
                         const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "fit_points_mc_forward"; 
@@ -24,12 +25,6 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     //check if we can load the apex optics lib
     if (gSystem->Load("libApexOptics") < 0) {
         Error(here, "libApexOptics could not be loaded."); 
-        return 1; 
-    }
-
-    //check if we can load the apex optics lib
-    if (gSystem->Load("libRMatrix") < 0) {
-        Error(here, "libRMatrix could not be loaded."); 
         return 1; 
     }
     
@@ -81,6 +76,7 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
         .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
         .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"}); 
          
+    
     //now, put these outputs into a vector (so we know to make a seperate polynomial for each of them). 
     vector<string> output_branches = {
         "x_sv", 

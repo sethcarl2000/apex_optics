@@ -6,7 +6,6 @@
 #include "TFile.h"
 #include "TVector3.h"
 #include "TParameter.h"
-#include "ApexOptics.h"
 
 
 using namespace std; 
@@ -184,11 +183,6 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
         return 1; 
     }
 
-    //check if we can load the apex optics lib
-    if (gSystem->Load("libRMatrix") < 0) {
-        Error(here, "libRMatrix could not be loaded."); 
-        return 1; 
-    }
     
     //check if the infile could be opened
     if (!infile || infile->IsZombie()) {
@@ -294,6 +288,19 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
     cout << "Creating polynomials for fp => q1..." << endl; 
     map<string, NPoly*> polymap_fpq1 = find_bestfit_poly_coeffs(df_output, poly_fpq1, "X_elems_fpq1", branches_q1); 
     cout << "done." << endl;    
+
+    //test the differences between the new and old methods
+    for (int i=0; i<poly_x_q1_test->Get_nElems(); i++) {
+        auto elem_new = poly_x_q1_test->Get_elem(i); 
+        auto elem_old = polymap_fpq1["x_q1"]->Get_elem(i); 
+        printf("elem %2i : pows(", i); 
+        for (int j=0; j<poly_x_q1_test->Get_nDoF(); j++) {
+            printf("%i ", elem_new->powers.at(j)); 
+        }
+        printf(") coeff: new/old/diff: %+.8e/%+.8e/%+.8e\n", elem_new->coeff,elem_old->coeff,elem_new->coeff - elem_old->coeff); 
+    }
+    cout << endl; 
+    return 0; 
 
     cout << "Creating polynomials for q1 => sv..." << endl; 
     map<string, NPoly*> polymap_q1sv = find_bestfit_poly_coeffs(df_output, poly_q1sv, "X_elems_q1sv", branches_sv); 
