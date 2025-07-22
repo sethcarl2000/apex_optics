@@ -3,7 +3,12 @@
 
 //////////////////////////////////////////////////////////////////////////
 //
-// TOpticsModel
+//  NPoly
+// 
+//  A class which is a N-dimensional polynomal, with N-inputs and which
+//  generates 1 output. Also has the ability to auto-generate elements
+//  given a number of DoF and max polynomial 'order', via the 
+//  AutoConstructPoly method. 
 //
 //////////////////////////////////////////////////////////////////////////
 
@@ -11,7 +16,7 @@
 #include "TObject.h"
 #include <ROOT/RVec.hxx> 
 
-class NPolyElem; 
+struct NPolyElem; 
 
 class NPoly : public TObject {
   
