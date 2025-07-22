@@ -31,7 +31,9 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     vector<string> column_names = df.GetColumnNames(); 
     vector<string> missing_columns{}; 
     
-    vector<string> all_columns_needed = inputs; inputs.push_back(string(output)); 
+    //make a vector of all the columns we need to find to proceed
+    vector<string> all_columns_needed(inputs); 
+    all_columns_needed.push_back(string(output)); 
 
     //loop through all branches needed, check if any are missing.
     for ( const string& column_needed : all_columns_needed ) { 
@@ -77,7 +79,7 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     }
 
     //The polynomial we output will follow the same template as this one:
-    auto poly_template = unique_ptr<NPoly>(new NPoly(nDoF, poly_order)); 
+    NPoly* poly_template = new NPoly(nDoF, poly_order); 
 
     const int n_elems = poly_template->Get_nElems(); 
 
@@ -88,7 +90,7 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
         .Define("X_elems", [poly_template](const RVec<double> &inputs) 
         {
             return poly_template->Eval_noCoeff(inputs); 
-        } {"inputs"}); 
+        }, {"inputs"}); 
 
 
     
@@ -157,6 +159,7 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
 
     cout << "done." << endl; 
 
+    delete poly_template; 
     return poly; 
 }
 //__________________________________________________________________________________________________________________
