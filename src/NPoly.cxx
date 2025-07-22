@@ -124,9 +124,9 @@ double NPoly::Eval(const vecd &X) const
   double val=0.; 
 
   const int max_pow = Get_maxPower(); 
-  double X_pows[Get_nDoF()][max_pow]; 
+  double X_pows[Get_nDoF()][max_pow + 1]; 
   for (int d=0; d<Get_nDoF(); d++) {
-    for (int p=0; p<max_pow; p++) X_pows[d][p] = pow(X[d], p); 
+    for (int p=0; p<=max_pow; p++) X_pows[d][p] = pow(X[d], p); 
   }
 
   //for each element, raise each val in X to the right power, the multiply
@@ -209,9 +209,9 @@ vecd NPoly::Gradient(const vecd &X) const
   RVec<double> ret(Get_nDoF(), 0.); 
 
   const int max_pow = Get_maxPower(); 
-  double X_pows[Get_nDoF()][max_pow]; 
+  double X_pows[Get_nDoF()][max_pow + 1]; 
   for (int d=0; d<Get_nDoF(); d++) {
-    for (int p=0; p<max_pow; p++) X_pows[d][p] = pow(X[d], p); 
+    for (int p=0; p<=max_pow; p++) X_pows[d][p] = pow(X[d], p); 
   }
 
   //for each element, raise each val in X to the right power, the multiply
