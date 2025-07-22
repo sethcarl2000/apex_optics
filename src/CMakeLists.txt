@@ -22,8 +22,8 @@ find_package(ROOT 6.20 REQUIRED COMPONENTS Core RIO Physics)
 
 #---------------------------------------------------------
 #   Define sources and headers
-set(sources NPoly.cxx ApexOptics.cxx RMatrix.cxx)
-set(headers NPoly.h ApexOptics.h RMatrix.h)
+set(sources NPoly.cxx ApexOptics.cxx RMatrix.cxx NPolyModel.cxx)
+set(headers NPoly.h ApexOptics.h RMatrix.h NPolyModel.h)
 
 #---------------------------------------------------------
 #   Generate the ROOT dictionary
