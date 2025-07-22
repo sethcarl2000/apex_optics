@@ -10,12 +10,65 @@
 
 
 using namespace std; 
+//if you hand this helper function an 'fstream' object, and a sdt::map<string, NPoly*>, it will output all the elements of each
+// polynomial into the dbfile. 
+//______________________________________________________________________________________________________________________________
+int create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
+{            
+    const char* const here = "create_dbfile_from_polymap"; 
 
+    fstream outfile(path_outfile, ios::out | ios::trunc); 
+
+    if (!outfile.is_open()) {
+        Error(here, "unable to open output file: '%s'", path_outfile.data()); 
+        return 1; 
+    }
+
+    printf("--writing output file '%s'...", path_outfile.data()); cout << flush; 
+    //now, we make the output file. 
+
+    //write the poly DoF
+    const int nDoF = polymap.begin()->second->Get_nDoF(); 
+    outfile << "poly-DoF " << nDoF << endl; 
+    //write the arm
+    outfile << "is-RHRS " << (is_RHRS ? "1" : "0") << endl; 
+    
+    //assumes dbfile was opened successfully! 
+    for (auto it = polymap.begin(); it != polymap.end(); it++) {
+    
+        //get the name of the polynomial
+        const char* poly_name   = it->first.data(); 
+        NPoly      *poly        = it->second; 
+
+        char buffer[25]; 
+        //now, we will print all the elements.
+        for (int i=0; i<poly->Get_nElems(); i++) {
+            outfile << poly_name; 
+            
+            const NPoly::NPolyElem* elem = poly->Get_elem(i);            
+            
+            for (int pow : elem->powers) {
+                sprintf(buffer, " %3i", pow);
+                outfile << buffer;  
+            }
+
+            //the '%+.9e' format produces scientific-notation floating-point output with 10 sig figures. 
+            sprintf(buffer, "   %+.9e", elem->coeff); 
+            outfile << buffer << endl; 
+        }
+    }
+
+    outfile.close();
+    cout << "done." << endl; 
+    return 0; 
+}
+//______________________________________________________________________________________________________________________________
+    
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int fitpoints_mc_fp_sv( bool is_RHRS=false,
                         const int poly_order=2,
                         const char* path_infile="",
-                        const char* stem_outfile="data/csv/test",  
+                        const char* stem_outfile="data/csv/db_mc",  
                         const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "fit_points_mc_forward"; 
@@ -101,9 +154,9 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     
     //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
     // of the 'branches_fp' vec 
-    map<string,NPoly*> polymap_fpq1;     
+    map<string,NPoly*> polymap;     
     for (const string& output : branches_sv ) 
-        polymap_fpq1[output] = ApexOptics::Create_NPoly_fit(df_output, poly_order, branches_fp, output.data());
+        polymap[output] = ApexOptics::Create_NPoly_fit(df_output, poly_order, branches_fp, output.data());
     
     cout << "done." << endl;    
 
@@ -169,11 +222,12 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     cout << "done." << endl; 
 #endif 
 
-    //construct the full path to the outfile from the stem provided
-    string path_outfile(stem_outfile); 
+    //create the q1 => sv output file ___________________________________________
+    path_outfile = string(stem_outfile); 
 
-    char buffer[25];
     //specify the arm to use 
+    path_outfile += "_fp_sv"; 
+
     path_outfile += (is_RHRS ? "_R" : "_L"); 
 
     //specify the order of the polynomial
@@ -182,61 +236,9 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
 
     path_outfile += ".dat";
 
+    create_dbfile_from_polymap(is_RHRS, path_outfile, polymap_q1sv); 
 
-
-    fstream outfile(path_outfile, ios::out | ios::trunc); 
-
-    if (!outfile.is_open()) {
-        Error(here, "unable to open output file: '%s'", path_outfile.data()); 
-        return 1; 
-    }
-
-    printf("--writing output file '%s'...", path_outfile.data()); cout << flush; 
-    //now, we make the output file. 
-    string output_format = "%s "; for (int i=0; i<nDoF; i++) output_format += "%i "; 
-    output_format += "%+.8e\n"; 
-
-    //write the poly DoF
-    outfile << "poly-DoF " << nDoF << endl; 
-    //write the arm
-    outfile << "is-RHRS " << (is_RHRS ? "1" : "0") << endl; 
-
-    map<string, NPoly*> poly_models; 
-
-    for (auto it = poly_coeffs.begin(); it != poly_coeffs.end(); it++) {
-        
-        //get the name of the polynomial
-        const char* poly_name = it->first.data(); 
-        
-        //add this to our list of models
-        NPoly *poly_model = new NPoly(nDoF); 
-        poly_models[it->first] = poly_model; 
-
-        const vector<double>& coeffs = it->second; 
-
-        char buffer[25]; 
-        //now, we will print all the elements.
-        for (int i=0; i<n_elems; i++) {
-            outfile << poly_name; 
-            
-            const NPoly::NPolyElem* elem = poly->Get_elem(i);            
-            
-            for (int pow : elem->powers) {
-                sprintf(buffer, " %3i", pow);
-                outfile << buffer;  
-            }
-
-            //the '%+.9e' format produces scientific-notation floating-point output with 10 sig figures. 
-            sprintf(buffer, "   %+.9e", coeffs.at(i)); 
-            outfile << buffer << endl; 
-
-            //add this element to our model polynomial
-            poly_model->Add_element(elem->powers, coeffs.at(i));
-        }
-    }   
-    outfile.close(); 
-    cout << "done." << endl; 
-
+    
     
     //draw the reults of all models
     vector<ROOT::RDF::RNode> error_nodes{ df_output }; 
