@@ -119,7 +119,7 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     //now, fill the matrix, and the 'b' values. 
     // When we request access to the RResultPtr objects created above (which is what the B_ptr and A_ptr arrays are), 
     // this is the moment that the RDataFrame actually loops through all events in the dataframe.  
-    cout << "--filling matrix..." << flush; 
+    //cout << "--filling matrix..." << flush; 
     for (int i=0; i<n_elems; i++) {
         
         B.push_back( *(B_ptr[i]) ); 
@@ -128,10 +128,10 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
             A.get(i,j) = *(A_ptr[i][j]);
         }  
     }
-    cout << "done." << endl; 
+    //cout << "done." << endl; 
 
     //now, we can actually solve the linear equation for the tensor coefficients. 
-    cout << "--Solving linear system(s)..." << flush; 
+    //cout << "--Solving linear system(s)..." << flush; 
     
     //Solve the linear system of equations to get our best-fit coefficients
     auto coeffs = A.Solve( B ); 
@@ -147,7 +147,7 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
         poly->Add_element( elem->powers, coeffs.at(i) ); 
     }
 
-    cout << "done." << endl; 
+    //cout << "done." << endl; 
 
     delete poly_template; 
     return poly; 
