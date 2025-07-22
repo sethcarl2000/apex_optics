@@ -10,60 +10,6 @@
 
 using namespace std; 
 
-//if you hand this helper function an 'fstream' object, and a sdt::map<string, NPoly*>, it will output all the elements of each
-// polynomial into the dbfile. 
-//______________________________________________________________________________________________________________________________
-int create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
-{            
-    const char* const here = "create_dbfile_from_polymap"; 
-
-    fstream outfile(path_outfile, ios::out | ios::trunc); 
-
-    if (!outfile.is_open()) {
-        Error(here, "unable to open output file: '%s'", path_outfile.data()); 
-        return 1; 
-    }
-
-    printf("--writing output file '%s'...", path_outfile.data()); cout << flush; 
-    //now, we make the output file. 
-
-    //write the poly DoF
-    const int nDoF = polymap.begin()->second->Get_nDoF(); 
-    outfile << "poly-DoF " << nDoF << endl; 
-    //write the arm
-    outfile << "is-RHRS " << (is_RHRS ? "1" : "0") << endl; 
-    
-    //assumes dbfile was opened successfully! 
-    for (auto it = polymap.begin(); it != polymap.end(); it++) {
-    
-        //get the name of the polynomial
-        const char* poly_name   = it->first.data(); 
-        NPoly      *poly        = it->second; 
-
-        char buffer[25]; 
-        //now, we will print all the elements.
-        for (int i=0; i<poly->Get_nElems(); i++) {
-            outfile << poly_name; 
-            
-            const NPoly::NPolyElem* elem = poly->Get_elem(i);            
-            
-            for (int pow : elem->powers) {
-                sprintf(buffer, " %3i", pow);
-                outfile << buffer;  
-            }
-
-            //the '%+.9e' format produces scientific-notation floating-point output with 10 sig figures. 
-            sprintf(buffer, "   %+.9e", elem->coeff); 
-            outfile << buffer << endl; 
-        }
-    }
-
-    outfile.close();
-    cout << "done." << endl; 
-    return 0; 
-}
-//______________________________________________________________________________________________________________________________
-    
 
 //creates db '.dat' files for two sepearate polynomials:
 // the fp_q1 polynomials map from FOCAL PLANE coordinates to Q1 FRONT coordinates.
