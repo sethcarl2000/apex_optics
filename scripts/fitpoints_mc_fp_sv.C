@@ -106,68 +106,6 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     
     cout << "done." << endl;    
 
-#if 0 
-    //these 'result pointers' will let us see the result for each element of the least-squares fit matrix
-    ROOT::RDF::RResultPtr<double> A_elems[n_elems][n_elems]; 
-
-    for (int i=0; i<n_elems; i++) {
-        for (int j=0; j<n_elems; j++) {
-            A_elems[i][j] = df_output.Define("a_val", [i,j](const ROOT::RVec<double> &X){ return X[i]*X[j]; }, {"X_elems"}).Sum("a_val"); 
-        }
-    }
-
-    //these are the 'outputs'; what the polynomial maps onto. 
-    //the 'outside' vector will have .size()=num_of_output_branches (output_branches.size()), and the 'inside' vector  
-    // will have .size()=num_of_input_branches
-    const int n_out_branches = output_branches.size(); 
-    ROOT::RDF::RResultPtr<double> B_ptr[n_elems][n_out_branches];  
-    
-    int i_out=0; 
-    for (const string& str : output_branches) {
-
-        //'book' the calculations for each element
-        for (int i=0; i<n_elems; i++) {
-            //this RResultPtr<double> will be the sum of the branch 'str' (see the construction of the output_branches vector above)
-            //we call '.data()' method to get a 'char*' that the string is wrapping
-            B_ptr[i][i_out] = df_output
-                .Define("val", [i](const ROOT::RVec<double> &X, double y){ return X[i] * y; }, {"X_elems", str.data()})
-                .Sum("val"); 
-        }
-        i_out++; 
-    }
-
-    //this matrix will be used to find the best coefficients for each element 
-    RMatrix A(n_elems, n_elems); 
-
-    vector<double> b_vec[n_out_branches]; 
-
-    cout << "--filling matrix..." << flush; 
-    //now, fill the matrix, and the 'b' values
-    for (int i=0; i<n_elems; i++) {
-
-        for (int obr=0; obr<output_branches.size(); obr++) {
-            b_vec[obr].push_back( *(B_ptr[i][obr]) ); 
-        }
-
-        for (int j=0; j<n_elems; j++) {
-             A.get(i,j) = *(A_elems[i][j]);
-        }  
-    }
-    
-    cout << "done." << endl; 
-
-    //now, we can actually solve the linear equation for the tensor coefficients. 
-    //we put this in 'std::map' form, so that we can access any of the 'coefficient vectors' indexed by the name of the input branch. 
-    map<string, vector<double>> poly_coeffs; 
-
-    cout << "--Solving linear system(s)..." << flush; 
-    int obr=0; 
-    for (const string& out_branch : output_branches) {
-        poly_coeffs[out_branch] = A.Solve( b_vec[obr++] ); 
-    }
-    cout << "done." << endl; 
-#endif 
-
     //create the fp => sv output file ___________________________________________
     string path_outfile = string(stem_outfile); 
     char buffer[50]; 
