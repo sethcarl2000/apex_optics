@@ -6,7 +6,6 @@
 #include "TFile.h"
 #include "TVector3.h"
 #include "TParameter.h"
-#include "ApexOptics.h"
 
 
 using namespace std; 
@@ -222,8 +221,9 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     cout << "done." << endl; 
 #endif 
 
-    //create the q1 => sv output file ___________________________________________
-    path_outfile = string(stem_outfile); 
+    //create the fp => sv output file ___________________________________________
+    string path_outfile = string(stem_outfile); 
+    char buffer[50]; 
 
     //specify the arm to use 
     path_outfile += "_fp_sv"; 
@@ -236,13 +236,13 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
 
     path_outfile += ".dat";
 
-    create_dbfile_from_polymap(is_RHRS, path_outfile, polymap_q1sv); 
+    create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
 
-    
+
     
     //draw the reults of all models
     vector<ROOT::RDF::RNode> error_nodes{ df_output }; 
-    for (auto it = poly_models.begin(); it != poly_models.end(); it++) {
+    for (auto it = polymap.begin(); it != polymap.end(); it++) {
 
         //get the polynomial and its name
         const char* poly_name = it->first.data(); 
@@ -256,7 +256,7 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
 
             .Define(br_output_name, [poly](double target, double x, double y, double dxdz, double dydz)
             {
-                return (target - poly->Eval({x, y, dxdz - x/6., dydz}))*1e3; 
+                return (target - poly->Eval({x, y, dxdz, dydz}))*1e3; 
 
             }, {poly_name, "x_fp", "y_fp", "dxdz_fp", "dydz_fp"}); 
 
@@ -289,7 +289,7 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     delete poly; 
 
     //delete our poly models
-    for (auto it = poly_models.begin(); it != poly_models.end(); it++ ) delete it->second;
+    for (auto it = polymap.begin(); it != polymap.end(); it++ ) delete it->second;
 
     return 0;
 }
