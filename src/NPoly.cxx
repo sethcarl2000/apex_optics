@@ -228,7 +228,8 @@ vecd NPoly::Gradient(const vecd &X) const
 
     //use the power rule to take the derivative w/r/t each input variable
     for (int d=0; d<Get_nDoF(); d++) {
-      ret[d] +=  ((elem.powers[d] > 0) ? ((double)elem.powers[d])/X[d] : 0.) * elem_val; 
+      if (elem.powers[d] > 0) 
+        ret[d] += elem_val * ((double)elem.powers[d]) / X[d]; 
     }
   }//for (const auto &elem : fElems)
       
