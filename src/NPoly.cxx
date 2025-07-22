@@ -208,6 +208,12 @@ vecd NPoly::Gradient(const vecd &X) const
   //now, actually evaluate
   RVec<double> ret(Get_nDoF(), 0.); 
 
+  const int max_pow = Get_maxPower(); 
+  double X_pows[Get_nDoF()][max_pow]; 
+  for (int d=0; d<Get_nDoF(); d++) {
+    for (int p=0; p<max_pow; p++) X_pows[d][p] = pow(X[d], p); 
+  }
+
   //for each element, raise each val in X to the right power, the multiply
   // by the coressponding coeff.
   for (const auto &elem : fElems) {
@@ -215,7 +221,7 @@ vecd NPoly::Gradient(const vecd &X) const
     double elem_val=1.;
     
     for (int d=0; d<Get_nDoF(); d++) {
-      if (elem.powers[d]>0) elem_val *= pow( X[d], elem.powers[d] );
+      if (elem.powers[d]>0) elem_val *= X_pows[d][elem.powers[d]];
     }
     //multiply by the coefficient of this element
     elem_val *= elem.coeff; 
