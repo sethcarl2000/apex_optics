@@ -59,33 +59,55 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
     //get number of coefficients
     const int n_elems = poly->Get_nElems(); 
 
+    const double hrs_momentum = 1104.0; 
 
     //this will be used for the least-squares calculation to find the best coefficients
     RMatrix A_init(n_elems, n_elems, 0.); 
 
-
+    //Define all of the branches we want to create models to map between
     auto df_output = df
-
+/*
         .Define("X_elems", [poly](double x, double y, double dxdz, double dydz)
     {
         return poly->Eval_noCoeff({x, y, dxdz - x/6., dydz}); 
     }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
+*/
+        //this is the only difference between VDC TRANSPORT COORDINATES (tra) and FOCAL PLANE COORDINATES (fp)
+        .Redefine("dxdz_fp", [](double x_tra, double dxdz_tra){return dxdz_tra - x_tra/6.;}, {"x_fp", "dxdz_fp"})
 
         .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
         .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
         .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
-        .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"}); 
-         
+        .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"})
+        .Define("dpp_sv",    [hrs_momentum](TVector3 v){ return (v.z()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"});
     
     //now, put these outputs into a vector (so we know to make a seperate polynomial for each of them). 
-    vector<string> output_branches = {
+    vector<string> branches_sv = {
         "x_sv", 
         "y_sv",
         "dxdz_sv",
-        "dydz_sv"
+        "dydz_sv",
+        "dpp_sv"
     };  
 
+    vector<string> branches_fp = {
+        "x_fp", 
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp"
+    };
 
+    cout << "Creating polynomials for fp => sv..." << endl; 
+    
+    //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
+    // of the 'branches_fp' vec 
+    map<string,NPoly*> polymap_fpq1;     
+    for (const string& output : branches_sv ) 
+        polymap_fpq1[output] = ApexOptics::Create_NPoly_fit(df_output, poly_order, branches_fp, output.data());
+    
+    cout << "done." << endl;    
+
+#if 0 
     //these 'result pointers' will let us see the result for each element of the least-squares fit matrix
     ROOT::RDF::RResultPtr<double> A_elems[n_elems][n_elems]; 
 
@@ -145,6 +167,7 @@ int fitpoints_mc_fp_sv( bool is_RHRS=false,
         poly_coeffs[out_branch] = A.Solve( b_vec[obr++] ); 
     }
     cout << "done." << endl; 
+#endif 
 
     //construct the full path to the outfile from the stem provided
     string path_outfile(stem_outfile); 
