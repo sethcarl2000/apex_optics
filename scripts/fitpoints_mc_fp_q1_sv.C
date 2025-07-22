@@ -230,23 +230,13 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
 
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
 
+        .Redefine("dxdz_fp", [](double x_tra, double dxdz_tra){ return dxdz_tra - x_tra/6.;}, {"x_fp", "dxdz_fp"})
+
         .Define("x_q1",      [](TVector3 v){ return v.x(); },        {"position_Q1"})
         .Define("y_q1",      [](TVector3 v){ return v.y(); },        {"position_Q1"})
         .Define("dxdz_q1",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_Q1"})
         .Define("dydz_q1",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_Q1"})
         .Define("dpp_q1",    [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_Q1"})
-
-        .Define("X_elems_q1sv", [poly_q1sv, hrs_momentum](TVector3 pos, TVector3 mom)
-        {
-            return poly_q1sv->Eval_noCoeff({
-                pos.x(),                                //x_q1 
-                pos.y(),                                //y_q1
-                mom.x()/mom.z(),                        //dxdz_q1
-                mom.y()/mom.z(),                        //dydz_q1
-                (mom.Mag() - hrs_momentum)/hrs_momentum //dpp_q1
-            });
-
-        }, {"position_Q1", "momentum_Q1"})
 
         .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
         .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
@@ -277,33 +267,24 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
     }; 
 
 
-    //test the ApexOptics::Create_NPoly_fit() fcn
-    map<string, unique_ptr<NPoly>> polymap_test; 
-
-    auto poly_x_q1_test = ApexOptics::Create_NPoly_fit(df_output, poly_fpq1_order, branches_fp, "x_q1"); 
-
-
     //these 'result pointers' will let us see the result for each element of the least-squares fit matrix
     //first, find the best coffeficients for the polynomials.
+    
     cout << "Creating polynomials for fp => q1..." << endl; 
-    map<string, NPoly*> polymap_fpq1 = find_bestfit_poly_coeffs(df_output, poly_fpq1, "X_elems_fpq1", branches_q1); 
+    
+    map<string,NPoly*> polymap_fpq1;     
+    for (const string& output : branches_q1 ) 
+        polymap_fpq1[output] = ApexOptics::Create_NPoly_fit(df_output, poly_fpq1_order, branches_fp, output.data());
+    
     cout << "done." << endl;    
 
-    //test the differences between the new and old methods
-    for (int i=0; i<poly_x_q1_test->Get_nElems(); i++) {
-        auto elem_new = poly_x_q1_test->Get_elem(i); 
-        auto elem_old = polymap_fpq1["x_q1"]->Get_elem(i); 
-        printf("elem %2i : pows(", i); 
-        for (int j=0; j<poly_x_q1_test->Get_nDoF(); j++) {
-            printf("%i ", elem_new->powers.at(j)); 
-        }
-        printf(") coeff: new/old/diff: %+.8e/%+.8e/%+.8e\n", elem_new->coeff,elem_old->coeff,elem_new->coeff - elem_old->coeff); 
-    }
-    cout << endl; 
-    return 0; 
-
+    
     cout << "Creating polynomials for q1 => sv..." << endl; 
-    map<string, NPoly*> polymap_q1sv = find_bestfit_poly_coeffs(df_output, poly_q1sv, "X_elems_q1sv", branches_sv); 
+
+    map<string,NPoly*> polymap_q1sv;     
+    for (const string& output : branches_sv ) 
+        polymap_q1sv[output] = ApexOptics::Create_NPoly_fit(df_output, poly_q1sv_order, branches_q1, output.data());
+    
     cout << "done." << endl;  
 
 
