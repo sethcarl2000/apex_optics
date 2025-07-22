@@ -6,6 +6,7 @@
 #include "TFile.h"
 #include "TVector3.h"
 #include "TParameter.h"
+#include "ApexOptics.h"
 
 
 using namespace std; 
@@ -280,6 +281,12 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
         "dxdz_sv",
         "dydz_sv" 
     }; 
+
+
+    //test the ApexOptics::Create_NPoly_fit() fcn
+    map<string, unique_ptr<NPoly>> polymap_test; 
+
+    auto poly_x_q1_test = ApexOptics::Create_NPoly_fit(df_output, poly_fpq1_order, branches_fp, "x_q1"); 
 
 
     //these 'result pointers' will let us see the result for each element of the least-squares fit matrix
