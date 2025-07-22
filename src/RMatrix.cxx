@@ -1,12 +1,12 @@
 //*-- Author :    Seth Hall;  22 Jul 2024
 
 //////////////////////////////////////////////////////////////////////////
-//                                                                      //
+//                                                                      
 // RMatrix
 //
 // This is a very bare-bones Lin. algebra class, meant to deal primarily
 // with square-matricies. Specifically, it's designed to work with
-// the ROOT::vecd framework. 
+// the ROOT::RVec framework. 
 //
 //////////////////////////////////////////////////////////////////////////
 
@@ -66,18 +66,6 @@ RMatrix::~RMatrix()
 {
   fElems.clear(); 
 }
-//_______________________________________________________________________________
-/*RMatrix::RMatrix(const RMatrix &mat)
-  : TObject(),
-    fnCols(mat.GetNCols()),
-    fnRows(mat.GetNRows()),
-    f_isSquare(fnCols==fnRows),
-    f_reportSingular(true),
-    fElems(mat.Data())
-{
-  //copy-constructor
-  } */
-//_______________________________________________________________________________
 double& RMatrix::at(unsigned int i, unsigned int j)
 {
   if (i>=GetNRows() || j>=GetNCols()) {

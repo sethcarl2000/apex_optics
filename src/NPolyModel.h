@@ -13,6 +13,7 @@
 #include "TROOT.h"
 #include "TObject.h"
 #include "NPoly.h"
+#include "RMatrix.h"
 #include <ROOT/RVec.hxx> 
 #include <vector>
 
@@ -27,9 +28,11 @@ public:
     inline int Get_DoF_in()  const { return fDoF_in;  }
     inline int Get_DoF_out() const { return fDoF_out; }
 
-    /*ROOT::RVec<double> Eval(const ROOT::RVec<double> &X) const; 
+    ROOT::RVec<double> Eval(const ROOT::RVec<double> &X) const; 
 
-    NPoly* Get_poly(int i); */
+    RMatrix Jacobian(const ROOT::RVec<double> &X) const; 
+
+    NPoly* Get_poly(int i); 
 
 private: 
 
