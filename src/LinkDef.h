@@ -6,5 +6,6 @@
 
 #pragma link C++ class NPoly+; 
 #pragma link C++ struct NPoly::NPolyElem+; 
+#pragma link C++ class RMatrix+; 
 
 #endif 
