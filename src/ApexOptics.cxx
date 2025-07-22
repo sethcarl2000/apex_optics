@@ -154,7 +154,7 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     return poly; 
 }
 //__________________________________________________________________________________________________________________
-int Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
+int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
 {            
     const char* const here = "ApexOptics::Create_dbfile_from_polymap"; 
 

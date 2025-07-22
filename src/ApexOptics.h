@@ -30,7 +30,7 @@ namespace ApexOptics {
     //Given an std::map<string,NPoly*>, where the 'string' key is the name of the polynomial to be written to the 
     //file, this fcn will create (and truncate!) a '.dat' file which contains all information needed to 
     //reconstruct an NPoly's elements. 
-    int Create_dbfile_from_polymap(bool is_RHRS, std::string path_outfile, std::map<std::string, NPoly*> polymap)
+    int Create_dbfile_from_polymap(bool is_RHRS, std::string path_outfile, std::map<std::string, NPoly*> polymap); 
 };
 
 #endif
