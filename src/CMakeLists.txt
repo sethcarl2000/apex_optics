@@ -21,11 +21,16 @@ set(CMAKE_PLATFORM_INDEPENDENT_CODE ON)
 find_package(ROOT 6.20 REQUIRED COMPONENTS Core RIO Physics)
 
 #---------------------------------------------------------
+#   Define sources and headers
+set(sources NPoly.cxx ApexOptics.cxx)
+set(headers NPoly.h ApexOptics.h)
+
+#---------------------------------------------------------
 #   Generate the ROOT dictionary
-root_generate_dictionary(G__ApexOptics NPoly.h LINKDEF LinkDef.h)
+root_generate_dictionary(G__ApexOptics ${headers} LINKDEF LinkDef.h)
 
 #---------------------------------------------------------
 #   Add Libraries
-add_library(ApexOptics SHARED NPoly.h NPoly.cxx G__ApexOptics.cxx)
+add_library(ApexOptics SHARED ${headers} ${sources} G__ApexOptics.cxx)
 target_include_directories(ApexOptics PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(ApexOptics PUBLIC ROOT::Core)

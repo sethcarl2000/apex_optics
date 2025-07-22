@@ -92,7 +92,6 @@ unique_ptr<NPoly> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
             return poly_template->Eval_noCoeff(inputs); 
         }, {"inputs"}); 
 
-
     
     ROOT::RDF::RResultPtr<double> A_ptr[n_elems][n_elems]; 
 
