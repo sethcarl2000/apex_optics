@@ -153,7 +153,6 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     delete poly_template; 
     return poly; 
 }
-
 //__________________________________________________________________________________________________________________
 int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
 {            
@@ -206,7 +205,7 @@ int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, ma
 }
 //__________________________________________________________________________________________________________________
 //this will be a temporary funct., that I may absorb into NPoly.cxx. 
-int Parse_NPoly_from_file(const char* path_dbfile, const char* poly_name, NPoly *poly) 
+int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_name, NPoly *poly) 
 {
     //uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuer89999999999999999999999999999999999uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
     // -bear 

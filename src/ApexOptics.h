@@ -31,6 +31,11 @@ namespace ApexOptics {
     //file, this fcn will create (and truncate!) a '.dat' file which contains all information needed to 
     //reconstruct an NPoly's elements. 
     int Create_dbfile_from_polymap(bool is_RHRS, std::string path_outfile, std::map<std::string, NPoly*> polymap); 
+
+    //Given a path to a db-file to use, the polynomial name, and a ptr to a polynomial to use, this will fill 
+    // all NPoly elements found in the dbfile into the polynomial. returns the number of elements found. 
+    // return code < 0 means that something has failed in the opening of the dbfile. 
+    int Parse_NPoly_from_file(const char* path_dbfile, const char* poly_name, NPoly *poly);
 };
 
 #endif
