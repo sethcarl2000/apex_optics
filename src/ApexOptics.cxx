@@ -229,7 +229,7 @@ int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_
     ifstream dbfile(path_dbfile); 
     
     if (!dbfile.is_open()) {
-        fprintf(stderr, "Error in <%s>: Unable to open db file '%s'", here, path_dbfile); 
+        fprintf(stderr, "Error in <%s>: Unable to open db file '%s'\n", here, path_dbfile); 
         return -1; 
     }
 
