@@ -12,6 +12,8 @@
 
 #include <stdio.h>
 #include <iostream>
+#include <limits> 
+#include <cmath>
 #include "RMatrix.h"
 
 using namespace std;
@@ -170,7 +172,7 @@ double RMatrix::Determinant() const
   //check if we're trying to call this when this matrix is not square
   if (!f_isSquare) {
     fprintf(stderr, "Error in <RMatrix::Determinant>: Matrix isn't square"); 
-    return 0.;
+    return numeric_limits<double>::quiet_NaN();
   }
 
   const unsigned int N = GetNRows(); 
