@@ -3,7 +3,7 @@
 using namespace std; 
 using namespace ROOT::VecOps; 
 
-Track_t {
+struct Track_t {
     double x,y,dxdz,dydz,dpp; 
 };
 
@@ -58,6 +58,7 @@ int newton_iteration_test(  bool is_RHRS=false,
 
     const int DoF_sv = 5; 
 
+    //parse all sv=>fp polynomials from file
     vector<NPoly> poly_vec; 
 
     for (const string& str : branches_fp) {
@@ -73,6 +74,12 @@ int newton_iteration_test(  bool is_RHRS=false,
     NPolyModel *pmod = new NPolyModel(poly_vec); 
 
 
+    auto Iterate_to_Xfp = [pmod](const Track_t& Xfp, const Track_t& Xsv) 
+    {
+        return Track_t{}; //noop
+    };
+
+
     //Define all of the branches we want to create models to map between
     auto df_output = df
 
@@ -84,6 +91,17 @@ int newton_iteration_test(  bool is_RHRS=false,
         .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
         .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"})
         .Define("dpp_sv",    [hrs_momentum](TVector3 v){ return (v.z()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"})
+
+        //define the Track_t structs that we will need to use for the newton iteration
+        .Define("Xfp", [](double x, double y, double dxdz, double dydz)
+        {
+            return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=0. };  
+        }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
+
+        .Define("Xsv", [](double x, double y, double dxdz, double dydz, double dpp)
+        {
+            return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=dpp };  
+        }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
 
         .Define("X_fp_model",  [pmod](double x, double y, double dxdz, double dydz, double dpp)
         {
@@ -115,9 +133,7 @@ int newton_iteration_test(  bool is_RHRS=false,
     h_dydz->DrawCopy(); 
 
 
-    //delete our poly models
-    delete pmod;
-    
+    delete pmod;    
 
     return 0;
 }
