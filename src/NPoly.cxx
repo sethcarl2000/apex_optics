@@ -206,7 +206,7 @@ vecd NPoly::Gradient(const vecd &X) const
   //same as above, but use the coefficients 'hard-coded' to each element
   
   if ((int)X.size() != Get_nDoF()) { 
-    Error("Eval(vecd)", "Size of input vector (%i) does not match poly nDoF (%i)",
+    Error("Gradient()", "Size of input vector (%i) does not match poly nDoF (%i)",
 	  (int)X.size(), (int)Get_nDoF());
     return {};
   }
@@ -242,7 +242,59 @@ vecd NPoly::Gradient(const vecd &X) const
   return ret;
 }
 //_____________________________________________________________________________
-//_____________________________________________________________________________
+RMatrix NPoly::Hessian(const vecd &X) const 
+{
+  //same as above, but use the coefficients 'hard-coded' to each element
+  
+  if ((int)X.size() != Get_nDoF()) { 
+    Error("Hessian()", "Size of input vector (%i) does not match poly nDoF (%i)",
+	  (int)X.size(), (int)Get_nDoF());
+    return {};
+  }
+  
+  //now, actually evaluate
+  RMatrix ret(Get_nDoF(), Get_nDoF(), 0.); 
+
+  const int max_pow = Get_maxPower(); 
+  double X_pows[Get_nDoF()][max_pow + 1]; 
+  for (int d=0; d<Get_nDoF(); d++) {
+    for (int p=0; p<=max_pow; p++) X_pows[d][p] = pow(X[d], p); 
+  }
+
+  //for each element, raise each val in X to the right power, the multiply
+  // by the coressponding coeff.
+  for (const auto &elem : fElems) {
+    
+    double elem_val=1.;
+    
+    for (int d=0; d<Get_nDoF(); d++) {
+      if (elem.powers[d]>0) elem_val *= X_pows[d][elem.powers[d]];
+    }
+    //multiply by the coefficient of this element
+    elem_val *= elem.coeff; 
+
+    //use the power rule to take the derivative w/r/t each input variable
+    for (int di=0; di<Get_nDoF(); di++) {
+      for (int dj=di; dj<Get_nDoF(); dj++) {
+        
+        double val(elem_val / (X[di] * X[dj])); 
+
+        if (di==dj) { val *= (double)(elem.powers[di] * (elem.powers[di]-1)); }
+        else        { val *= (double)(elem.powers[di] * elem.powers[dj]);     }
+        
+        ret.get(di,dj) += val; 
+      }
+    }
+  }//for (const auto &elem : fElems)
+
+  //because the hessian is symmetric, we only computed the elements once. now we must fill in their 'mirror' elements
+  for (int di=1; di<Get_nDoF(); di++) 
+    for (int dj=0; dj<di; dj++) 
+      ret.get(di,dj) = ret.get(dj,di); 
+
+      
+  return ret;
+}//_____________________________________________________________________________
 RVec<int> NPoly::Get_elemPowers(unsigned int i) const
 {
   if (i >= Get_nElems()) {

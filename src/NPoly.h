@@ -15,6 +15,7 @@
 #include "TROOT.h"
 #include "TObject.h"
 #include <ROOT/RVec.hxx> 
+#include "RMatrix.h"
 
 
 class NPoly : public TObject {
@@ -41,6 +42,9 @@ class NPoly : public TObject {
   
   //compute the gradient w/r/t each of the input coordinates
   ROOT::RVec<double> Gradient(const ROOT::RVec<double> &X) const; 
+
+  //compute the hessian matrix (H_ij = [d^2 / dx_i dx_j]Poly) w/r/t the input coordinates
+  RMatrix Hessian(const ROOT::RVec<double> &X) const;
 
   //handle elements + get information
   void Add_element(const ROOT::RVec<int> &pows, double coefficient=1.);
