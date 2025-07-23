@@ -34,6 +34,8 @@ public:
   //copy constructor
   //RMatrixD(const RMatrixD &mat); 
   
+  static RMatrix OuterProduct(const ROOT::RVec<double> &u, const ROOT::RVec<double> &v); 
+
   ~RMatrix();  
 
   ROOT::RVec<double> Solve(const ROOT::RVec<double> &B) const;
@@ -60,7 +62,7 @@ public:
   void Print(); 
   
   //toggle whether or not this matrix will spit out an error if its singular 
-  inline bool &ReportSingular() {return f_reportSingular;}
+  inline bool &ReportSingular() { return f_reportSingular; }
 
   //return a copy to the data
   ROOT::RVec<double> *Data() { return &fElems; }; 

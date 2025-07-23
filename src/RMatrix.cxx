@@ -62,6 +62,17 @@ RMatrix::RMatrix(const unsigned int nr,const unsigned int nc, const vecd *array)
   }
 }
 //_______________________________________________________________________________
+RMatrix RMatrix::OuterProduct(const vecd& u, const vecd& v)
+{
+  //construct a matrix via an outer product of two vectors
+  RMatrix ret(u.size(), v.size());
+
+  for (int i=0; i<u.size(); i++) 
+    for(int j=0; j<v.size(); j++) ret.get(i,j) = u[i] * v[j]; 
+
+  return ret; 
+}
+//_______________________________________________________________________________
 RMatrix::~RMatrix() 
 {
   fElems.clear(); 
