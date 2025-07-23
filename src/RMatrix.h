@@ -6,7 +6,7 @@
 // RMatrix
 //
 // A jankly little lin-algebra class which is able to work (implicitly)
-// with the std::vector<double> class, 'cause they're a lot more convenient
+// with the ROOT::RVec<double> class, 'cause they're a lot more convenient
 // to work with than TVectorD's are. 
 //
 //////////////////////////////////////////////////////////////////////////
@@ -15,6 +15,7 @@
 #include <cmath>
 #include <memory> 
 #include <vector>
+#include <ROOT/RVec.hxx>
 
 #include "TROOT.h"
 #include "TObject.h"
@@ -26,20 +27,20 @@ public:
   
   RMatrix(unsigned int nr=1, unsigned int nc=1, double init=0.); 
 
-  RMatrix(unsigned int nr, unsigned int nc, const std::vector<double> &array);
+  RMatrix(unsigned int nr, unsigned int nc, const ROOT::RVec<double> &array);
   
-  RMatrix(unsigned int nr, unsigned int nc, const std::vector<double> *array);
+  RMatrix(unsigned int nr, unsigned int nc, const ROOT::RVec<double> *array);
   
   //copy constructor
   //RMatrixD(const RMatrixD &mat); 
   
   ~RMatrix();  
 
-  std::vector<double> Solve(const std::vector<double> &B) const;
+  ROOT::RVec<double> Solve(const ROOT::RVec<double> &B) const;
 
   
-  //multiplication by std::vector<double>
-  std::vector<double> operator*(const std::vector<double> &rhs) const; 
+  //multiplication by ROOT::RVec<double>
+  ROOT::RVec<double> operator*(const ROOT::RVec<double> &rhs) const; 
 
   //adding two matrices
   RMatrix             operator+(const RMatrix &rhs) const; 
@@ -62,7 +63,7 @@ public:
   inline bool &ReportSingular() {return f_reportSingular;}
 
   //return a copy to the data
-  std::vector<double> *Data() { return &fElems; }; 
+  ROOT::RVec<double> *Data() { return &fElems; }; 
   
 private:
 
@@ -74,7 +75,7 @@ private:
   bool f_reportSingular; 
   
   int f_n_elems; 
-  std::vector<double> fElems; 
+  ROOT::RVec<double> fElems; 
 
   ClassDef(RMatrix,1)
 }; 
