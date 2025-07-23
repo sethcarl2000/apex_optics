@@ -99,6 +99,15 @@ double RMatrix::at(unsigned int i, unsigned int j) const
   return fElems[GetNCols()*i + j]; 
 }
 //_______________________________________________________________________________
+RMatrix RMatrix::operator*(double mult) const 
+{
+  RMatrix ret = *this; 
+
+  *(ret.Data()) *= mult; 
+
+  return ret; 
+}
+//_______________________________________________________________________________
 vecd RMatrix::operator*(const vecd &rhs) const
 {
   //check vector size

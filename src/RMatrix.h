@@ -44,6 +44,9 @@ public:
   //multiplication by ROOT::RVec<double>
   ROOT::RVec<double> operator*(const ROOT::RVec<double> &rhs) const; 
 
+  //multiplication by scalar 
+  RMatrix            operator*(double mult) const; 
+
   //addition operator (addition of two RMatirx objects, to be stored in a third)
   RMatrix            operator+(const RMatrix &rhs) const; 
 
