@@ -40,6 +40,8 @@ public:
 
   ROOT::RVec<double> Solve(const ROOT::RVec<double> &B) const;
 
+  double Determinant() const; 
+
   //operators: 
   //multiplication by ROOT::RVec<double>
   ROOT::RVec<double> operator*(const ROOT::RVec<double> &rhs) const; 

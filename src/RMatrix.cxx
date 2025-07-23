@@ -165,6 +165,41 @@ void RMatrix::operator+=(RMatrix& rhs)
   return; 
 }
 //_______________________________________________________________________________
+double RMatrix::Determinant() const
+{
+  //check if we're trying to call this when this matrix is not square
+  if (!f_isSquare) {
+    fprintf(stderr, "Error in <RMatrix::Determinant>: Matrix isn't square"); 
+    return 0.;
+  }
+
+  const unsigned int N = GetNRows(); 
+  
+  //takes the NxN matrix A, and the N-vector B, and solves it. 
+  //performs numerical LU factorization 
+  
+  //ASSUMES MATRIX IS NONSINGULAR!!!!
+
+  //the U-matrix starts as a copy of the 'A' input-matrix
+  RMatrix U = *this;  
+  
+  //Create the U (upper triangular) and L (lower triangular) matrices
+  for (unsigned int ii=0; ii<N; ii++) { 
+    //loop over a (successivley smaller) sub-matrix
+    double a_00 = U.at(ii,ii); 
+    for (unsigned int i=ii+1; i<N; i++) { 
+      double a_i0 = U.at(i,ii); 
+      for (unsigned int j=ii; j<N; j++) { 
+        U.at(i,j) += ( -a_i0/a_00 ) * U.at(ii,j); 
+      }
+    }
+  }
+  double det = 1.; 
+  for (unsigned int ii=0; ii<N; ii++) det *= U.at(ii,ii); 
+
+  return det; 
+}
+//_______________________________________________________________________________
 vecd RMatrix::Solve(const vecd &B) const
 {
   //check if we're trying to call this when this matrix is not square
