@@ -40,12 +40,16 @@ public:
 
   ROOT::RVec<double> Solve(const ROOT::RVec<double> &B) const;
 
-  
+  //operators: 
   //multiplication by ROOT::RVec<double>
   ROOT::RVec<double> operator*(const ROOT::RVec<double> &rhs) const; 
 
-  //adding two matrices
-  RMatrix             operator+(const RMatrix &rhs) const; 
+  //addition operator (addition of two RMatirx objects, to be stored in a third)
+  RMatrix            operator+(const RMatrix &rhs) const; 
+
+  //add a matrix to this one. this is optimized for speed. 
+  void               operator+=(RMatrix &rhs);       
+
   
   inline unsigned int GetNCols() const { return fnCols; }
   inline unsigned int GetNRows() const { return fnRows; }

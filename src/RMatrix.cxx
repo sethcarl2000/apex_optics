@@ -139,6 +139,23 @@ RMatrix RMatrix::operator+(const RMatrix &rhs) const
   return sum; 
 } 
 //_______________________________________________________________________________
+void RMatrix::operator+=(RMatrix& rhs)
+{
+  //check matrix sizes
+  if (rhs.GetNCols() != GetNCols() ||
+      rhs.GetNRows() != GetNRows()) {
+    fprintf(stderr, "Error in <RMatrix::operator+=>: "
+      "Tried to add matrix of size %i X %i by a matrix of size %i X %i.\n",
+      (int)GetNRows(),    (int)GetNCols(),
+      (int)rhs.GetNRows(),(int)rhs.GetNCols());
+    return;
+  }
+
+  fElems += *(rhs.Data()); 
+
+  return; 
+}
+//_______________________________________________________________________________
 vecd RMatrix::Solve(const vecd &B) const
 {
   //check if we're trying to call this when this matrix is not square
