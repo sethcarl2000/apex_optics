@@ -45,12 +45,18 @@ vecd NPoly::Eval_noCoeff(const vecd &X) const
 
   vecd vals; vals.reserve(Get_nElems());
   
+  const int max_pow = Get_maxPower(); 
+  double X_pows[Get_nDoF()][max_pow + 1]; 
+  for (int d=0; d<Get_nDoF(); d++) {
+    for (int p=0; p<=max_pow; p++) X_pows[d][p] = pow(X[d], p); 
+  }
+
   for (const NPolyElem &elem : fElems) {
 
     double elem_val=1.;
 
     for (int d=0; d<Get_nDoF(); d++) {
-      if (elem.powers[d] > 0) elem_val *= pow( X[d], elem.powers[d] );
+      if (elem.powers[d] > 0) elem_val *= X_pows[d][elem.powers[d]];
     }
     //check to see if this is the one element for which all pows. are zero
     vals.push_back( elem_val );
