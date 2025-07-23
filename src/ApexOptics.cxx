@@ -115,7 +115,7 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     
     //this matrix will be used to find the best coefficients for each element 
     RMatrix A(n_elems, n_elems); 
-    vector<double> B; 
+    ROOT::RVec<double> B; 
 
     //now, fill the matrix, and the 'b' values. 
     // When we request access to the RResultPtr objects created above (which is what the B_ptr and A_ptr arrays are), 
