@@ -90,7 +90,7 @@ int test_sieve_hole_construction(bool is_RHRS=true)
 
             //check to see if this is one of the holes where the exit-hole is wider than the entrance-hole. 
             //this is true of the top-3 and bottom-3 rows, but on those rows, it is NOT so for the lateral-most 3 holes. 
-            if (row <= 3 || row >= 14) {
+            if (row <= 2 || row >= 14) {
                 if (col <= 12) {
                     new_hole.radius_back = holeR_widened; 
                 }
@@ -116,7 +116,7 @@ int test_sieve_hole_construction(bool is_RHRS=true)
         circ_f->Draw(); 
 
         auto circ_b = new TEllipse( hole.x, hole.y, hole.radius_back, hole.radius_back ); 
-        circ_b->Draw(); 
+        circ_b->Draw();  
 
     }
 
