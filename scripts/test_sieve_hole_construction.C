@@ -9,6 +9,32 @@
 
 using namespace std; 
 
+namespace ApexTargetGeometry {
+  
+  inline double Get_sieve_angle(bool _is_RHRS) {
+    return ( _is_RHRS ? -5.372 : 5.366 ) * TMath::Pi() / 180.;
+  }
+  
+  inline double Get_HRS_angle(bool _is_RHRS) {
+    return ( _is_RHRS ? -12.50 : 12.50 ) * TMath::Pi() / 180.;
+  }
+
+  //units in mm. 
+  inline TVector3 Get_APEX_Target_center() {
+    return TVector3( 0., 0., -1053.7952 );
+  }
+    
+  //units in mm. These are in Target coordinates (TCS), obtained by rotating hall
+  // coordinates first by '-sieve_angle' about the y-axis, then by pi/2 about the
+  // z-axis. 
+  inline TVector3 Get_sieve_pos(bool _is_RHRS) {
+    return TVector3(  _is_RHRS ?  -1.101 :  -1.301,
+                      _is_RHRS ?  -3.885 :   6.672,
+                      _is_RHRS ? 794.609 : 795.766 ); 
+  } 
+  
+}; 
+
 
 struct SieveHole {
     
@@ -24,22 +50,30 @@ struct SieveHole {
 
 }; 
 
-int test_sieve_hole_construction(bool is_RHRS=true, int vwire_num=2)
-{
+struct Track_t {
+    double x,y,dxdz,dydz; 
+};
+
+int test_sieve_hole_construction(const bool is_RHRS=true, const int vwire_num=2, const int n_events=1e5)
+{   
+    const char* const here = "test_sieve_hole_construction"; 
+
     //create a random number generator
     std::random_device rd;
     auto twister   = mt19937(rd());  
-    auto rand_dist = std::uniform_real_distribution<double>(0., 1.); 
-    auto Get_rnd = [&rand_dist,&twister](){ return rand_dist(twister); }; 
+    
+    auto real_dist = std::uniform_real_distribution<double>(0., 1.); 
+    auto Get_rnd = [&real_dist,&twister](){ return real_dist(twister); }; 
+
 
     //create RHRS sieve-holes
     vector<SieveHole> sieve_holes; 
 
-    const double dx = 5.842e-3; //all units in meters
+    const double dx = 5.842; //all units in mm
 
     //the sign is different here, because the L & R-sieves are mirror-images of
     // of one another
-    const double dy = is_RHRS ? 4.826e-3 : -4.826e-3;  //
+    const double dy = is_RHRS ? 4.826 : -4.826;  //
     
     //the first row is 8 rows above (-x) the center hole
     const double x0 = -dx * 8.; 
@@ -47,10 +81,10 @@ int test_sieve_hole_construction(bool is_RHRS=true, int vwire_num=2)
     const double y0 =  dy * 7.; 
 
     //two possible hole radii
-    const double holeR_small = 0.6985e-3; 
-    const double holeR_big   = 1.3462e-3; 
+    const double holeR_small = 0.6985; 
+    const double holeR_big   = 1.3462; 
 
-    const double holeR_widened = 0.9525e-3; //radius of the holes whose exits are widened. 
+    const double holeR_widened = 0.9525; //radius of the holes whose exits are widened. 
 
     const int nRows=17; 
     for (int row=0; row<nRows; row++) { 
@@ -108,9 +142,9 @@ int test_sieve_hole_construction(bool is_RHRS=true, int vwire_num=2)
 
     //test the generation of particles at random positions
     vector<TVector3> vwire_positions{
-        TVector3( -3.225e-3,    0.,     -196.214e-3 ),
-        TVector3( -0.725e-3,    0.,     3.786e-3    ),
-        TVector3( 1.725e-3,     0.      203.786e-3  )
+        TVector3( -3.225,    0.,    -196.214  ),
+        TVector3( -0.725,    0.,       3.786  ),
+        TVector3(  1.725,    0.,     203.786  )
     }; 
 
     if (vwire_num < 1 &&  vwire_num > 3) {
@@ -119,7 +153,38 @@ int test_sieve_hole_construction(bool is_RHRS=true, int vwire_num=2)
     }
     
     TVector3 vwire_pos = vwire_positions.at(vwire_num-1); 
+    
+    //change the wire pos to sieve coordinates
+    vwire_pos.RotateY( ApexTargetGeometry::Get_sieve_angle(is_RHRS) ); 
+    vwire_pos.RotateZ( TMath::Pi()/2. ); 
+    
+    //create a function which will return a random sieve-hole
+    const vector<SieveHole> *holes = &sieve_holes; 
 
+    auto int_dist = uniform_int_distribution<int>(0., sieve_holes.size()-1); 
+    auto Random_hole = [int_dist, twister, holes]() 
+    {
+        return holes->at( int_dist(twister) ); 
+    }; 
+
+
+
+
+    printf("Generating %i tracks...", n_events); cout << flush;  
+
+    ROOT::RDataFrame df(n_events);
+
+    auto df_output = df 
+
+        .Define("x_fp",     [Random_hole]()
+        {
+            //keep looping until we find a 'good' target trajectory
+            
+            const SieveHole = Random_hole(); 
+
+
+
+        })
 
     //uncomment this to draw all sieve holes. 
     /*new TCanvas; 
