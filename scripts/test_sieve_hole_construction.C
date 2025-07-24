@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <vector>
 #include <algorithm> 
+#include <random>
 #include "TROOT.h"
 
 using namespace std; 
@@ -23,8 +24,13 @@ struct SieveHole {
 
 }; 
 
-int test_sieve_hole_construction(bool is_RHRS=true)
+int test_sieve_hole_construction(bool is_RHRS=true, int vwire_num=2)
 {
+    //create a random number generator
+    std::random_device rd;
+    auto twister   = mt19937(rd());  
+    auto rand_dist = std::uniform_real_distribution<double>(0., 1.); 
+    auto Get_rnd = [&rand_dist,&twister](){ return rand_dist(twister); }; 
 
     //create RHRS sieve-holes
     vector<SieveHole> sieve_holes; 
@@ -76,8 +82,6 @@ int test_sieve_hole_construction(bool is_RHRS=true)
                 if ( (row!=1 && row!=15) && col>5 ) y += -dy; 
             }
             
-            
-
             //we're ready to define our new hole. 
             SieveHole new_hole{
                 .row    = row,
@@ -102,7 +106,23 @@ int test_sieve_hole_construction(bool is_RHRS=true)
     }//for (int row=0; row<nRows; row++) 
     //_______________________________________________________________________________________________________________
 
-    new TCanvas; 
+    //test the generation of particles at random positions
+    vector<TVector3> vwire_positions{
+        TVector3( -3.225e-3,    0.,     -196.214e-3 ),
+        TVector3( -0.725e-3,    0.,     3.786e-3    ),
+        TVector3( 1.725e-3,     0.      203.786e-3  )
+    }; 
+
+    if (vwire_num < 1 &&  vwire_num > 3) {
+        Error(here, "Invalid V-wire number: %i, can only be 1->3", vwire_num); 
+        return -1; 
+    }
+    
+    TVector3 vwire_pos = vwire_positions.at(vwire_num-1); 
+
+
+    //uncomment this to draw all sieve holes. 
+    /*new TCanvas; 
     gStyle->SetOptStat(0); 
 
     string h_title = (is_RHRS ? "Sieve Hole drawing - RHRS;x_sv;y_sv" : "Sieve Hole drawing - LHRS;x_sv;y_sv"); 
@@ -117,8 +137,7 @@ int test_sieve_hole_construction(bool is_RHRS=true)
 
         auto circ_b = new TEllipse( hole.x, hole.y, hole.radius_back, hole.radius_back ); 
         circ_b->Draw();  
-
-    }
+    }*/ 
 
     return 0; 
 }
