@@ -217,9 +217,6 @@ int test_sieve_hole_construction(const bool is_RHRS=true, const int vwire_num=2,
 
         return holes->at( (int)index ); 
     }; 
-    
-
-
 
 
     ROOT::EnableImplicitMT(); 
