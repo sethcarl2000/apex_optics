@@ -44,6 +44,8 @@ int test_sieve_hole_construction(bool is_RHRS=true)
     const double holeR_small = 0.6985e-3; 
     const double holeR_big   = 1.3462e-3; 
 
+    const double holeR_widened = 0.9525e-3; //radius of the holes whose exits are widened. 
+
     const int nRows=17; 
     for (int row=0; row<nRows; row++) { 
         //17 rows in total, numbered 0-16.
@@ -55,7 +57,7 @@ int test_sieve_hole_construction(bool is_RHRS=true)
         int nCols;
         if (evenRow) { nCols = 15; }
         else  {
-            if (row==1 || row==15) {nCols = 12;}
+            if (row==1 || row==15) {nCols = 12;} //each odd row has a 'gap' missing, except these two
             else                   {nCols = 11;}
         } 
         
@@ -74,6 +76,8 @@ int test_sieve_hole_construction(bool is_RHRS=true)
                 if ( (row!=1 && row!=15) && col>5 ) y += -dy; 
             }
             
+            
+
             //we're ready to define our new hole. 
             SieveHole new_hole{
                 .row    = row,
@@ -83,6 +87,14 @@ int test_sieve_hole_construction(bool is_RHRS=true)
                 .radius_front   = (bigHole ? holeR_big : holeR_small), 
                 .radius_back    = (bigHole ? holeR_big : holeR_small)
             }; 
+
+            //check to see if this is one of the holes where the exit-hole is wider than the entrance-hole. 
+            //this is true of the top-3 and bottom-3 rows, but on those rows, it is NOT so for the lateral-most 3 holes. 
+            if (row <= 3 || row >= 14) {
+                if (col <= 12) {
+                    new_hole.radius_back = holeR_widened; 
+                }
+            }
 
             sieve_holes.push_back(new_hole); 
 
@@ -100,8 +112,12 @@ int test_sieve_hole_construction(bool is_RHRS=true)
 
     for (const SieveHole& hole : sieve_holes) {
 
-        auto circ = new TEllipse( hole.x, hole.y, hole.radius_front, hole.radius_front ); 
-        circ->Draw(); 
+        auto circ_f = new TEllipse( hole.x, hole.y, hole.radius_front, hole.radius_front ); 
+        circ_f->Draw(); 
+
+        auto circ_b = new TEllipse( hole.x, hole.y, hole.radius_back, hole.radius_back ); 
+        circ_b->Draw(); 
+
     }
 
     return 0; 
