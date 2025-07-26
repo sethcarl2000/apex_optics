@@ -102,6 +102,9 @@ int newton_iteration_test(  const char* path_infile="",
         double ret(0.); for (const double& x : u * u) ret += x; return sqrt(ret); 
     };
 
+    //number of microns to compute vdc-smearing by
+    double vdc_smearing_um = 0.; 
+
     //what we're effectivley doing here is using newton's method for iterating towrads the root of a nonlinear system.
     // the system we're trying to solve is the following least-square problem: 
     //  - the 'chi-square' in this case is the square error between the model's value for Xfp, and the actual value.
@@ -224,6 +227,12 @@ int newton_iteration_test(  const char* path_infile="",
 //            return Track_t{ .x=ret[0], .y=ret[1], .dxdz=ret[2], .dydz=ret[3], .dpp=ret[4]};         
         }, {"Xfp", "Xsv"})
 
+        .Define("reco_x_sv",        [](const RVec<double>& X){ return X[0]; },    {"Xsv_model"})
+        .Define("reco_y_sv",        [](const RVec<double>& X){ return X[1]; },    {"Xsv_model"})
+        .Define("reco_dxdz_sv",     [](const RVec<double>& X){ return X[2]; },    {"Xsv_model"})
+        .Define("reco_dydz_sv",     [](const RVec<double>& X){ return X[3]; },    {"Xsv_model"})
+        .Define("reco_dpp_sv",      [](const RVec<double>& X){ return X[4]; },    {"Xsv_model"})
+        
         .Define("Xfp_model",  [pmod](const RVec<double> &Xsv)
         {
             return pmod->Eval(Xsv); 
@@ -239,10 +248,23 @@ int newton_iteration_test(  const char* path_infile="",
         .Define("err_dxdz_sv",  [](RVec<double>& Xsv, double x){ return (Xsv[2]-x)*1e3; }, {"Xsv_model", "dxdz_sv"})
         .Define("err_dydz_sv",  [](RVec<double>& Xsv, double x){ return (Xsv[3]-x)*1e3; }, {"Xsv_model", "dydz_sv"})
         .Define("err_dpp_sv",   [](RVec<double>& Xsv, double x){ return (Xsv[4]-x)*1e3; }, {"Xsv_model", "dpp_sv"});
-
+    
+    //this histogram will be of the actual sieve-coords
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords. db:'%s', data:'%s'", path_dbfile, path_infile); 
-    auto c = new TCanvas("c", b_c_title, 1200, 800); 
+    
+    char buff_hxy_title[200];  
+    sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
+    
+    gStyle->SetPalette(kSunset);
+    gStyle->SetOptStat(0); 
+    auto c2         = new TCanvas("c2", b_c_title); 
+    auto h_xy_sieve = df_output.Histo2D({"h_xy_sieve", buff_hxy_title, 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
+    h_xy_sieve->DrawCopy("col2"); 
+    return 0; 
+
+
+    auto c = new TCanvas("c1", b_c_title, 1200, 800); 
 
     c->Divide(2,2, 0.005,0.005); 
     
@@ -258,7 +280,9 @@ int newton_iteration_test(  const char* path_infile="",
     c->cd(4); 
     auto h_dydz = df_output.Histo1D({"h_dydz", "Error of dydz_fp;mrad", 200, -5, 5}, "err_dydz_sv"); 
     h_dydz->DrawCopy(); 
-
+    
+    
+    
 
     delete pmod;    
 
