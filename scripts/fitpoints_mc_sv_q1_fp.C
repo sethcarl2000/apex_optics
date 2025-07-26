@@ -13,8 +13,7 @@ using namespace std;
 using namespace ROOT::VecOps; 
    
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
-int fitpoints_mc_sv_q1_fp( bool is_RHRS=false,
-                           const int poly_order_svq1=2,
+int fitpoints_mc_sv_q1_fp( const int poly_order_svq1=2,
                            const int poly_order_q1fp=2,
                            const char* path_infile="",
                            const char* stem_outfile="data/csv/db_mc",  
@@ -43,7 +42,16 @@ int fitpoints_mc_sv_q1_fp( bool is_RHRS=false,
         return 1; 
     }
 
+    //check if we can find the 'is_RHRS' parameter. Fatal error if not! 
+    TParameter<bool>* param_is_RHRS = (TParameter<bool>*)infile->Get("is_RHRS"); 
+    if (!param_is_RHRS) {
+        Error(here, "Could not find TParameter<bool> 'is_RHRS' in file '%s'.", path_infile); 
+        return 1; 
+    }
+    const bool is_RHRS = param_is_RHRS->GetVal(); 
+
     delete tree; 
+    delete param_is_RHRS; 
     infile->Close(); 
     delete infile; 
 

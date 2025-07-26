@@ -14,8 +14,7 @@ using namespace std;
 //creates db '.dat' files for two sepearate polynomials:
 // the fp_q1 polynomials map from FOCAL PLANE coordinates to Q1 FRONT coordinates.
 // the q1_sv polynomials map from Q1 FRONT coordinates to SIEVE coordinates. 
-int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
-                            const int poly_fpq1_order=2,
+int fitpoints_mc_fp_q1_sv(  const int poly_fpq1_order=2,
                             const int poly_q1sv_order=2,
                             const char* path_infile="",
                             const char* stem_outfile="data/csv/db_mc",  
@@ -43,8 +42,16 @@ int fitpoints_mc_fp_q1_sv(  bool is_RHRS=false,
         Error(here, "could not find TTree '%s'", tree_name); 
         return 1; 
     }
+    //check if we can find the 'is_RHRS' parameter. Fatal error if not! 
+    TParameter<bool>* param_is_RHRS = (TParameter<bool>*)infile->Get("is_RHRS"); 
+    if (!param_is_RHRS) {
+        Error(here, "Could not find TParameter<bool> 'is_RHRS' in file '%s'.", path_infile); 
+        return 1; 
+    }
+    const bool is_RHRS = param_is_RHRS->GetVal(); 
 
     delete tree; 
+    delete is_RHRS; 
     infile->Close(); 
     delete infile; 
 
