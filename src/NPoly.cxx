@@ -455,7 +455,7 @@ NPoly NPoly::operator*(const NPoly& rhs) const
   // can be added together. this is done by checking for elements which have idential 'exponent signatures', i.e. all the same exponents.  
   vector<NPoly::NPolyElem> new_elems_unique{}; 
 
-  for (int i=0; i<new_elems.size();) {
+  for (int i=0; i<new_elems.size(); i++) {
 
     auto elem = new_elems.at(i); 
 
@@ -465,8 +465,7 @@ NPoly NPoly::operator*(const NPoly& rhs) const
     if (it==new_elems_unique.end()) {//an element with the same set of exponents does NOT yet exist in the 'new_elems_unique' vec
 
       new_elems_unique.push_back(elem); 
-      i++; //advance our position in the new_elems vec. 
-    
+      
     } else { //if we've gotten here, it means that there is an element in the 'new_elems_unique' vector with the same exponents. 
 
       //so we can 'combine like terms' here. 
@@ -477,8 +476,6 @@ NPoly NPoly::operator*(const NPoly& rhs) const
       
       //this iterator now points to the elem in 'new_elems_unique' which is a match 
       it->coeff += elem.coeff;
-      
-      new_elems.erase(new_elems.begin()+i); 
     }
   }
 
@@ -505,7 +502,61 @@ NPoly NPoly::Pow(const NPoly& pol, const int pow)
 
   return ret; 
 }
+//_____________________________________________________________________________
+NPoly NPoly::operator+(const NPoly& rhs) const
+{
+  if (rhs.Get_nDoF() != Get_nDoF()) {
+    Error("operator+", "LHS NPoly DoF (%i) does not match RHS NPoly DoF(%i)",
+	  Get_nDoF(), rhs.Get_nDoF());
+    return NPoly(0);
+  }
 
+  NPoly sum(Get_nDoF()); 
+
+  //add all elements to this vector. 
+  vector<NPoly::NPolyElem> new_elems; new_elems.reserve(Get_nElems() + rhs.Get_nElems());  
+
+  for (int i=0; i<Get_nElems(); i++) { 
+    new_elems.push_back(*(Get_elem(i))); 
+  }
+
+  for (int i=0; i<rhs.Get_nElems(); i++) { 
+    new_elems.push_back(*(rhs.Get_elem(i))); 
+  }
+
+  //now combine like terms to eliminate redundant elements. 
+  vector<NPoly::NPolyElem> new_elems_unique{}; 
+
+  for (int i=0; i<new_elems.size(); i++) {
+
+    auto elem = new_elems.at(i); 
+
+    //check to see if an element just like this one exists in the vector already. 
+    auto it = find( new_elems_unique.begin(), new_elems_unique.end(), elem ); 
+    
+    if (it==new_elems_unique.end()) {//an element with the same set of exponents does NOT yet exist in the 'new_elems_unique' vec
+
+      new_elems_unique.push_back(elem); 
+      
+    } else { //if we've gotten here, it means that there is an element in the 'new_elems_unique' vector with the same exponents. 
+
+      //so we can 'combine like terms' here. 
+      //think of adding: 
+      //    P1(x) = x + y^2;
+      //    P2(x) = 3 y^2 
+      //    (P1 + P2)(x) = x + 4 y^2. 
+      
+      //this iterator now points to the elem in 'new_elems_unique' which is a match 
+      it->coeff += elem.coeff;
+    }
+  }
+
+  //now that we have combined like terms, we can add all our elements to our vec. 
+  for (const auto& elem : new_elems_unique) sum.Add_element(elem); 
+
+  return sum; 
+
+}
 //_____________________________________________________________________________
 
 ClassImp(NPoly)

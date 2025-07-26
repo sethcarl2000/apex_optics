@@ -89,6 +89,9 @@ class NPoly : public TObject {
   //symbolically compute the result of multiplying two NPoly's together.  
   NPoly operator*(const NPoly& rhs) const;  
 
+  //symbolically compute the result of multiplying two NPoly's together.  
+  NPoly operator+(const NPoly& rhs) const; 
+
   //raise a polynomial to an integer power
   static NPoly Pow(const NPoly& pol, const int pow); 
   
