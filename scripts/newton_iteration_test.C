@@ -10,11 +10,10 @@ struct Track_t {
     operator RVec<double>() const { return RVec<double>{x,y,dxdz,dydz,dpp}; }    
 };
 
-#define EVENT_RANGE 1
+//#define EVENT_RANGE 200
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
-int newton_iteration_test(  bool is_RHRS=false,
-                            const char* path_infile="",
+int newton_iteration_test(  const char* path_infile="",
                             const char* path_dbfile="data/csv/db_prod_mc_sv_fp_L_3ord.dat",  
                             const char* tree_name="tracks_fp" ) 
 {
@@ -40,6 +39,14 @@ int newton_iteration_test(  bool is_RHRS=false,
         Error(here, "could not find TTree '%s'", tree_name); 
         return 1; 
     }
+
+    //check if we can find the 'is_RHRS' parameter. Fatal error if not! 
+    TParameter<bool>* param_is_RHRS = (TParameter<bool>*)infile->Get("is_RHRS"); 
+    if (!is_RHRS) {
+        Error(here, "Could not find TParameter<bool> 'is_RHRS' in file '%s'.", path_infile); 
+        return 1; 
+    }
+    const bool is_RHRS = param_is_RHRS->GetVal(); 
 
     delete tree; 
     infile->Close(); 
@@ -85,7 +92,7 @@ int newton_iteration_test(  bool is_RHRS=false,
     //now that we have created the polys, we can create the NPolyModel object
     NPolyModel *pmod = new NPolyModel(poly_vec); 
 
-    const int n_iterations = 10; 
+    const int n_iterations = 7; 
 
     auto rv_dot = [](const RVec<double>& u, const RVec<double>& v) {
         double ret(0.); for (const double& x : u * v) ret += x; return ret; 
@@ -95,6 +102,14 @@ int newton_iteration_test(  bool is_RHRS=false,
         double ret(0.); for (const double& x : u * u) ret += x; return sqrt(ret); 
     };
 
+    //what we're effectivley doing here is using newton's method for iterating towrads the root of a nonlinear system.
+    // the system we're trying to solve is the following least-square problem: 
+    //  - the 'chi-square' in this case is the square error between the model's value for Xfp, and the actual value.
+    //    this is given by the d_Xfp vector above. 
+    //  - Therefore, the 'F' vector is our evaluation of the gradient of this function, which will be zero at the 
+    //    minimum error value (if it isn't a local, false minima.)
+    //  - to use newton's method, we need to compute the Jacobian of our 'F' funciton. this is what 'J' will be. 
+    //
     auto find_next_Xsv = [pmod, rv_dot, rv_mag, DoF_sv, DoF_fp](RVec<double>& Xfp, RVec<double>& Xsv) {
         
         //Get the difference between the model's evaluation of Xfp, and the actual value. 
@@ -116,20 +131,12 @@ int newton_iteration_test(  bool is_RHRS=false,
             //now, compute the hessian matrix & gradients
             hess_i[i] = polys[i]->Hessian(Xsv); 
             grad_i[i] = polys[i]->Gradient(Xsv); 
-        }
-
-        //what we're effectivley doing here is using newton's method for iterating towrads the root of a nonlinear system.
-        // the system we're trying to solve is the following least-square problem: 
-        //  - the 'chi-square' in this case is the square error between the model's value for Xfp, and the actual value.
-        //    this is given by the d_Xfp vector above. 
-        //  - Therefore, the 'F' vector is our evaluation of the gradient of this function, which will be zero at the 
-        //    minimum error value (if it isn't a local, false minima.)
-        //  - to use newton's method, we need to compute the Jacobian of our 'F' funciton. this is what 'J' will be. 
-
+        }   
+        
+        //Compute the 'F' vector and the 'J' matrix
         RMatrix J(DoF_sv, DoF_sv, 0.); 
         RVec<double> F(DoF_sv, 0.); 
         
-        //fill the 'F' vector and the 'J' matrix
         for (int i=0; i<DoF_fp; i++) {
 
             for (int j=0; j<DoF_sv; j++) {
@@ -144,10 +151,10 @@ int newton_iteration_test(  bool is_RHRS=false,
         
         double det = J.Determinant(); 
         
-        printf(" det: %+.3e\n", J.Determinant()); 
+        //printf(" det: %+.3e\n", J.Determinant()); 
         if ((det != det) || (fabs(det) < 1e-30)) return RVec<double>{}; 
 
-        return  -1.* J.Solve( F ); 
+        return  -1. * J.Solve( F ); 
     };
 
     auto Iterate_to_Xfp = [find_next_Xsv, n_iterations, rv_mag, pmod](const Track_t& Xfp, const Track_t& Xsv) 
@@ -166,20 +173,21 @@ int newton_iteration_test(  bool is_RHRS=false,
             Xsv.dydz,
             Xsv.dpp
         }; 
-
-        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+        
         for (int i=0; i<n_iterations; i++) {
             
-            printf("it %3i error: % .9f\n", i, rv_mag(Xfp_vec - pmod->Eval(Xsv_vec)));
+            //printf("it %3i error: % .9f\n", i, rv_mag(Xfp_vec - pmod->Eval(Xsv_vec)));
 
-            auto d_Xsv = find_next_Xsv(Xfp_vec, Xsv_vec);
-            cout << "d_Xsv: " << d_Xsv << endl;
+            RVec<double> d_Xsv = find_next_Xsv(Xfp_vec, Xsv_vec);
+            
+            //cout << "d_Xsv: " << d_Xsv << endl;
+            //if the 'J' matrix computed above is singular, the 'find_next_Xsv' fcn return an empty RVec
             if (d_Xsv.size() == 0) break; 
             
             Xsv_vec += d_Xsv; 
         }
 
-        printf("final error: % .9f\n", rv_mag(Xfp_vec - pmod->Eval(Xsv_vec)));
+        //printf("final error: % .9f\n", rv_mag(Xfp_vec - pmod->Eval(Xsv_vec)));
         return Xsv_vec; 
     };
 
@@ -212,25 +220,25 @@ int newton_iteration_test(  bool is_RHRS=false,
 
         .Define("Xsv_model", [Iterate_to_Xfp](Track_t& Xfp, Track_t& Xsv)
         {
-            auto ret = Iterate_to_Xfp(Xfp, Xsv); 
-            return Track_t{ .x=ret[0], .y=ret[1], .dxdz=ret[2], .dydz=ret[3], .dpp=ret[4]};         
+            return Iterate_to_Xfp(Xfp, Xsv); 
+//            return Track_t{ .x=ret[0], .y=ret[1], .dxdz=ret[2], .dydz=ret[3], .dpp=ret[4]};         
         }, {"Xfp", "Xsv"})
 
-        .Define("Xfp_model",  [pmod](Track_t &Xsv)
+        .Define("Xfp_model",  [pmod](const RVec<double> &Xsv)
         {
-            return pmod->Eval({
-                Xsv.x,
-                Xsv.y,
-                Xsv.dxdz,
-                Xsv.dydz,
-                Xsv.dpp
-            });         
+            return pmod->Eval(Xsv); 
         }, {"Xsv_model"})   
 
-        .Define("err_x_fp",     [](RVec<double>& Xfp, double x){ return Xfp[0]-x; }, {"Xfp_model", "x_fp"})
-        .Define("err_y_fp",     [](RVec<double>& Xfp, double x){ return Xfp[1]-x; }, {"Xfp_model", "y_fp"})
-        .Define("err_dxdz_fp",  [](RVec<double>& Xfp, double x){ return Xfp[2]-x; }, {"Xfp_model", "dxdz_fp"})
-        .Define("err_dydz_fp",  [](RVec<double>& Xfp, double x){ return Xfp[3]-x; }, {"Xfp_model", "dydz_fp"});
+        .Define("err_x_fp",     [](RVec<double>& Xfp, double x){ return (Xfp[0]-x)*1e3; }, {"Xfp_model", "x_fp"})
+        .Define("err_y_fp",     [](RVec<double>& Xfp, double x){ return (Xfp[1]-x)*1e3; }, {"Xfp_model", "y_fp"})
+        .Define("err_dxdz_fp",  [](RVec<double>& Xfp, double x){ return (Xfp[2]-x)*1e3; }, {"Xfp_model", "dxdz_fp"})
+        .Define("err_dydz_fp",  [](RVec<double>& Xfp, double x){ return (Xfp[3]-x)*1e3; }, {"Xfp_model", "dydz_fp"})
+
+        .Define("err_x_sv",     [](RVec<double>& Xsv, double x){ return (Xsv[0]-x)*1e3; }, {"Xsv_model", "x_sv"})
+        .Define("err_y_sv",     [](RVec<double>& Xsv, double x){ return (Xsv[1]-x)*1e3; }, {"Xsv_model", "y_sv"})
+        .Define("err_dxdz_sv",  [](RVec<double>& Xsv, double x){ return (Xsv[2]-x)*1e3; }, {"Xsv_model", "dxdz_sv"})
+        .Define("err_dydz_sv",  [](RVec<double>& Xsv, double x){ return (Xsv[3]-x)*1e3; }, {"Xsv_model", "dydz_sv"})
+        .Define("err_dpp_sv",   [](RVec<double>& Xsv, double x){ return (Xsv[4]-x)*1e3; }, {"Xsv_model", "dpp_sv"});
 
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords: %s", path_dbfile); 
@@ -239,16 +247,16 @@ int newton_iteration_test(  bool is_RHRS=false,
     c->Divide(2,2, 0.005,0.005); 
     
     c->cd(1); 
-    auto h_x    = df_output.Histo1D({"h_x",    "Error of x_fp;mm", 200, -10e-3, 10e-3},    "err_x_fp"); 
+    auto h_x    = df_output.Histo1D({"h_x",    "Error of x_fp;mm", 200, -5, 5},    "err_x_sv"); 
     h_x->DrawCopy(); 
     c->cd(2); 
-    auto h_y    = df_output.Histo1D({"h_y",    "Error of y_fp;mm", 200, -10e-3, 10e-3},    "err_y_fp"); 
+    auto h_y    = df_output.Histo1D({"h_y",    "Error of y_fp;mm", 200, -5, 5},    "err_y_sv"); 
     h_y->DrawCopy(); 
     c->cd(3); 
-    auto h_dxdz = df_output.Histo1D({"h_dxdz", "Error of dxdz_fp;mrad", 200, -2e-3, 2e-3}, "err_dxdz_fp"); 
+    auto h_dxdz = df_output.Histo1D({"h_dxdz", "Error of dxdz_fp;mrad", 200, -5, 5}, "err_dxdz_sv"); 
     h_dxdz->DrawCopy(); 
     c->cd(4); 
-    auto h_dydz = df_output.Histo1D({"h_dydz", "Error of dydz_fp;mrad", 200, -2e-3, 2e-3}, "err_dydz_fp"); 
+    auto h_dydz = df_output.Histo1D({"h_dydz", "Error of dydz_fp;mrad", 200, -5, 5}, "err_dydz_sv"); 
     h_dydz->DrawCopy(); 
 
 
