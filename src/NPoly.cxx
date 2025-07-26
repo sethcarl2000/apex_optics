@@ -317,7 +317,7 @@ double NPoly::Get_elemCoeff(unsigned int i) const
   return fElems.at(i).coeff;
 }
 //_____________________________________________________________________________
-NPoly::NPolyElem* NPoly::Get_elem(unsigned int i) 
+const NPoly::NPolyElem* NPoly::Get_elem(unsigned int i) const 
 {
   if (i >= Get_nElems()) {
     Warning("Get_elemCoeff",
@@ -398,19 +398,19 @@ void NPoly::AutoConstructPoly(const int max_power, const int nDoF)
   }//while (1)
 }
 //_____________________________________________________________________________
-void Print() const 
+void NPoly::Print() const 
 {
-  printf("Polynomial DoF: %i, all elements (%i)\n:", Get_nDoF(), Get_nElems()); 
+  printf("Polynomial DoF: %i, all elements (%i)\n", Get_nDoF(), Get_nElems()); 
 
   for (int i=0; i<Get_nElems(); i++) {
     
-    auto elem = Get_elem(i); 
+    const auto elem = Get_elem(i); 
 
     printf(" -- {"); 
     
-    for (int j=0; j<elem.powers.size(); j++) printf(" %2i ", elem.powers.at(j)); 
+    for (int j=0; j<elem->powers.size(); j++) printf(" %2i ", elem->powers.at(j)); 
     
-    printf("}  -- %+.8e\n", elem.coeff); 
+    printf("}  -- %+.8e\n", elem->coeff); 
   }
 }
 //_____________________________________________________________________________

@@ -142,7 +142,7 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     for (int i=0; i<n_elems; i++) { 
         
         //we're gonna make a copy of each element in the 'template' polynomial
-        NPoly::NPolyElem *elem = poly_template->Get_elem(i); 
+        const NPoly::NPolyElem *elem = poly_template->Get_elem(i); 
 
         //now, we just add our coefficient we just computed to it
         poly->Add_element( elem->powers, coeffs.at(i) ); 
