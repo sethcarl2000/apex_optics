@@ -141,13 +141,7 @@ RMatrix RMatrix::operator+(const RMatrix &rhs) const
     return RMatrix();
   }
 
-  //make a copy of this matrix
-  RMatrix sum = *this;
-  
-  for (unsigned int i=0; i<GetNRows(); i++) 
-    for (unsigned int j=0; j<GetNCols(); j++) sum.get(i,j) += rhs.at(i,j);
-  
-  return sum; 
+  return RMatrix(GetNRows(), GetNCols(), fElems + *(rhs.Data_const())); 
 } 
 //_______________________________________________________________________________
 void RMatrix::operator+=(RMatrix& rhs)

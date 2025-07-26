@@ -74,7 +74,10 @@ public:
   inline bool &ReportSingular() { return f_reportSingular; }
 
   //return a copy to the data
-  ROOT::RVec<double> *Data() { return &fElems; }; 
+  ROOT::RVec<double> *Data() { return &fElems; };
+   
+  //return a const ptr to the underlying data 
+  const ROOT::RVec<double> *Data_const() const { return &fElems; }
   
 private:
 
