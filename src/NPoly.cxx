@@ -15,6 +15,8 @@
 #include "NPoly.h"
 #include <cmath>
 #include <iostream>
+#include <algorithm>
+#include <iostream> 
 
 using namespace ROOT::VecOps; 
 using vecd = RVec<double>; 
@@ -326,16 +328,24 @@ NPoly::NPolyElem* NPoly::Get_elem(unsigned int i)
 }
 //_____________________________________________________________________________
 void NPoly::Add_element(const RVec<int> &pows, double coefficient)
+{ 
+  //just calls the method below. 
+  this->Add_element({.powers=pows, .coeff=coefficient}); 
+}
+//_____________________________________________________________________________
+void NPoly::Add_element(const NPoly::NPolyElem& elem)
 {
-  if (pows.size()!=fnDoF) {
+  if (elem.powers.size()!=Get_nDoF()) {
     Error("Add_element", "Num. of powers (%i) incorrect size for this Poly's DoF (%i)",
-	  (int)pows.size(), (int)fnDoF);
+	  (int)elem.powers.size(), Get_nDoF());
     return;
   }
-  //record the maximum exponent power in this polynomial 
-  for (const int& pow : pows) if (pow > f_maxPower) f_maxPower=pow; 
+  
+  //for the qucikened version of Eval(), we must know what the maximum exponential power is for any input var. 
+  //inscrutable segfaults will result if not!!
+  for (const int& pow : elem.powers) if (pow > f_maxPower) f_maxPower=pow; 
 
-  fElems.push_back({.powers=pows, .coeff=coefficient}); 
+  fElems.push_back(elem); 
 }
 //_____________________________________________________________________________
 void NPoly::AutoConstructPoly(const int max_power, const int nDoF)
@@ -388,7 +398,95 @@ void NPoly::AutoConstructPoly(const int max_power, const int nDoF)
   }//while (1)
 }
 //_____________________________________________________________________________
+void Print() const 
+{
+  printf("Polynomial DoF: %i, all elements (%i)\n:", Get_nDoF(), Get_nElems()); 
+
+  for (int i=0; i<Get_nElems(); i++) {
+    
+    auto elem = Get_elem(i); 
+
+    printf(" -- {"); 
+    
+    for (int j=0; j<elem.powers.size(); j++) printf(" %2i ", elem.powers.at(j)); 
+    
+    printf("}  -- %+.8e\n", elem.coeff); 
+  }
+}
 //_____________________________________________________________________________
+
+//_____________________________________________________________________________
+//these following methods will be used for symbolic computation; 
+// for example, symbolically computing the result of feeding the output of one NPolyArray into the input of another. 
+// I am experimenting with constructing optics models which are composed of several NPolyArray's 'chained together' 
+// in which the output of each NPolyArray in the chain is fed into the input of the next. 
+//_____________________________________________________________________________
+NPoly NPoly::operator*(const NPoly& rhs) const
+{
+  if (rhs.Get_nDoF() != Get_nDoF()) {
+    Error("operator*", "LHS NPoly DoF (%i) does not match RHS NPoly DoF(%i)",
+	  rhs.Get_nDoF(), Get_nDoF());
+    return NPoly(0);
+  }
+
+  NPoly prod(Get_nDoF()); 
+
+  vector<NPoly::NPolyElem> new_elems; new_elems.reserve(Get_nElems() * rhs.Get_nElems());  
+
+
+  //now, just do the 'foil' of multiplying each element together. 
+  for (int i=0; i<Get_nElems(); i++) {
+    for (int j=0; j<rhs.Get_nElems(); j++) {
+
+      //recalling how to do this from grade school...
+
+      //exponents add together
+      RVec<int> pows = Get_elemPowers(i) + rhs.Get_elemPowers(j);
+      
+      //coefficents multiply 
+      double coeff = Get_elemCoeff(i) * rhs.Get_elemCoeff(j);
+      
+      //now, add this new element to the set of all elements which will constitute our new polynomial. 
+      new_elems.push_back({.powers=pows, .coeff=coeff}); 
+    }
+  }
+
+  //now, to make our lives easier down the road, we will see if any of the new elements we just constructed above
+  // can be added together. this is done by checking for elements which have idential 'exponent signatures', i.e. all the same exponents.  
+  vector<NPoly::NPolyElem> new_elems_unique{}; 
+
+  for (int i=0; i<new_elems.size();) {
+
+    auto elem = new_elems.at(i); 
+
+    //check to see if an element just like this one exists in the vector already. 
+    auto it = find( new_elems_unique.begin(), new_elems_unique.end(), elem ); 
+    
+    if (it==new_elems_unique.end()) {//an element with the same set of exponents does NOT yet exist in the 'new_elems_unique' vec
+
+      new_elems_unique.push_back(elem); 
+      i++; //advance our position in the new_elems vec. 
+    
+    } else { //if we've gotten here, it means that there is an element in the 'new_elems_unique' vector with the same exponents. 
+
+      //so we can 'combine like terms' here. 
+      //think of adding: 
+      //    P1(x) = x + y^2;
+      //    P2(x) = 3 y^2 
+      //    (P1 + P2)(x) = x + 4 y^2. 
+      
+      //this iterator now points to the elem in 'new_elems_unique' which is a match 
+      it->coeff += elem.coeff;
+      
+      new_elems.erase(new_elems.begin()+i); 
+    }
+  }
+
+  //now that we have combined like terms, we can add all our elements to our vec. 
+  for (const auto& elem : new_elems_unique) prod.Add_element(elem); 
+
+  return prod;  
+}
 //_____________________________________________________________________________
 //_____________________________________________________________________________
 

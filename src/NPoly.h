@@ -29,6 +29,14 @@ class NPoly : public TObject {
   struct NPolyElem {
     ROOT::RVec<int>  powers; //powers for each (x,y,th,ph) in target-coordinates  
     double coeff;            //in most cases, coefficients are not needed per poly.
+
+    //only the 'exponent signature' of these elements is compared; coefficient is not considered. 
+    bool operator==(const NPolyElem& rhs) const { 
+        const int my_size(powers.size()); 
+        if (my_size != rhs.powers.size()) return false; 
+        for (int i=0; i<my_size; i++) if (powers[i] != rhs.powers[i]) return false; 
+        return true; 
+    }
   };
 
   //return the value of each element evaluated against the input vector
@@ -47,7 +55,10 @@ class NPoly : public TObject {
   RMatrix Hessian(const ROOT::RVec<double> &X) const;
 
   //handle elements + get information
+  //Add element to the poly.
   void Add_element(const ROOT::RVec<int> &pows, double coefficient=1.);
+  //Add element to the poly. 
+  void Add_element(const NPoly::NPolyElem& elem); 
   
   //get the number of elements currently in the polynomial
   inline unsigned int Get_nElems() const { return fElems.size(); }
@@ -65,6 +76,20 @@ class NPoly : public TObject {
   ROOT::RVec<int>     Get_elemPowers(unsigned int i) const;
   //get the coefficient of this element
   double              Get_elemCoeff (unsigned int i) const;
+
+  //for debug purposes, print
+  void Print() const;
+  
+
+  //these following methods will be used for symbolic computation; 
+  // for example, symbolically computing the result of feeding the output of one NPolyArray into the input of another. 
+  // I am experimenting with constructing optics models which are composed of several NPolyArray's 'chained together' 
+  // in which the output of each NPolyArray in the chain is fed into the input of the next. 
+
+  //symbolically compute the result of multiplying two NPoly's together.  
+  NPoly operator*(const NPoly& rhs) const;  
+
+
   
 private:
   
