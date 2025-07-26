@@ -89,8 +89,16 @@ int newton_iteration_test(  const char* path_infile="",
         poly_vec.push_back(poly); 
     }
 
-    //now that we have created the polys, we can create the NPolyModel object
-    NPolyModel *pmod = new NPolyModel(poly_vec); 
+    //now that we have created the polys, we can create the NPolyArray object
+    NPolyArray *parr = new NPolyArray(poly_vec); 
+
+    //check that each poly has at least some elements (otherwise, there has been some sort of file-open error)
+    for (int i=0; i<parr->Get_DoF_out(); i++) {
+        if (parr->Get_poly(i)->Get_nElems() <= 0) {
+            Error(here, "NPoly found without elements. Something has gone wrong with the db file..."); 
+            return 1; 
+        }
+    }
 
     const int n_iterations = 7; 
 
@@ -113,29 +121,14 @@ int newton_iteration_test(  const char* path_infile="",
     //    minimum error value (if it isn't a local, false minima.)
     //  - to use newton's method, we need to compute the Jacobian of our 'F' funciton. this is what 'J' will be. 
     //
-    auto find_next_Xsv = [pmod, rv_dot, rv_mag, DoF_sv, DoF_fp](RVec<double>& Xfp, RVec<double>& Xsv) {
+    auto find_next_Xsv = [parr, rv_dot, rv_mag, DoF_sv, DoF_fp](RVec<double>& Xfp, RVec<double>& Xsv) {
         
         //Get the difference between the model's evaluation of Xfp, and the actual value. 
-        RVec<double> d_Xfp{ pmod->Eval(Xsv) - Xfp }; 
+        RVec<double> d_Xfp{ parr->Eval(Xsv) - Xfp }; 
 
-        const NPoly* polys[DoF_fp]; 
-
-        //there will be 1 Hessian matrix per polynomial
-        RMatrix hess_i[DoF_fp];
-
-        //there will also be 1 gradient per polynomial
-        RVec<double> grad_i[DoF_fp];
-
-        for (int i=0; i<DoF_fp; i++) {
-            
-            //get a polynomial ptr, and const-cast it to make sure we can't modify it (thread safety!)
-            polys[i] = const_cast<const NPoly*>(pmod->Get_poly(i)); 
-            
-            //now, compute the hessian matrix & gradients
-            hess_i[i] = polys[i]->Hessian(Xsv); 
-            grad_i[i] = polys[i]->Gradient(Xsv); 
-        }   
-        
+        RMatrix dGi_dxj = parr->Jacobian(Xsv); 
+        RVec<RMatrix> dGi_dxj_dxk = parr->HessianTensor(Xsv); 
+ 
         //Compute the 'F' vector and the 'J' matrix
         RMatrix J(DoF_sv, DoF_sv, 0.); 
         RVec<double> F(DoF_sv, 0.); 
@@ -144,10 +137,11 @@ int newton_iteration_test(  const char* path_infile="",
 
             for (int j=0; j<DoF_sv; j++) {
             
-                F.at(j) += d_Xfp.at(i) * grad_i[i].at(j);  
+                F.at(j) += d_Xfp.at(i) * dGi_dxj.at(i,j);
                 
                 for (int k=0; k<DoF_sv; k++) {
-                    J.at(j,k) += (grad_i[i].at(j) * grad_i[i].at(k)) + (d_Xfp.at(i) * hess_i[i].at(j,k)); 
+                    J.at(j,k) += 
+                        (dGi_dxj.at(i,j) * dGi_dxj.at(i,k))   +   (d_Xfp.at(i) * dGi_dxj_dxk[i].at(j,k)); 
                 }
             }
         }
@@ -160,7 +154,7 @@ int newton_iteration_test(  const char* path_infile="",
         return  -1. * J.Solve( F ); 
     };
 
-    auto Iterate_to_Xfp = [find_next_Xsv, n_iterations, rv_mag, pmod](const Track_t& Xfp, const Track_t& Xsv) 
+    auto Iterate_to_Xfp = [find_next_Xsv, n_iterations, rv_mag, parr](const Track_t& Xfp, const Track_t& Xsv) 
     {   
         RVec<double> Xfp_vec{ 
             Xfp.x,
@@ -179,7 +173,7 @@ int newton_iteration_test(  const char* path_infile="",
         
         for (int i=0; i<n_iterations; i++) {
             
-            //printf("it %3i error: % .9f\n", i, rv_mag(Xfp_vec - pmod->Eval(Xsv_vec)));
+            //printf("it %3i error: % .9f\n", i, rv_mag(Xfp_vec - parr->Eval(Xsv_vec)));
 
             RVec<double> d_Xsv = find_next_Xsv(Xfp_vec, Xsv_vec);
             
@@ -190,7 +184,7 @@ int newton_iteration_test(  const char* path_infile="",
             Xsv_vec += d_Xsv; 
         }
 
-        //printf("final error: % .9f\n", rv_mag(Xfp_vec - pmod->Eval(Xsv_vec)));
+        //printf("final error: % .9f\n", rv_mag(Xfp_vec - parr->Eval(Xsv_vec)));
         return Xsv_vec; 
     };
 
@@ -233,9 +227,9 @@ int newton_iteration_test(  const char* path_infile="",
         .Define("reco_dydz_sv",     [](const RVec<double>& X){ return X[3]; },    {"Xsv_model"})
         .Define("reco_dpp_sv",      [](const RVec<double>& X){ return X[4]; },    {"Xsv_model"})
         
-        .Define("Xfp_model",  [pmod](const RVec<double> &Xsv)
+        .Define("Xfp_model",  [parr](const RVec<double> &Xsv)
         {
-            return pmod->Eval(Xsv); 
+            return parr->Eval(Xsv); 
         }, {"Xsv_model"})   
 
         .Define("err_x_fp",     [](RVec<double>& Xfp, double x){ return (Xfp[0]-x)*1e3; }, {"Xfp_model", "x_fp"})
@@ -284,7 +278,7 @@ int newton_iteration_test(  const char* path_infile="",
     
     
 
-    delete pmod;    
+    delete parr;    
 
     return 0;
 }
