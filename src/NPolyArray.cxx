@@ -1,5 +1,5 @@
 
-#include "NPolyModel.h"
+#include "NPolyArray.h"
 #include "RMatrix.h"
 #include <algorithm>
 #include <stdio.h>
@@ -9,7 +9,7 @@ using namespace std;
 using namespace ROOT::VecOps; 
 
 //______________________________________________________________________________________________
-NPolyModel::NPolyModel(int _DoF_in, int _DoF_out) 
+NPolyArray::NPolyArray(int _DoF_in, int _DoF_out) 
     : fDoF_in(_DoF_in), fDoF_out(_DoF_out)
 {
     //create empty polynomials with the proper dimensions
@@ -17,9 +17,9 @@ NPolyModel::NPolyModel(int _DoF_in, int _DoF_out)
         fPolys.push_back(NPoly(Get_DoF_in()));
 }
 //______________________________________________________________________________________________
-NPolyModel::NPolyModel(const vector<NPoly>& _polys) 
+NPolyArray::NPolyArray(const vector<NPoly>& _polys) 
 {
-    const char* const here = "NPolyModel(vector<NPoly>)";
+    const char* const here = "NPolyArray(vector<NPoly>)";
     //use the first polynomial to check the number of input DoF
     fDoF_out = _polys.size(); 
     fDoF_in  = 0; 
@@ -43,7 +43,7 @@ NPolyModel::NPolyModel(const vector<NPoly>& _polys)
     fPolys = _polys; 
 }
 //______________________________________________________________________________________________
-RVec<double> NPolyModel::Eval(const RVec<double>& X) const 
+RVec<double> NPolyArray::Eval(const RVec<double>& X) const 
 {
     const char* const here = "Eval(const RVec<double>& X)"; 
 
@@ -59,7 +59,7 @@ RVec<double> NPolyModel::Eval(const RVec<double>& X) const
     return ret; 
 }
 //______________________________________________________________________________________________
-NPoly *NPolyModel::Get_poly(int i)
+NPoly *NPolyArray::Get_poly(int i)
 {
     if (i<0 || i>=Get_DoF_out()) {
         Error("Get_poly(int)", "Acess to array of polynomals out-of-range; asked for index %i, range is [0,%i].", 
@@ -69,7 +69,7 @@ NPoly *NPolyModel::Get_poly(int i)
     return &(fPolys.at(i)); 
 }
 //______________________________________________________________________________________________
-RMatrix NPolyModel::Jacobian(const RVec<double> &X) const 
+RMatrix NPolyArray::Jacobian(const RVec<double> &X) const 
 {
     if ((int)X.size() != Get_DoF_in()) {
         Error("Jacobian()", "Input vector wrong size; got %i, expected %i", (int)X.size(), Get_DoF_in());
@@ -96,4 +96,4 @@ RMatrix NPolyModel::Jacobian(const RVec<double> &X) const
 //______________________________________________________________________________________________
 //______________________________________________________________________________________________
 
-ClassImp(NPolyModel); 
+ClassImp(NPolyArray); 

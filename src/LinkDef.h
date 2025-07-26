@@ -7,6 +7,6 @@
 #pragma link C++ class NPoly+; 
 #pragma link C++ struct NPoly::NPolyElem+; 
 #pragma link C++ class RMatrix+; 
-#pragma link C++ class NPolyModel+; 
+#pragma link C++ class NPolyArray+; 
 
 #endif 

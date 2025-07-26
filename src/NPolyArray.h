@@ -1,9 +1,9 @@
-#ifndef NPolyModel_h_
-#define NPolyModel_h_
+#ifndef NPolyArray_h_
+#define NPolyArray_h_
 
 //////////////////////////////////////////////////////////////////////////
 //
-//  NPolyModel
+//  NPolyArray
 // 
 //  This is meant to be an Optics model which maps from a N-space to an M-space
 //  each coordinate in M-space represented by a disticnt NPoly. 
@@ -17,13 +17,13 @@
 #include <ROOT/RVec.hxx> 
 #include <vector>
 
-class NPolyModel : public TObject {
+class NPolyArray : public TObject {
 
 public: 
-    NPolyModel(int _DoF_in, int _DoF_out);
-    NPolyModel(const std::vector<NPoly>& _polys);
+    NPolyArray(int _DoF_in, int _DoF_out);
+    NPolyArray(const std::vector<NPoly>& _polys);
 
-    ~NPolyModel() {}; 
+    ~NPolyArray() {}; 
 
     inline int Get_DoF_in()  const { return fDoF_in;  }
     inline int Get_DoF_out() const { return fDoF_out; }
@@ -40,7 +40,7 @@ private:
 
     std::vector<NPoly> fPolys; 
 
-    ClassDef(NPolyModel,1);
+    ClassDef(NPolyArray,1);
 };
 
 
