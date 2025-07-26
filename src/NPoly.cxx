@@ -488,6 +488,24 @@ NPoly NPoly::operator*(const NPoly& rhs) const
   return prod;  
 }
 //_____________________________________________________________________________
+NPoly NPoly::Pow(const NPoly& pol, const int pow) 
+{
+  if (pow < 0) {
+    fprintf(stderr, "Error in <NPoly::Pow(NPoly&, int)>: Power %i passed as exponent, only non-negative integers are supported.", pow); 
+    return NPoly(0); 
+  }
+
+  NPoly ret(pol.Get_nDoF()); 
+
+  //we add the element to this polynomal '1.', so that we can just multiply it by 'pol' as many times as we need to 
+  // raise it to the power requested. 
+  ret.Add_element(RVec<int>(pol.Get_nDoF(), 0.), 1.);  
+
+  for (int i=0; i<pow; i++) ret = ret * pol; 
+
+  return ret; 
+}
+
 //_____________________________________________________________________________
 
 ClassImp(NPoly)
