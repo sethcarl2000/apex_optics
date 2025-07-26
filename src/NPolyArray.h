@@ -30,9 +30,13 @@ public:
 
     ROOT::RVec<double> Eval(const ROOT::RVec<double> &X) const; 
 
-    RMatrix Jacobian(const ROOT::RVec<double> &X) const; 
+    //Each row is the gradient of one of the constituent polynomials
+    RMatrix Jacobian(const ROOT::RVec<double> &X) const;
+     
+    //Each element is the hessian of one of the polynomials. 
+    ROOT::RVec<RMatrix> HessianTensor(const ROOT::RVec<double>& X) const; 
 
-    NPoly* Get_poly(int i); 
+    inline NPoly* Get_poly(int i); 
 
 private: 
 

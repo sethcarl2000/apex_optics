@@ -92,6 +92,19 @@ RMatrix NPolyArray::Jacobian(const RVec<double> &X) const
     return RMatrix(Get_DoF_out(), Get_DoF_in(), J_vec); 
 }
 //______________________________________________________________________________________________
+vector<RMatrix> NPolyArray::HessianTensor(const RVec<double> &X) const 
+{
+    if ((int)X.size() != Get_DoF_in()) {
+        Error("HessianTensor()", "Input vector wrong size; got %i, expected %i", (int)X.size(), Get_DoF_in());
+        return {}; 
+    }
+    
+    vector<RMatrix> ret; ret.reserve(Get_DoF_out()); 
+    
+    for (int i=0; i<Get_DoF_out(); i++) ret.push_back(Get_poly(i)->Hessian(X)); 
+    
+    return ret; 
+}
 //______________________________________________________________________________________________
 //______________________________________________________________________________________________
 //______________________________________________________________________________________________
