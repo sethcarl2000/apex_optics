@@ -37,10 +37,8 @@ public:
     ROOT::RVec<RMatrix> HessianTensor(const ROOT::RVec<double>& X) const; 
 
     //get the underlying polynomial which is responsible for a coordinate of this array. 
-    inline NPoly* Get_poly(int i); 
+    const NPoly* Get_poly(int i) const; 
 
-    //basically a const_cast-ed version of the above. 
-    inline const NPoly* Get_poly_const(int i) const { return Get_poly(i); }
 
     //this symbolically computes the action of feeding the output of one NPolyArray into the input of another ('nesting'). 
     // This way, if an optics model is composed of a 'chain' of NPolyArray's, in which the output of one is fed into the input of the next, 
