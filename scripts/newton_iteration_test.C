@@ -42,7 +42,7 @@ int newton_iteration_test(  const char* path_infile="",
 
     //check if we can find the 'is_RHRS' parameter. Fatal error if not! 
     TParameter<bool>* param_is_RHRS = (TParameter<bool>*)infile->Get("is_RHRS"); 
-    if (!is_RHRS) {
+    if (!param_is_RHRS) {
         Error(here, "Could not find TParameter<bool> 'is_RHRS' in file '%s'.", path_infile); 
         return 1; 
     }
@@ -241,7 +241,7 @@ int newton_iteration_test(  const char* path_infile="",
         .Define("err_dpp_sv",   [](RVec<double>& Xsv, double x){ return (Xsv[4]-x)*1e3; }, {"Xsv_model", "dpp_sv"});
 
     char b_c_title[120]; 
-    sprintf(b_c_title, "Errors of different coords: %s", path_dbfile); 
+    sprintf(b_c_title, "Errors of different coords. db:'%s', data:'%s'", path_dbfile, path_infile); 
     auto c = new TCanvas("c", b_c_title, 1200, 800); 
 
     c->Divide(2,2, 0.005,0.005); 
