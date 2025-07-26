@@ -10,10 +10,10 @@ struct Track_t {
     operator RVec<double>() const { return RVec<double>{x,y,dxdz,dydz,dpp}; }    
 };
 
-//#define EVENT_RANGE 200
+//#define EVENT_RANGE 2000
 
 //given a DB file to look in, and a list of output polynomial names, will return an NPolyArray object with all the relevant polys filled in
-NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names) 
+NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names, const int DoF) 
 {
     const char* const here = "Parse_NPolyArray_from_file";
 
@@ -22,7 +22,7 @@ NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> ou
 
     for (const string& str : output_names) {
 
-        NPoly poly(DoF_sv); 
+        NPoly poly(DoF); 
 
         ApexOptics::Parse_NPoly_from_file(path_dbfile, str.data(), &poly); 
 
@@ -99,23 +99,53 @@ int newton_iteration_test(  const char* path_infile="",
         "dydz_fp"
     }; 
 
+    vector<string> branches_q1 = {
+        "x_q1",
+        "y_q1",
+        "dxdz_q1",
+        "dydz_q1",
+        "dpp_q1"
+    };
+
     const int DoF_sv = 5; 
     const int DoF_fp = 4; 
 
-    //parse all sv=>fp polynomials from file
-    vector<NPoly> poly_vec; 
+    //now that we have created the polys, we can create the NPolyArray object
+    const char* path_db_sv_fp = "data/csv/db_prod_sv_fp_L_3ord.dat"; 
+    
+    //this file has elements for all the polynomials which map from the SIEVE to the Q1
+    const char* path_db_sv_q1 = "data/csv/db_prod_sv_q1_fp_L_3-2-ord.dat"; 
 
-    for (const string& str : branches_fp) {
+    //this file has elements for all the polynomials which map from the Q1 to the FP 
+    const char* path_db_q1_fp = "data/csv/db_prod_sv_q1_fp_L_2-2-ord.dat"; 
+    
+    NPolyArray poly_array_sv_q1 = Parse_NPolyArray_from_file(path_db_sv_q1, branches_q1, DoF_sv);
+    NPolyArray poly_array_q1_fp = Parse_NPolyArray_from_file(path_db_q1_fp, branches_fp, DoF_sv);
 
-        NPoly poly(DoF_sv); 
+    NPolyArray poly_array_sv_fp = Parse_NPolyArray_from_file(path_dbfile, branches_fp, DoF_sv);
+    
+    
+    //if we 'nest' the models, we use the model which is the sv=>q1 model fed into the q1=>fp model. like: fp(q1(sv)). 
+    cout << " -- Nesting arrays..." << endl;  
 
-        ApexOptics::Parse_NPoly_from_file(path_dbfile, str.data(), &poly); 
+    NPolyArray arr_model = NPolyArray::Nest( poly_array_q1_fp, poly_array_sv_q1 );
+    //NPolyArray arr_model = poly_array_sv_fp; 
 
-        poly_vec.push_back(poly); 
+    //count how many elements there are in this monstrosity
+    cout << "done.\n"; 
+    int n_elems_total(0); 
+    for (int i=0; i<arr_model.Get_DoF_out(); i++) {
+        int n_elems = arr_model.Get_poly(i)->Get_nElems(); 
+        printf(" > poly %i - n_elems, maxPower: %5i, %i\n", i, n_elems, arr_model.Get_poly(i)->Get_maxPower());
+        n_elems_total += n_elems;  
     }
 
-    //now that we have created the polys, we can create the NPolyArray object
-    NPolyArray *parr = new NPolyArray(poly_vec); 
+    printf(" -- total number of elements: %i\n", n_elems_total); cout << flush; 
+
+
+    //if we use this model, we just use the model that maps directly from the SIEVE to the FOCAL PLANE
+    NPolyArray *parr = &arr_model; 
+
 
     //check that each poly has at least some elements (otherwise, there has been some sort of file-open error)
     for (int i=0; i<parr->Get_DoF_out(); i++) {
