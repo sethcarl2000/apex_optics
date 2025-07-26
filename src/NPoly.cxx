@@ -558,6 +558,11 @@ NPoly NPoly::operator+(const NPoly& rhs) const
 
 }
 //_____________________________________________________________________________
+void NPoly::operator*=(double val) 
+{
+  for (auto& elem : fElems) elem.coeff *= val; 
+}
+//_____________________________________________________________________________
 
 ClassImp(NPoly)
 

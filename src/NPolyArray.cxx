@@ -3,14 +3,15 @@
 #include "RMatrix.h"
 #include <algorithm>
 #include <stdio.h>
+#include <cstdio> 
 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
 
 //______________________________________________________________________________________________
-NPolyArray::NPolyArray(int _DoF_in, int _DoF_out) 
-    : fDoF_in(_DoF_in), fDoF_out(_DoF_out)
+NPolyArray::NPolyArray(int _DoF_out, int _DoF_in) 
+    : fDoF_out(_DoF_out), fDoF_in(_DoF_in)
 {
     //create empty polynomials with the proper dimensions
     for (int i=0; i<Get_DoF_out(); i++) 
@@ -100,12 +101,57 @@ vector<RMatrix> NPolyArray::HessianTensor(const RVec<double> &X) const
     }
     
     vector<RMatrix> ret; ret.reserve(Get_DoF_out()); 
-    
+
     for (int i=0; i<Get_DoF_out(); i++) ret.push_back(Get_poly(i)->Hessian(X)); 
     
     return ret; 
 }
 //______________________________________________________________________________________________
+NPolyArray NPolyArray::Nest(const NPolyArray& output, const NPolyArray& input) 
+{   
+    //the number of inputs to the 'output' array must match the number of outputs to the 'input' array
+    if (output.Get_DoF_in() != input.Get_DoF_out()) {
+        fprintf(stderr, "Error in <NPolyArray::Nest>: The input-DoF of the output array (%i) does not match the output-DoF of the input array (%i)\n", 
+        output.Get_DoF_in(), input.Get_DoF_out()); 
+        return NPolyArray(0,0); 
+    }
+
+    //make a copy of the inputs' polys
+    vector<NPoly> input_polys{}; 
+    for (int i=0; i<input.Get_DoF_out(); i++) input_polys.push_back( *(input.Get_poly_const(i)) ); 
+
+    vector<NPoly> output_polys;
+
+    for (int i=0; i<output.Get_DoF_out(); i++) {
+        
+        NPoly out_nested(output.Get_DoF_in()); 
+
+        NPoly *out_pol = output.Get_NPoly_const(i); 
+
+        for (int e=0; e<out_pol->Get_nElems(); e++) {
+
+            const NPoly::NPolyElem* opol_elem = out_pol->Get_elem(e); 
+            
+            //make a new NPoly which only has one element = 1. 
+            NPoly out_nested_elem(output.Get_DoF_in()); 
+            out_nested_elem.Add_element(RVec<int>(output.Get_DoF_in(), 0.), 1.); 
+
+            //multiply all the input polynomials together, raising each to the power proscribed by the output polynomials. 
+            for (int j=0; j<output.Get_DoF_in(); j++) { 
+                out_nested_elem = out_nested_elem * NPoly::Pow( input_polys.at(j), opol_elem->powers.at(j) ); 
+            }
+            
+            out_nested_elem *= opol_elem->coeff; 
+
+            //add this 'element' to the output polynomial 
+            out_nested = out_nested + out_nested_elem; 
+        }
+
+        output_polys.push_back( out_nested ); 
+    }
+    
+    return NPolyArray(output_polys); 
+}
 //______________________________________________________________________________________________
 //______________________________________________________________________________________________
 

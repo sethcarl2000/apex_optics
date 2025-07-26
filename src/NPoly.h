@@ -92,6 +92,9 @@ class NPoly : public TObject {
   //symbolically compute the result of multiplying two NPoly's together.  
   NPoly operator+(const NPoly& rhs) const; 
 
+  //this multiplies the coefficient of each element by a const number. 
+  void operator*=(double val); 
+
   //raise a polynomial to an integer power
   static NPoly Pow(const NPoly& pol, const int pow); 
   
