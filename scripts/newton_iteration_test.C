@@ -12,6 +12,31 @@ struct Track_t {
 
 //#define EVENT_RANGE 200
 
+//given a DB file to look in, and a list of output polynomial names, will return an NPolyArray object with all the relevant polys filled in
+NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names) 
+{
+    const char* const here = "Parse_NPolyArray_from_file";
+
+    //parse all relevant polys from file
+    vector<NPoly> poly_vec; 
+
+    for (const string& str : output_names) {
+
+        NPoly poly(DoF_sv); 
+
+        ApexOptics::Parse_NPoly_from_file(path_dbfile, str.data(), &poly); 
+
+        if (poly.Get_nElems()==0) {
+            Warning(here, "Poly '%s' did not find have elements in file '%s'.", str.data(), path_dbfile); 
+        }
+
+        poly_vec.push_back(poly); 
+    }
+
+    return NPolyArray(poly_vec); 
+}   
+
+
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int newton_iteration_test(  const char* path_infile="",
                             const char* path_dbfile="data/csv/db_prod_mc_sv_fp_L_3ord.dat",  
