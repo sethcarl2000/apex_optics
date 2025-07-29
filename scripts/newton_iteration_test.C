@@ -114,19 +114,19 @@ int newton_iteration_test(  const char* path_infile="",
     const char* path_db_sv_fp = "data/csv/db_prod_sv_fp_L_3ord.dat"; 
     
     //this file has elements for all the polynomials which map from the SIEVE to the Q1
-    const char* path_db_sv_q1 = "data/csv/db_prod_sv_q1_fp_L_3-2-ord.dat"; 
+    const char* path_db_sv_q1 = "data/csv/db_prod_sv_q1_fp_L_2-2-ord.dat"; 
 
     //this file has elements for all the polynomials which map from the Q1 to the FP 
-    const char* path_db_q1_fp = "data/csv/db_prod_sv_q1_fp_L_2-2-ord.dat"; 
+    const char* path_db_q1_fp = "data/csv/db_prod_sv_q1_fp_L_2-3-ord.dat"; 
     
     NPolyArray poly_array_sv_q1 = Parse_NPolyArray_from_file(path_db_sv_q1, branches_q1, DoF_sv);
     NPolyArray poly_array_q1_fp = Parse_NPolyArray_from_file(path_db_q1_fp, branches_fp, DoF_sv);
 
-    NPolyArray poly_array_sv_fp = Parse_NPolyArray_from_file(path_dbfile, branches_fp, DoF_sv);
+    NPolyArray poly_array_sv_fp = Parse_NPolyArray_from_file(path_dbfile,   branches_fp, DoF_sv);
     
     
     //if we 'nest' the models, we use the model which is the sv=>q1 model fed into the q1=>fp model. like: fp(q1(sv)). 
-    cout << " -- Nesting arrays..." << endl;  
+    cout << " -- Nesting arrays..." << flush;  
 
     NPolyArray arr_model = NPolyArray::Nest( poly_array_q1_fp, poly_array_sv_q1 );
     //NPolyArray arr_model = poly_array_sv_fp; 
@@ -298,42 +298,43 @@ int newton_iteration_test(  const char* path_infile="",
         .Define("err_dydz_sv",  [](RVec<double>& Xsv, double x){ return (Xsv[3]-x)*1e3; }, {"Xsv_model", "dydz_sv"})
         .Define("err_dpp_sv",   [](RVec<double>& Xsv, double x){ return (Xsv[4]-x)*1e3; }, {"Xsv_model", "dpp_sv"});
     
+    //book the histograms we need. 
+    char buff_hxy_title[200];  
+    sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
+    
+    auto h_xy_sieve = df_output.Histo2D<double>({"h_xy_sieve", buff_hxy_title, 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
+    
+
+    auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_fp;mm", 200, -5, 5},      "err_x_sv"); 
+    auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_fp;mm", 200, -5, 5},      "err_y_sv"); 
+    auto h_dxdz = df_output.Histo1D<double>({"h_dxdz", "Error of dxdz_fp;mrad", 200, -5, 5}, "err_dxdz_sv"); 
+    auto h_dydz = df_output.Histo1D<double>({"h_dydz", "Error of dydz_fp;mrad", 200, -5, 5}, "err_dydz_sv"); 
+    
+
     //this histogram will be of the actual sieve-coords
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords. db:'%s', data:'%s'", path_dbfile, path_infile); 
     
-    char buff_hxy_title[200];  
-    sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
     
     gStyle->SetPalette(kSunset);
-    gStyle->SetOptStat(0); 
+    //gStyle->SetOptStat(0); 
     auto c2         = new TCanvas("c2", b_c_title); 
-    auto h_xy_sieve = df_output.Histo2D({"h_xy_sieve", buff_hxy_title, 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
     h_xy_sieve->DrawCopy("col2"); 
-    return 0; 
 
 
     auto c = new TCanvas("c1", b_c_title, 1200, 800); 
-
     c->Divide(2,2, 0.005,0.005); 
     
     c->cd(1); 
-    auto h_x    = df_output.Histo1D({"h_x",    "Error of x_fp;mm", 200, -5, 5},    "err_x_sv"); 
     h_x->DrawCopy(); 
     c->cd(2); 
-    auto h_y    = df_output.Histo1D({"h_y",    "Error of y_fp;mm", 200, -5, 5},    "err_y_sv"); 
     h_y->DrawCopy(); 
     c->cd(3); 
-    auto h_dxdz = df_output.Histo1D({"h_dxdz", "Error of dxdz_fp;mrad", 200, -5, 5}, "err_dxdz_sv"); 
     h_dxdz->DrawCopy(); 
     c->cd(4); 
-    auto h_dydz = df_output.Histo1D({"h_dydz", "Error of dydz_fp;mrad", 200, -5, 5}, "err_dydz_sv"); 
     h_dydz->DrawCopy(); 
     
-    
-    
-
-    delete parr;    
+      
 
     return 0;
 }
