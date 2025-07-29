@@ -329,8 +329,8 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
                     tracks.push_back({
                         .x = v_x.at(i),
                         .y = v_y.at(i),
-                        .dxdz = v_dxdz.at(i) - v_x.at(i)/6.,  //the only difference between TRANSPORT (tra) and FOCAL-PLANE (fp) coordinates.
-                        .dydz = v_dydz.at(i), 
+                        .dxdz = v_dxdz.at(i),
+                        .dydz = v_dydz.at(i),
                         .dpp  = 0. 
                     });    
                 }

@@ -250,9 +250,6 @@ int newton_iteration_test(  const char* path_infile="",
 #ifdef EVENT_RANGE
         .Range(EVENT_RANGE)
 #endif 
-        //this is the only difference between VDC TRANSPORT COORDINATES (tra) and FOCAL PLANE COORDINATES (fp)
-        .Redefine("dxdz_fp", [](double x_tra, double dxdz_tra){return dxdz_tra - x_tra/6.;}, {"x_fp", "dxdz_fp"})
-
         .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
         .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
         .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
