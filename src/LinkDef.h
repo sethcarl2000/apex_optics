@@ -8,5 +8,6 @@
 #pragma link C++ struct NPoly::NPolyElem+; 
 #pragma link C++ class RMatrix+; 
 #pragma link C++ class NPolyArray+; 
+#pragma link C++ class MultiLayerPerceptron+; 
 
 #endif 
