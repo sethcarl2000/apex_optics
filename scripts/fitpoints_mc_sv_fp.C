@@ -64,9 +64,6 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
     //Define all of the branches we want to create models to map between
     auto df_output = df
 
-        //this is the only difference between VDC TRANSPORT COORDINATES (tra) and FOCAL PLANE COORDINATES (fp)
-        .Redefine("dxdz_fp", [](double x_tra, double dxdz_tra){return dxdz_tra - x_tra/6.;}, {"x_fp", "dxdz_fp"})
-
         .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
         .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
         .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})

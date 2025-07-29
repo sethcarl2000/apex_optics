@@ -66,8 +66,6 @@ int fitpoints_mc_fp_q1_sv(  const int poly_fpq1_order=2,
 
     auto df_output = df
 
-        .Redefine("dxdz_fp", [](double x_tra, double dxdz_tra){ return dxdz_tra - x_tra/6.;}, {"x_fp", "dxdz_fp"})
-
         .Define("x_q1",      [](TVector3 v){ return v.x(); },        {"position_Q1"})
         .Define("y_q1",      [](TVector3 v){ return v.y(); },        {"position_Q1"})
         .Define("dxdz_q1",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_Q1"})
