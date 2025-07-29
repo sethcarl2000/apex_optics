@@ -170,36 +170,10 @@ int test_sieve_hole_construction(const bool is_RHRS=true, const int vwire_num=2,
     //add the offsets of the sieve-plane center
     vertex += -1.* ApexTargetGeometry::Get_sieve_pos(is_RHRS); 
  
-    
-    //create a function which will return a random sieve-hole. This is designed to give weight to holes proportional to their front-size.
-    double total_area =0.; 
-    vector<double> area_weights{};
-    for (const auto& hole : sieve_holes) {
-
-        double hole_opening_area = hole.radius_front * hole.radius_front;  
-        area_weights.push_back( total_area );
-        total_area += hole_opening_area;  
-    }
-    
 
     const vector<SieveHole> *holes = &sieve_holes; 
 
-    //so... the large holes are **approximately** 4 times the area of the other holes. so I will give each 'big' hole 3+ 'ballots' in the raffle of which holes to populate. 
-    //the gist of this subroutine is that we want to 'throw' tracks at each hole, in an amount which is proportional to the opening-face
-    //of the hole. to do this efficiently, we choose all holes randomly, by having an 'index' generated over a random distribution. 
-    // however, we must account for the fact that there are two 'big' holes. To account for this, we give each of the big holes an 
-    // extra 'weight', which amounts to an extra chance at selection, each time a random hole is picked. 
-    auto int_dist = uniform_int_distribution<int>(-6, sieve_holes.size()-1); 
-    /*auto Random_hole = [&Get_rnd_range, &area_weights, total_area, holes]() 
-    {
-        double sample = Get_rnd_range(0., total_area); 
-        for (int i=holes->size()-1; i>=0; i--) {
-            if (area_weights.at(i) < sample ) return holes->at(i); 
-        }
-        Error("Random_hole", "Got to end of sieve-hole list! should not have happened...\n"); 
-        return SieveHole{}; 
-    }; */
-
+    
     //area ratio of 'big hole' to 'small holes'. 
     //so... the large holes are **approximately** 4 times the area of the other holes. so I will give each 'big' hole 3+ 'ballots' in the raffle of which holes to populate. 
     //the gist of this subroutine is that we want to 'throw' tracks at each hole, in an amount which is proportional to the opening-face
@@ -223,7 +197,6 @@ int test_sieve_hole_construction(const bool is_RHRS=true, const int vwire_num=2,
     printf("Multi-threadding enabled. Thread pool size: %i\n", ROOT::GetThreadPoolSize() ); 
 
     printf("Generating %.2e tracks...", (double)n_events); cout << endl;
-
 
 
     ROOT::RDataFrame df(n_events);
