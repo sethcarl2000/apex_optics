@@ -61,19 +61,19 @@ double& MultiLayerPerceptron::Weight(int l, int j, int k)
     //Check layer index
     if (l < 0 || l >= Get_n_layers()-1 ) {
         Error("Weight", "Invalid layer index (%i), must be [1,%i]", l, Get_n_layers()-2);
-        return fQuiet_nan;
+        return (fQuiet_nan=numeric_limits<double>::quiet_NaN());
     }
 
     //check 'row' (output) index
     if (j < 0 || j >= fLayer_size[l+1]) {
         Error("Weight", "Invalid 'j' (output) index (%i), must be [0,%i]", j, fLayer_size[l+1]-1);
-        return fQuiet_nan;
+        return (fQuiet_nan=numeric_limits<double>::quiet_NaN());
     }
 
     //check 'column' (input) index
     if (k < 0 || k >= fLayer_size[l]+1) {
         Error("Weight", "Invalid 'k' (input) index (%i), must be [0,%i]", k, fLayer_size[l]);
-        return fQuiet_nan;  
+        return (fQuiet_nan=numeric_limits<double>::quiet_NaN());  
     }
 
     return fWeights[l][ j * (fLayer_size[l]+1) + k ]; 
@@ -85,19 +85,19 @@ double MultiLayerPerceptron::Get_weight(int l, int j, int k) const
     //Check layer index
     if (l < 0 || l >= Get_n_layers()-1 ) {
         Error("Get_weight", "Invalid layer index (%i), must be [1,%i]", l, Get_n_layers()-2);
-        return fQuiet_nan;
+        return numeric_limits<double>::quiet_NaN();
     }
 
     //check 'row' (output) index
     if (j < 0 || j >= fLayer_size[l+1]) {
         Error("Get_weight", "Invalid 'j' (output) index (%i), must be [0,%i]", j, fLayer_size[l+1]-1);
-        return fQuiet_nan;
+        return numeric_limits<double>::quiet_NaN();
     }
 
     //check 'column' (input) index
     if (k < 0 || k >= fLayer_size[l]+1) {
         Error("Get_weight", "Invalid 'k' (input) index (%i), must be [0,%i]", k, fLayer_size[l]);
-        return fQuiet_nan;  
+        return numeric_limits<double>::quiet_NaN();
     }
 
     return fWeights[l][ j * (fLayer_size[l]+1) + k ]; 
