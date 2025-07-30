@@ -45,6 +45,7 @@ public:
     //Evaluate the mlp for a given input value
     ROOT::RVec<double> Eval(const ROOT::RVec<double>& X) const; 
 
+    /*ROOT::RVec<ROOT::RVec<double>>* Weight_gradient(const ROOT::RVec<double>& X) const; */ 
 
     //Print Network structure and all weights
     void Print() const; 
@@ -53,6 +54,10 @@ private:
 
     //the nonlinear activation function 
     inline double Activation_fcn(double x) const; 
+    inline double Activation_fcn_deriv(double x) const; 
+
+    inline void Activation_fcn(ROOT::RVec<double>& X) const; 
+    inline void Activation_fcn_deriv(ROOT::RVec<double>& X) const; 
 
     int fN_layers; 
 
@@ -66,7 +71,6 @@ private:
 
     //This will contain all weights for each layer. 
     ROOT::RVec<ROOT::RVec<double>> fWeights; 
-    
     
 
     ClassDef(MultiLayerPerceptron,1); 

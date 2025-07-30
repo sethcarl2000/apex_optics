@@ -107,8 +107,33 @@ double MultiLayerPerceptron::Get_weight(int l, int j, int k) const
 inline double MultiLayerPerceptron::Activation_fcn(double x) const
 {
     //for right now, we're just going to use the cmath exp() function to make a sigmoid. 
-    return x > 0. ? 1./( 1. + exp(-x)) : exp(x) / ( 1. + exp(x)); 
+    return ( x > 0. ? 1./( 1. + exp(-x)) : exp(x) / ( 1. + exp(x)) ) - 0.5;  
 }
+
+//__________________________________________________________________________________________________________________________________
+inline double MultiLayerPerceptron::Activation_fcn_deriv(double x) const
+{
+    //Compute the derivative of the sigmoid 
+    double S = Activation_fcn(x) + 0.5; 
+    return S * ( 1. - S ); 
+}
+
+
+//__________________________________________________________________________________________________________________________________
+inline void MultiLayerPerceptron::Activation_fcn(RVec<double>& X) const
+{
+    //for right now, we're just going to use the cmath exp() function to make a sigmoid. 
+    X = 1./( 1. + exp(X) ) - 0.5;  
+}
+
+//__________________________________________________________________________________________________________________________________
+inline void MultiLayerPerceptron::Activation_fcn_deriv(RVec<double>& X) const
+{
+    //Compute the derivative of the sigmoid 
+    Activation_fcn(X); 
+    X = ( 0.5 + X ) * ( 0.5 - X ); 
+}
+
 
 //__________________________________________________________________________________________________________________________________
 void MultiLayerPerceptron::Print() const
@@ -184,6 +209,64 @@ RVec<double> MultiLayerPerceptron::Eval(const RVec<double>& X) const
     return {}; 
 }
 //__________________________________________________________________________________________________________________________________
+/*RVec<RVec<double>>* Weight_gradient(const RVec<double>& X) const
+{
+    if ((int)X.size() != Get_DoF_in()) {
+        Error("Eval", "Input vector wrong size (%i), expected (%i).", (int)X.size(), Get_DoF_in()); 
+        return nullptr; 
+    }
+
+    //we want to allocate this on the heap to avoid copying it, but it would be more convenient to access it by reference 
+    // in this function. once we're done, we'll return a ptr to it.
+    RVec<RVec<double>>& grad = *(new RVec<RVec<double>>{}); 
+
+    //initialize the gradient 
+    const int n_weights(0); for (const auto& layer : fWeights) n_weights += layer.size(); 
+
+    for (int i=0; i<Get_DoF_out(); i++) { grad.push_back({}); grad[i].reserve(n_weights); }
+    
+    //the first step is actually quite similar to the feed-forward evaluation of the network. 
+    //these vectors will propagate all values throughout the network.
+    RVec<double> X_layers[Get_n_layers()-1]; 
+    RVec<double> Y_layers[Get_n_layers()-1]; 
+
+    int l=0; 
+
+    for (int l=0; l<Get_n_layers()-1; l++) X_layers[l] = RVec<double>(fLayer_size[l+1], 0.);  
+    
+    Y_layers[0] = X; 
+    
+    //iterate through each layer, starting with the input layer
+    for (const RVec<double>& weights : fWeights) {
+
+        RVec<double>& input  = Y_layers[l]; 
+        RVec<double>& output = X_layers[l]; 
+
+        int i_elem=0; 
+
+        //iterate over all rows (elements of the output vector)
+        for (int j=0; j<fLayer_size[l+1]; j++) {
+
+            //iterate through all the columns (input vector elements + a constant )
+            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k]; 
+            
+            //add the constant (which is the last element in each column of the 'weight matrix')
+            output[j] += weights[i_elem++]; 
+        }
+
+        //apply the activation function to each element of the output vector
+        Y_layers[l+1] = Activation_fcn(output); 
+        
+        //now, start again with the next row (or exit if we're done)
+        l++; 
+    }
+
+    //now that we have cached all the layers, we're ready to start computing the gradient. 
+
+
+
+    return &grad; 
+}*/ 
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
