@@ -37,6 +37,8 @@ NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> ou
 }   
 
 
+
+
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int newton_iteration_test(  const char* path_infile="",
                             const char* path_dbfile="data/csv/db_prod_mc_sv_fp_L_3ord.dat",  
@@ -107,11 +109,18 @@ int newton_iteration_test(  const char* path_infile="",
         "dpp_q1"
     };
 
+    vector<string> branches_sv = {
+        "x_sv",
+        "y_sv",
+        "dxdz_sv",
+        "dydz_sv",
+        "dpp_sv"
+    };
+
     const int DoF_sv = 5; 
     const int DoF_fp = 4; 
 
     //now that we have created the polys, we can create the NPolyArray object
-    const char* path_db_sv_fp = "data/csv/db_prod_sv_fp_L_3ord.dat"; 
     
     //this file has elements for all the polynomials which map from the SIEVE to the Q1
     const char* path_db_sv_q1 = "data/csv/db_prod_sv_q1_fp_L_2-2-ord.dat"; 
@@ -119,11 +128,20 @@ int newton_iteration_test(  const char* path_infile="",
     //this file has elements for all the polynomials which map from the Q1 to the FP 
     const char* path_db_q1_fp = "data/csv/db_prod_sv_q1_fp_L_2-3-ord.dat"; 
     
+    //This is the poly-array which gives us a 'starting point' to use
+    const char* path_db_fp_sv = "data/csv/db_center_fp_sv_L_3ord.dat"; 
+    NPolyArray poly_array_fp_sv = Parse_NPolyArray_from_file(path_db_fp_sv, branches_sv, DoF_fp); 
+    
+    NPolyArray* parr_forward = &poly_array_fp_sv; 
+
+    //this is the poly-array which maps directly from the sieve to the focal plane. 
+    const char* path_db_sv_fp = "data/csv/db_prod_sv_fp_L_3ord.dat"; 
+    NPolyArray poly_array_sv_fp = Parse_NPolyArray_from_file(path_db_sv_fp, branches_fp, DoF_sv);
+    
+
     NPolyArray poly_array_sv_q1 = Parse_NPolyArray_from_file(path_db_sv_q1, branches_q1, DoF_sv);
     NPolyArray poly_array_q1_fp = Parse_NPolyArray_from_file(path_db_q1_fp, branches_fp, DoF_sv);
 
-    NPolyArray poly_array_sv_fp = Parse_NPolyArray_from_file(path_dbfile,   branches_fp, DoF_sv);
-    
     
     //if we 'nest' the models, we use the model which is the sv=>q1 model fed into the q1=>fp model. like: fp(q1(sv)). 
     cout << " -- Nesting arrays..." << flush;  
@@ -195,7 +213,7 @@ int newton_iteration_test(  const char* path_infile="",
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=dpp };  
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
 
-        .Define("Xsv_model", [parr](Track_t& Xfp, Track_t& Xsv)
+        .Define("Xsv_model", [parr, parr_forward](Track_t& Xfp, Track_t& Xsv)
         {
             RVec<double> Xsv_rvec{
                 Xsv.x,
@@ -205,7 +223,9 @@ int newton_iteration_test(  const char* path_infile="",
                 Xsv.dpp    
             }; 
 
-            parr->Iterate_to_root(Xsv_rvec, {Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}, 7);
+            Xsv_rvec = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}); 
+
+            parr->Iterate_to_root(Xsv_rvec, {Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}, 8);
             
             return Track_t{
                 .x      = Xsv_rvec[0],
