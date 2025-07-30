@@ -9,6 +9,69 @@ struct Track_t {
     //implicit conversion from this type to RVec<double> 
     operator RVec<double>() const { return RVec<double>{x,y,dxdz,dydz,dpp}; }  
     
+    Track_t operator-(const Track_t& rhs) const {   
+        return Track_t{
+            .x      = x     - rhs.x,
+            .y      = y     - rhs.y, 
+            .dxdz   = dxdz  - rhs.dxdz,
+            .dydz   = dydz  - rhs.dydz,
+            .dpp    = dpp   - rhs.dpp
+        }; 
+    }; 
+
+    Track_t operator+(const Track_t& rhs) const {   
+        return Track_t{
+            .x      = x     + rhs.x,
+            .y      = y     + rhs.y, 
+            .dxdz   = dxdz  + rhs.dxdz,
+            .dydz   = dydz  + rhs.dydz,
+            .dpp    = dpp   + rhs.dpp
+        }; 
+    }; 
+
+
+    Track_t operator*(double mult) const {   
+        return Track_t{
+            .x      = x     * mult,
+            .y      = y     * mult, 
+            .dxdz   = dxdz  * mult,
+            .dydz   = dydz  * mult,
+            .dpp    = dpp   * mult
+        }; 
+    };
+
+};
+
+class TrajectoryCollection : public TObject {
+public: 
+    TrajectoryCollection(const ROOT::RVec<Track_t>& _trajectories) 
+        : fN_elems{(int)_trajectories.size()}, fTrajectories{_trajectories} {
+
+        dx = ((double)fN_elems-1); 
+    };
+    
+    ~TrajectoryCollection() {}; 
+
+    Track_t Get(double idx) const {
+        if (idx >= 1.00 || idx < 0.) { Error("Get", "Invalid index given: %f, must be [0,1).", idx);
+            return Track_t{};
+        } 
+
+        double remainder = dx * idx; 
+        int index = (int)remainder; 
+        remainder += -1.*(double)index; 
+
+        const Track_t & t1 = fTrajectories[index+1]; 
+        const Track_t & t0 = fTrajectories[index]; 
+
+        return t0 + ((t1 - t0) * remainder);  
+    }; 
+
+private:    
+    int fN_elems; 
+    RVec<Track_t> fTrajectories; 
+
+    double dx; 
 };
 
 //_______________________________________________________________________________________________________________________________________________
@@ -93,7 +156,7 @@ void SCS_to_HCS(Track_t& track, const bool is_RHRS)
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int newton_iteration_test(  const char* path_infile="",
-                            const char* path_dbfile="data/csv/db_prod_mc_sv_fp_L_3ord.dat",  
+                            const char* path_dbfile="data/csv/db_prod_sv_fp_L_3ord.dat",  
                             const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "fitpoints_mc_sv_fp"; 
@@ -238,25 +301,105 @@ int newton_iteration_test(  const char* path_infile="",
         double ret(0.); for (const double& x : u * u) ret += x; return sqrt(ret); 
     };
 
+    auto rv_unit = [&rv_mag](const RVec<double>& u) {
+        return u / rv_mag(u); 
+    }; 
+
     //number of microns to compute vdc-smearing by
     double vdc_smearing_um = 0.; 
 
-#if 0 
+ 
     //'fan out' from the central found trajcetory, to adjacent trajectories. see which will be best. 
     const int n_trajectories=50; 
-    const double trajectory_spacing=0.50e-3; 
+    const double trajectory_spacing=0.250e-3; 
 
-    auto Find_trajectories = [n_trajectories, trajectory_spacing, parr](const Track_t& Xfp, const Track_t& xsv) 
+    auto Find_trajectories = [  n_trajectories,     
+                                trajectory_spacing, 
+                                parr, 
+                                DoF_fp, 
+                                DoF_sv, 
+                                &rv_mag ](const Track_t& Xfp, const Track_t& Xsv) 
     {
-        //search tracjectories 'forward'
-        RVec<Track_t> traj; traj.reserve(n_trajectories); 
+        
+        RVec<double> Xfp_rv{ Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz }; 
 
-        for (int i=0; i<n_trajectories; i++) { 
+        auto Get_next_trajectory = [parr, trajectory_spacing, &rv_mag, &Xfp_rv](RVec<Track_t>* t_vec, RVec<double>& Xsv, double oreintation)
+        {
+            RVec<double> J_arr{ *(parr->Jacobian(Xsv).Data()) }; 
+            int i_elem=0; 
 
-            RMatirx J( parr->Jacobian(Xsv) ); 
+            //this jacobian is 4x5, as we're mapping from R^5 => R^4. we're gonna 'peel off' the last column, and
+            //then solve the resultant 4x4 matrix. 
+            RVec<double> Ji_arr;    Ji_arr.reserve(DoF_fp*DoF_fp);  
+            RVec<double> J0;        J0.reserve(DoF_fp); 
+
+            for (int i=0; i<DoF_fp; i++) {
+                for (int j=0; j<DoF_fp; j++) Ji_arr.push_back( J_arr.at(i_elem++) ); 
+            
+                J0.push_back( J_arr.at(i_elem++) ); 
+            }
+
+            RMatrix Ji(DoF_fp, DoF_fp, Ji_arr); Ji.ReportSingular()=false; 
+
+            auto dX = Ji.Solve( J0 ); 
+
+            //chekc for null vector
+            if (dX.size() != DoF_fp) return 0; 
+            //check for NaN vals
+            for (double& x : dX) if ( x != x ) return 0; 
+            
+            dX.push_back( -1. ); 
+            dX *= oreintation * trajectory_spacing/rv_mag(dX);  
+
+            //now that we have a new trajectory 'suggestion', lets use it: 
+            Xsv += dX;
+
+            //now, we perform a few iterations to 'fix' it
+            parr->Iterate_to_root( Xsv, Xfp_rv, 3 ); 
+
+            t_vec->push_back({
+                .x = Xsv[0], 
+                .y = Xsv[1],
+                .dxdz = Xsv[2],
+                .dydz = Xsv[3],
+                .dpp = Xsv[4]
+            }); 
+            return 1; 
+        };
+
+        //0bvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv q  AA1
+        RVec<double> Xsv_rv{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp };
+
+        ///get 'forward' trajectories
+        RVec<Track_t> traj; traj.reserve(n_trajectories);  
+        int i_traj=0; 
+        while ( ++i_traj < n_trajectories ) {
+            if (Get_next_trajectory(&traj, Xsv_rv, 1. ) != 1) break; 
+        } 
+
+        ///get 'backward' trajectories
+        Xsv_rv = Track_t{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp }; 
+        RVec<Track_t> back_traj; back_traj.reserve(n_trajectories); 
+        
+        i_traj=0;
+        while ( ++i_traj < n_trajectories ) {
+            if (Get_next_trajectory(&back_traj, Xsv_rv, -1.) != 1) break; 
         }
+
+        RVec<Track_t> trajectories; 
+        trajectories.reserve(traj.size() + back_traj.size() + 1); 
+
+        //add the 'back aspect' tracks
+        for (int i=back_traj.size()-1; i>=0; i--) trajectories.push_back( back_traj[i] ); 
+
+        //add the 'central' (starting) tracks
+        trajectories.push_back( Xsv ); 
+
+        //add the 'front aspect' tracks
+        copy( traj.begin(), traj.end(), back_inserter(trajectories) ); 
+
+        return trajectories; 
     };
-#endif 
 
 
     //Define all of the branches we want to create models to map between
@@ -317,10 +460,13 @@ int newton_iteration_test(  const char* path_infile="",
 
         }, {"Xfp", "Xsv_first_guess"})
 
-        .Define("Xsv_trajectories",     [](const Track_t& Xfp, const Track_t& Xsv)
+        .Define("Xsv_trajectories",     [&Find_trajectories](const Track_t& Xfp, const Track_t& Xsv)
         {
+            return Find_trajectories(Xfp, Xsv); 
 
-        })
+        }, {"Xfp", "Xsv_model"})  
+
+        .Define("n_trajectories", [](const RVec<Track_t>& traj){ return (int)traj.size(); }, {"Xsv_trajectories"})
 
         .Define("reco_x_sv",        [](const Track_t& X){ return X.x; },    {"Xsv_model"})
         .Define("reco_y_sv",        [](const Track_t& X){ return X.y; },    {"Xsv_model"})
@@ -348,16 +494,16 @@ int newton_iteration_test(  const char* path_infile="",
 
         .Define("Xhcs", [is_RHRS](const Track_t& Xsv)
         {
-            Track_t Xhcs{Xsv}; 
-            SCS_to_HCS(Xhcs, is_RHRS); 
-            return Xhcs;    
+            Track_t Xhcs{Xsv};
+            SCS_to_HCS(Xhcs, is_RHRS);
+            return Xhcs;
         }, {"Xsv_model"}) 
 
         .Define("Xhcs_first_guess", [is_RHRS](const Track_t& Xsv)
         {
-            Track_t Xhcs{Xsv}; 
-            SCS_to_HCS(Xhcs, is_RHRS); 
-            return Xhcs;    
+            Track_t Xhcs{Xsv};
+            SCS_to_HCS(Xhcs, is_RHRS);
+            return Xhcs;
         }, {"Xsv_first_guess"});
 
 
@@ -388,6 +534,10 @@ int newton_iteration_test(  const char* path_infile="",
         .Histo2D<double>({"h_xy_hcs", "Projection of sieve-coords onto z_HCS=0;x_hcs;y_hcs", 250, -25e-3,25e-3, 250, -25e-3,25e-3}, "x_hcs", "y_hcs"); 
 
 
+    auto h_n_trajectories = df_hcs
+        .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5}, "n_trajectories"); 
+
+
     auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_fp;mm", 200, -5, 5},      "err_x_sv"); 
     auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_fp;mm", 200, -5, 5},      "err_y_sv"); 
     auto h_dxdz = df_output.Histo1D<double>({"h_dxdz", "Error of dxdz_fp;mrad", 200, -5, 5}, "err_dxdz_sv"); 
@@ -398,9 +548,16 @@ int newton_iteration_test(  const char* path_infile="",
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords. db:'%s', data:'%s'", path_dbfile, path_infile); 
     
+
+
     
     gStyle->SetPalette(kSunset);
     //gStyle->SetOptStat(0); 
+    new TCanvas("c4", b_c_title); 
+    h_n_trajectories->DrawCopy(); 
+    return 0; 
+    
+    
     new TCanvas("c2", b_c_title); 
     h_xy_sieve->DrawCopy("col2"); 
 
@@ -419,6 +576,8 @@ int newton_iteration_test(  const char* path_infile="",
     h_dxdz->DrawCopy(); 
     c->cd(4); 
     h_dydz->DrawCopy(); 
+
+
     
       
 
