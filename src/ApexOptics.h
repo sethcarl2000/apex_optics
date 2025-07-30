@@ -22,10 +22,10 @@ namespace ApexOptics {
 
     //given an array of input branches, and a 'target' output branch, will attempt to 
     // fit a polynomial (of order poly_order) from the inputs to the output. 
-    NPoly* Create_NPoly_fit(ROOT::RDF::RNode df, 
-                            const int poly_order, 
-                            const std::vector<std::string> &inputs, 
-                            const char* output); 
+    std::map<std::string, NPoly*> Create_NPoly_fit( ROOT::RDF::RNode df, 
+                                                    const int poly_order, 
+                                                    const std::vector<std::string> &inputs, 
+                                                    const std::vector<std::string> &outputs ); 
 
     //Given an std::map<string,NPoly*>, where the 'string' key is the name of the polynomial to be written to the 
     //file, this fcn will create (and truncate!) a '.dat' file which contains all information needed to 
