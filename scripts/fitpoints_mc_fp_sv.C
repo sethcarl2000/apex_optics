@@ -47,7 +47,6 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     const bool is_RHRS = param_is_RHRS->GetVal(); 
 
     delete tree; 
-    delete param_is_RHRS; 
     infile->Close(); 
     delete infile; 
 
@@ -99,9 +98,8 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     
     //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
     // of the 'branches_fp' vec 
-    map<string,NPoly*> polymap;     
-    for (const string& output : branches_sv ) 
-        polymap[output] = ApexOptics::Create_NPoly_fit(df_output, poly_order, branches_fp, output.data());
+    map<string,NPoly*> polymap =       
+        ApexOptics::Create_NPoly_fit(df_output, poly_order, branches_fp, branches_sv);
     
     cout << "done." << endl;    
 
@@ -121,7 +119,6 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     path_outfile += ".dat";
 
     ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
-
 
     
     //draw the reults of all models
@@ -155,6 +152,7 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_sv;mrad", 200, -2, 2}, "error_dxdz_sv"); 
     auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_sv;mrad", 200, -2, 2}, "error_dydz_sv"); 
     
+
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords: %s", path_outfile.data()); 
     auto c = new TCanvas("c", b_c_title, 1200, 800); 

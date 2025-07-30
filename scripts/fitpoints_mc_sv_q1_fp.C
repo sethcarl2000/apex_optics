@@ -109,28 +109,29 @@ int fitpoints_mc_sv_q1_fp( const int poly_order_svq1=2,
     //map from SIEVE coordinates => Q1 coordinates
     //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
     // of the 'branches_q1' vec 
-    map<string,NPoly*> polymap;     
-    for (const string& output : branches_q1 ) {
-        polymap[output] = ApexOptics::Create_NPoly_fit( df_output, //the dataframe object with all of our branches defined 
-                                                        poly_order_svq1, //the order of the NPoly to create 
-                                                        branches_sv, //the input branches 
-                                                        output.data()); //the output branch for this NPoly to target
-    
-    }
+    map<string,NPoly*> polymap_svq1 = 
+        ApexOptics::Create_NPoly_fit(   df_output,          //the dataframe object with all of our branches defined 
+                                        poly_order_svq1,    //the order of the NPoly to create 
+                                        branches_sv,        //the input branches 
+                                        branches_q1   );    //the output branches
     cout << "done." << endl; 
 
     cout << "Creating polynomials for q1 => fp..." << flush; 
     //map from Q1 coordinates => FOCAL PLANE coordinates
     //for each of the branches in the 'branches_q1' created above, make a polynomial which takes all the branches
     // of the 'branches_fp' vec   
-    for (const string& output : branches_fp ) {
-        polymap[output] = ApexOptics::Create_NPoly_fit( df_output, //the dataframe object with all of our branches defined 
-                                                        poly_order_q1fp, //the order of the NPoly to create 
-                                                        branches_q1, //the input branches 
-                                                        output.data()); //the output branch for this NPoly to target
-    
-    }
+    map<string,NPoly*> polymap_q1fp = 
+        ApexOptics::Create_NPoly_fit(   df_output,          //the dataframe object with all of our branches defined 
+                                        poly_order_svq1,    //the order of the NPoly to create 
+                                        branches_q1,        //the input branches 
+                                        branches_fp   );    //the output branches
     cout << "done." << endl;    
+    
+    
+    map<string,NPoly*> polymap; 
+    for (auto it = polymap_svq1.begin(); it != polymap_svq1.end(); it++) polymap[it->first] = it->second; 
+    for (auto it = polymap_q1fp.begin(); it != polymap_q1fp.end(); it++) polymap[it->first] = it->second; 
+
 
     //create the fp => q1 => sv output file ___________________________________________
     string path_outfile; 

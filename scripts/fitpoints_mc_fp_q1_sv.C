@@ -51,7 +51,6 @@ int fitpoints_mc_fp_q1_sv(  const int poly_fpq1_order=2,
     const bool is_RHRS = param_is_RHRS->GetVal(); 
 
     delete tree; 
-    delete is_RHRS; 
     infile->Close(); 
     delete infile; 
 
@@ -104,20 +103,18 @@ int fitpoints_mc_fp_q1_sv(  const int poly_fpq1_order=2,
     //these 'result pointers' will let us see the result for each element of the least-squares fit matrix
     //first, find the best coffeficients for the polynomials.
     
-    cout << "Creating polynomials for fp => q1..." << endl; 
+    cout << "Creating polynomials for fp => q1..." << flush; 
     
-    map<string,NPoly*> polymap_fpq1;     
-    for (const string& output : branches_q1 ) 
-        polymap_fpq1[output] = ApexOptics::Create_NPoly_fit(df_output, poly_fpq1_order, branches_fp, output.data());
+    map<string,NPoly*> polymap_fpq1 = 
+        ApexOptics::Create_NPoly_fit(df_output, poly_fpq1_order, branches_fp, branches_q1);
     
     cout << "done." << endl;    
 
     
-    cout << "Creating polynomials for q1 => sv..." << endl; 
+    cout << "Creating polynomials for q1 => sv..." << flush; 
 
-    map<string,NPoly*> polymap_q1sv;     
-    for (const string& output : branches_sv ) 
-        polymap_q1sv[output] = ApexOptics::Create_NPoly_fit(df_output, poly_q1sv_order, branches_q1, output.data());
+    map<string,NPoly*> polymap_q1sv =      
+        ApexOptics::Create_NPoly_fit(df_output, poly_q1sv_order, branches_q1, branches_sv);
     
     cout << "done." << endl;  
 
