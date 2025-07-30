@@ -15,9 +15,10 @@ struct Track_t {
 };
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
+//if you want to avoid creating (or overwriting) a db-file, just enter "" as the db-file name, and only the histograms will be drawn instead. 
 int fitpoints_mc_fp_sv( const int poly_order=2,
                         const char* path_infile="",
-                        const char* stem_outfile="data/csv/db_mc",  
+                        const char* stem_outfile="",  
                         const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "fit_points_mc_forward"; 
@@ -108,21 +109,28 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     cout << "done." << endl;    
 
     //create the fp => sv output file ___________________________________________
-    string path_outfile = string(stem_outfile); 
-    char buffer[50]; 
+    if (string(stem_outfile) != "") {
+        cout << "Creating dbfiles for polynomials..." << flush; 
+        
+        string path_outfile = string(stem_outfile); 
+        char buffer[50]; 
 
-    //specify the arm to use 
-    path_outfile += "_fp_sv"; 
+        //specify the arm to use 
+        path_outfile += "_fp_sv"; 
 
-    path_outfile += (is_RHRS ? "_R" : "_L"); 
+        path_outfile += (is_RHRS ? "_R" : "_L"); 
 
-    //specify the order of the polynomial
-    sprintf(buffer, "_%iord", poly_order); 
-    path_outfile += string(buffer); 
+        //specify the order of the polynomial
+        sprintf(buffer, "_%iord", poly_order); 
+        path_outfile += string(buffer); 
 
-    path_outfile += ".dat";
+        path_outfile += ".dat";
 
-    ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
+        ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
+
+        cout << "done." << endl; 
+    }
+    //____________________________________________________________________________
 
     
     //draw the reults of all models
