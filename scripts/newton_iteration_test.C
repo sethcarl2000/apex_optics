@@ -7,8 +7,35 @@ struct Track_t {
     double x,y,dxdz,dydz,dpp; 
 
     //implicit conversion from this type to RVec<double> 
-    operator RVec<double>() const { return RVec<double>{x,y,dxdz,dydz,dpp}; }    
+    operator RVec<double>() const { return RVec<double>{x,y,dxdz,dydz,dpp}; }  
+    
 };
+
+//_______________________________________________________________________________________________________________________________________________
+//this is a helper function which automates the creation of branches, which are just members of the Track_t struct. 
+ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch_in, map<string, double Track_t::*> branches)
+{
+    const int n_nodes = branches.size() + 1; 
+    RVec<ROOT::RDF::RNode> df_nodes{ df }; 
+
+    int i_branch=0; 
+    for (auto it = branches.begin(); it != branches.end(); it++) {
+        
+        //name of this output branch
+        const char* branch_name = it->first.data(); 
+
+        double Track_t::*coord = it->second; 
+
+        //define a new branch with name 'branch_name' which corresponds to 'Track_t::coord' 
+        auto new_node = df_nodes.back()
+
+            .Define(branch_name, [coord](const Track_t& track) { return track.*coord; }, {branch_in}); 
+
+        df_nodes.push_back(new_node); 
+    }
+    
+    return df_nodes.back(); 
+}
 
 //#define EVENT_RANGE 2000
 
@@ -35,6 +62,31 @@ NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> ou
 
     return NPolyArray(poly_vec); 
 }   
+
+
+//transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
+void SCS_to_HCS(Track_t& track, const bool is_RHRS) 
+{
+    //direction (SCS)
+    auto dir = TVector3( track.dxdz, track.dydz, 1. );
+
+    auto pos = TVector3( track.x, track.y, 0. ) + ApexOptics::Get_sieve_pos(is_RHRS); 
+
+    //rotate both the position and the direction
+    dir.RotateZ( -TMath::Pi()/2. ); 
+    dir.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
+
+    pos.RotateZ( -TMath::Pi()/2. ); 
+    pos.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
+
+    //compute the new slopes
+    track.dxdz = dir.x() / dir.z(); 
+    track.dydz = dir.y() / dir.z(); 
+
+    //use these new slopes to project the track onto the z=0 plane in HCS 
+    track.x = pos.x() - track.dxdz * pos.z(); 
+    track.y = pos.y() - track.dydz * pos.z(); 
+}
 
 
 
@@ -189,6 +241,23 @@ int newton_iteration_test(  const char* path_infile="",
     //number of microns to compute vdc-smearing by
     double vdc_smearing_um = 0.; 
 
+#if 0 
+    //'fan out' from the central found trajcetory, to adjacent trajectories. see which will be best. 
+    const int n_trajectories=50; 
+    const double trajectory_spacing=0.50e-3; 
+
+    auto Find_trajectories = [n_trajectories, trajectory_spacing, parr](const Track_t& Xfp, const Track_t& xsv) 
+    {
+        //search tracjectories 'forward'
+        RVec<Track_t> traj; traj.reserve(n_trajectories); 
+
+        for (int i=0; i<n_trajectories; i++) { 
+
+            RMatirx J( parr->Jacobian(Xsv) ); 
+        }
+    };
+#endif 
+
 
     //Define all of the branches we want to create models to map between
     auto df_output = df
@@ -213,7 +282,20 @@ int newton_iteration_test(  const char* path_infile="",
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=dpp };  
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
 
-        .Define("Xsv_model", [parr, parr_forward](Track_t& Xfp, Track_t& Xsv)
+        .Define("Xsv_first_guess", [parr_forward](Track_t& Xfp)
+        {
+            auto v = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});  
+            
+            return Track_t{ 
+                .x      = v[0],
+                .y      = v[1],
+                .dxdz   = v[2],
+                .dydz   = v[3],
+                .dpp    = v[4]
+            };
+        }, {"Xfp"})
+
+        .Define("Xsv_model", [parr](Track_t& Xfp, Track_t& Xsv)
         {
             RVec<double> Xsv_rvec{
                 Xsv.x,
@@ -222,8 +304,6 @@ int newton_iteration_test(  const char* path_infile="",
                 Xsv.dydz,
                 Xsv.dpp    
             }; 
-
-            Xsv_rvec = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}); 
 
             parr->Iterate_to_root(Xsv_rvec, {Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}, 8);
             
@@ -235,7 +315,12 @@ int newton_iteration_test(  const char* path_infile="",
                 .dpp    = Xsv_rvec[4]
             }; 
 
-        }, {"Xfp", "Xsv"})
+        }, {"Xfp", "Xsv_first_guess"})
+
+        .Define("Xsv_trajectories",     [](const Track_t& Xfp, const Track_t& Xsv)
+        {
+
+        })
 
         .Define("reco_x_sv",        [](const Track_t& X){ return X.x; },    {"Xsv_model"})
         .Define("reco_y_sv",        [](const Track_t& X){ return X.y; },    {"Xsv_model"})
@@ -259,14 +344,49 @@ int newton_iteration_test(  const char* path_infile="",
         .Define("err_y_sv",     [](Track_t& Xsv, double x){ return (Xsv.y-x)*1e3; }, {"Xsv_model", "y_sv"})
         .Define("err_dxdz_sv",  [](Track_t& Xsv, double x){ return (Xsv.dxdz-x)*1e3; }, {"Xsv_model", "dxdz_sv"})
         .Define("err_dydz_sv",  [](Track_t& Xsv, double x){ return (Xsv.dydz-x)*1e3; }, {"Xsv_model", "dydz_sv"})
-        .Define("err_dpp_sv",   [](Track_t& Xsv, double x){ return (Xsv.dpp-x)*1e3; }, {"Xsv_model", "dpp_sv"});
-    
+        .Define("err_dpp_sv",   [](Track_t& Xsv, double x){ return (Xsv.dpp-x)*1e3; }, {"Xsv_model", "dpp_sv"})
+
+        .Define("Xhcs", [is_RHRS](const Track_t& Xsv)
+        {
+            Track_t Xhcs{Xsv}; 
+            SCS_to_HCS(Xhcs, is_RHRS); 
+            return Xhcs;    
+        }, {"Xsv_model"}) 
+
+        .Define("Xhcs_first_guess", [is_RHRS](const Track_t& Xsv)
+        {
+            Track_t Xhcs{Xsv}; 
+            SCS_to_HCS(Xhcs, is_RHRS); 
+            return Xhcs;    
+        }, {"Xsv_first_guess"});
+
+
+    auto df_hcs = add_branch_from_Track_t(df_output, "Xhcs", {
+        {"x_hcs",       &Track_t::x},
+        {"y_hcs",       &Track_t::y},
+        {"dxdz_hcs",    &Track_t::dxdz},
+        {"dydz_hcs",    &Track_t::dydz},
+        {"dpp_hcs",     &Track_t::dpp}
+    }); 
+
+    auto df_hcs_guess = add_branch_from_Track_t(df_output, "Xhcs_first_guess", {
+        {"x_hcs_fg",       &Track_t::x},
+        {"y_hcs_fg",       &Track_t::y},
+        {"dxdz_hcs_fg",    &Track_t::dxdz},
+        {"dydz_hcs_fg",    &Track_t::dydz},
+        {"dpp_hcs_fg",     &Track_t::dpp}
+    });
+
     //book the histograms we need. 
     char buff_hxy_title[200];  
     sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
     
     auto h_xy_sieve = df_output.Histo2D<double>({"h_xy_sieve", buff_hxy_title, 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
     
+
+    auto h_xy_hcs = df_hcs
+        .Histo2D<double>({"h_xy_hcs", "Projection of sieve-coords onto z_HCS=0;x_hcs;y_hcs", 250, -25e-3,25e-3, 250, -25e-3,25e-3}, "x_hcs", "y_hcs"); 
+
 
     auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_fp;mm", 200, -5, 5},      "err_x_sv"); 
     auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_fp;mm", 200, -5, 5},      "err_y_sv"); 
@@ -281,9 +401,12 @@ int newton_iteration_test(  const char* path_infile="",
     
     gStyle->SetPalette(kSunset);
     //gStyle->SetOptStat(0); 
-    auto c2         = new TCanvas("c2", b_c_title); 
+    new TCanvas("c2", b_c_title); 
     h_xy_sieve->DrawCopy("col2"); 
 
+
+    new TCanvas("c3", b_c_title); 
+    h_xy_hcs->DrawCopy("col2"); 
 
     auto c = new TCanvas("c1", b_c_title, 1200, 800); 
     c->Divide(2,2, 0.005,0.005); 
