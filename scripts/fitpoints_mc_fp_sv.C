@@ -108,11 +108,13 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     
     cout << "done." << endl;    
 
+    string path_outfile = "";
+
     //create the fp => sv output file ___________________________________________
     if (string(stem_outfile) != "") {
         cout << "Creating dbfiles for polynomials..." << flush; 
         
-        string path_outfile = string(stem_outfile); 
+        path_outfile = string(stem_outfile); 
         char buffer[50]; 
 
         //specify the arm to use 
@@ -125,11 +127,12 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
         path_outfile += string(buffer); 
 
         path_outfile += ".dat";
-
+    
         ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
 
         cout << "done." << endl; 
-    }
+
+    } else { cout << "Skipping db-file creation." << endl; }
     //____________________________________________________________________________
 
     
