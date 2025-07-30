@@ -128,8 +128,8 @@ int newton_iteration_test(  const char* path_infile="",
     //if we 'nest' the models, we use the model which is the sv=>q1 model fed into the q1=>fp model. like: fp(q1(sv)). 
     cout << " -- Nesting arrays..." << flush;  
 
-    NPolyArray arr_model = NPolyArray::Nest( poly_array_q1_fp, poly_array_sv_q1 );
-    //NPolyArray arr_model = poly_array_sv_fp; 
+    //NPolyArray arr_model = NPolyArray::Nest( poly_array_q1_fp, poly_array_sv_q1 );
+    NPolyArray arr_model = poly_array_sv_fp; 
 
     //count how many elements there are in this monstrosity
     cout << "done.\n"; 
@@ -154,6 +154,9 @@ int newton_iteration_test(  const char* path_infile="",
             return 1; 
         }
     }
+
+    cout << " -- NPolyArray size: " << parr->Get_DoF_in() << " x " << parr->Get_DoF_out() << endl; 
+
 
     const int n_iterations = 7; 
 
@@ -267,33 +270,52 @@ int newton_iteration_test(  const char* path_infile="",
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=dpp };  
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
 
-        .Define("Xsv_model", [Iterate_to_Xfp](Track_t& Xfp, Track_t& Xsv)
+        .Define("Xsv_model", [parr](Track_t& Xfp, Track_t& Xsv)
         {
-            return Iterate_to_Xfp(Xfp, Xsv); 
-//            return Track_t{ .x=ret[0], .y=ret[1], .dxdz=ret[2], .dydz=ret[3], .dpp=ret[4]};         
+            //return Iterate_to_Xfp(Xfp, Xsv);
+            RVec<double> Xsv_rvec{
+                Xsv.x,
+                Xsv.y,
+                Xsv.dxdz,
+                Xsv.dydz,
+                Xsv.dpp    
+            }; 
+
+            parr->Iterate_to_root(Xsv_rvec, {Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}, 7);
+            
+            return Track_t{
+                .x      = Xsv_rvec[0],
+                .y      = Xsv_rvec[1],
+                .dxdz   = Xsv_rvec[2],
+                .dydz   = Xsv_rvec[3],
+                .dpp    = Xsv_rvec[4]
+            }; 
+
         }, {"Xfp", "Xsv"})
 
-        .Define("reco_x_sv",        [](const RVec<double>& X){ return X[0]; },    {"Xsv_model"})
-        .Define("reco_y_sv",        [](const RVec<double>& X){ return X[1]; },    {"Xsv_model"})
-        .Define("reco_dxdz_sv",     [](const RVec<double>& X){ return X[2]; },    {"Xsv_model"})
-        .Define("reco_dydz_sv",     [](const RVec<double>& X){ return X[3]; },    {"Xsv_model"})
-        .Define("reco_dpp_sv",      [](const RVec<double>& X){ return X[4]; },    {"Xsv_model"})
+        .Define("reco_x_sv",        [](const Track_t& X){ return X.x; },    {"Xsv_model"})
+        .Define("reco_y_sv",        [](const Track_t& X){ return X.y; },    {"Xsv_model"})
+        .Define("reco_dxdz_sv",     [](const Track_t& X){ return X.dxdz; },    {"Xsv_model"})
+        .Define("reco_dydz_sv",     [](const Track_t& X){ return X.dydz; },    {"Xsv_model"})
+        .Define("reco_dpp_sv",      [](const Track_t& X){ return X.dpp; },    {"Xsv_model"})
         
-        .Define("Xfp_model",  [parr](const RVec<double> &Xsv)
+        .Define("Xfp_model",  [parr](const Track_t&Xsv)
         {
-            return parr->Eval(Xsv); 
+            auto Xfp = parr->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp});
+            return Track_t{.x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3], .dpp=Xfp[4]}; 
+
         }, {"Xsv_model"})   
 
-        .Define("err_x_fp",     [](RVec<double>& Xfp, double x){ return (Xfp[0]-x)*1e3; }, {"Xfp_model", "x_fp"})
-        .Define("err_y_fp",     [](RVec<double>& Xfp, double x){ return (Xfp[1]-x)*1e3; }, {"Xfp_model", "y_fp"})
-        .Define("err_dxdz_fp",  [](RVec<double>& Xfp, double x){ return (Xfp[2]-x)*1e3; }, {"Xfp_model", "dxdz_fp"})
-        .Define("err_dydz_fp",  [](RVec<double>& Xfp, double x){ return (Xfp[3]-x)*1e3; }, {"Xfp_model", "dydz_fp"})
+        .Define("err_x_fp",     [](Track_t& Xfp, double x){ return (Xfp.x-x)*1e3; }, {"Xfp_model", "x_fp"})
+        .Define("err_y_fp",     [](Track_t& Xfp, double x){ return (Xfp.y-x)*1e3; }, {"Xfp_model", "y_fp"})
+        .Define("err_dxdz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dxdz-x)*1e3; }, {"Xfp_model", "dxdz_fp"})
+        .Define("err_dydz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dydz-x)*1e3; }, {"Xfp_model", "dydz_fp"})
 
-        .Define("err_x_sv",     [](RVec<double>& Xsv, double x){ return (Xsv[0]-x)*1e3; }, {"Xsv_model", "x_sv"})
-        .Define("err_y_sv",     [](RVec<double>& Xsv, double x){ return (Xsv[1]-x)*1e3; }, {"Xsv_model", "y_sv"})
-        .Define("err_dxdz_sv",  [](RVec<double>& Xsv, double x){ return (Xsv[2]-x)*1e3; }, {"Xsv_model", "dxdz_sv"})
-        .Define("err_dydz_sv",  [](RVec<double>& Xsv, double x){ return (Xsv[3]-x)*1e3; }, {"Xsv_model", "dydz_sv"})
-        .Define("err_dpp_sv",   [](RVec<double>& Xsv, double x){ return (Xsv[4]-x)*1e3; }, {"Xsv_model", "dpp_sv"});
+        .Define("err_x_sv",     [](Track_t& Xsv, double x){ return (Xsv.x-x)*1e3; }, {"Xsv_model", "x_sv"})
+        .Define("err_y_sv",     [](Track_t& Xsv, double x){ return (Xsv.y-x)*1e3; }, {"Xsv_model", "y_sv"})
+        .Define("err_dxdz_sv",  [](Track_t& Xsv, double x){ return (Xsv.dxdz-x)*1e3; }, {"Xsv_model", "dxdz_sv"})
+        .Define("err_dydz_sv",  [](Track_t& Xsv, double x){ return (Xsv.dydz-x)*1e3; }, {"Xsv_model", "dydz_sv"})
+        .Define("err_dpp_sv",   [](Track_t& Xsv, double x){ return (Xsv.dpp-x)*1e3; }, {"Xsv_model", "dpp_sv"});
     
     //book the histograms we need. 
     char buff_hxy_title[200];  
