@@ -171,81 +171,6 @@ int newton_iteration_test(  const char* path_infile="",
     //number of microns to compute vdc-smearing by
     double vdc_smearing_um = 0.; 
 
-    //what we're effectivley doing here is using newton's method for iterating towrads the root of a nonlinear system.
-    // the system we're trying to solve is the following least-square problem: 
-    //  - the 'chi-square' in this case is the square error between the model's value for Xfp, and the actual value.
-    //    this is given by the d_Xfp vector above. 
-    //  - Therefore, the 'F' vector is our evaluation of the gradient of this function, which will be zero at the 
-    //    minimum error value (if it isn't a local, false minima.)
-    //  - to use newton's method, we need to compute the Jacobian of our 'F' funciton. this is what 'J' will be. 
-    //
-    auto find_next_Xsv = [parr, rv_dot, rv_mag, DoF_sv, DoF_fp](RVec<double>& Xfp, RVec<double>& Xsv) {
-        
-        //Get the difference between the model's evaluation of Xfp, and the actual value. 
-        RVec<double> d_Xfp{ parr->Eval(Xsv) - Xfp }; 
-
-        RMatrix dGi_dxj = parr->Jacobian(Xsv); 
-        RVec<RMatrix> dGi_dxj_dxk = parr->HessianTensor(Xsv); 
- 
-        //Compute the 'F' vector and the 'J' matrix
-        RMatrix J(DoF_sv, DoF_sv, 0.); 
-        RVec<double> F(DoF_sv, 0.); 
-        
-        for (int i=0; i<DoF_fp; i++) {
-
-            for (int j=0; j<DoF_sv; j++) {
-            
-                F.at(j) += d_Xfp.at(i) * dGi_dxj.at(i,j);
-                
-                for (int k=0; k<DoF_sv; k++) {
-                    J.at(j,k) += 
-                        (dGi_dxj.at(i,j) * dGi_dxj.at(i,k))   +   (d_Xfp.at(i) * dGi_dxj_dxk[i].at(j,k)); 
-                }
-            }
-        }
-        
-        double det = J.Determinant(); 
-        
-        //printf(" det: %+.3e\n", J.Determinant()); 
-        if ((det != det) || (fabs(det) < 1e-30)) return RVec<double>{}; 
-
-        return  -1. * J.Solve( F ); 
-    };
-
-    auto Iterate_to_Xfp = [find_next_Xsv, n_iterations, rv_mag, parr](const Track_t& Xfp, const Track_t& Xsv) 
-    {   
-        RVec<double> Xfp_vec{ 
-            Xfp.x,
-            Xfp.y,
-            Xfp.dxdz,
-            Xfp.dydz 
-        };
-
-        RVec<double> Xsv_vec{
-            Xsv.x,
-            Xsv.y,
-            Xsv.dxdz,
-            Xsv.dydz,
-            Xsv.dpp
-        }; 
-        
-        for (int i=0; i<n_iterations; i++) {
-            
-            //printf("it %3i error: % .9f\n", i, rv_mag(Xfp_vec - parr->Eval(Xsv_vec)));
-
-            RVec<double> d_Xsv = find_next_Xsv(Xfp_vec, Xsv_vec);
-            
-            //cout << "d_Xsv: " << d_Xsv << endl;
-            //if the 'J' matrix computed above is singular, the 'find_next_Xsv' fcn return an empty RVec
-            if (d_Xsv.size() == 0) break; 
-            
-            Xsv_vec += d_Xsv; 
-        }
-
-        //printf("final error: % .9f\n", rv_mag(Xfp_vec - parr->Eval(Xsv_vec)));
-        return Xsv_vec; 
-    };
-
 
     //Define all of the branches we want to create models to map between
     auto df_output = df
@@ -272,7 +197,6 @@ int newton_iteration_test(  const char* path_infile="",
 
         .Define("Xsv_model", [parr](Track_t& Xfp, Track_t& Xsv)
         {
-            //return Iterate_to_Xfp(Xfp, Xsv);
             RVec<double> Xsv_rvec{
                 Xsv.x,
                 Xsv.y,
