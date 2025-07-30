@@ -209,7 +209,7 @@ RVec<double> MultiLayerPerceptron::Eval(const RVec<double>& X) const
     return {}; 
 }
 //__________________________________________________________________________________________________________________________________
-/*RVec<RVec<double>>* Weight_gradient(const RVec<double>& X) const
+RVec<RVec<double>>* Weight_gradient(const RVec<double>& X) const
 {
     if ((int)X.size() != Get_DoF_in()) {
         Error("Eval", "Input vector wrong size (%i), expected (%i).", (int)X.size(), Get_DoF_in()); 
@@ -262,11 +262,11 @@ RVec<double> MultiLayerPerceptron::Eval(const RVec<double>& X) const
     }
 
     //now that we have cached all the layers, we're ready to start computing the gradient. 
-
+    
 
 
     return &grad; 
-}*/ 
+}
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________

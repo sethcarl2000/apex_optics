@@ -45,7 +45,7 @@ public:
     //Evaluate the mlp for a given input value
     ROOT::RVec<double> Eval(const ROOT::RVec<double>& X) const; 
 
-    /*ROOT::RVec<ROOT::RVec<double>>* Weight_gradient(const ROOT::RVec<double>& X) const; */ 
+    ROOT::RVec<ROOT::RVec<double>>* Weight_gradient(const ROOT::RVec<double>& X) const; 
 
     //Print Network structure and all weights
     void Print() const; 
