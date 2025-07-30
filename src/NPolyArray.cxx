@@ -207,8 +207,10 @@ int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>&
         //Get the difference between the model's evaluation of Xfp, and the actual value. 
         RVec<double> dZ{ Eval(X) - Z }; 
 
-        RMatrix       dGi_dXj      = Jacobian(X); 
-        RVec<RMatrix> dGi_dXj_dXk  = HessianTensor(X); 
+        RMatrix       dGi_dXj     = Jacobian(X); 
+
+        //Get the hessian matrix, store its elements in a vector
+        RVec<RMatrix> dGi_dXj_dXk = HessianTensor(X); 
 
         //Compute the 'F' vector and the 'J' matrix
         RMatrix J(Get_DoF_in(), Get_DoF_in(), 0.); J.ReportSingular()=false; 
@@ -218,15 +220,18 @@ int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>&
 
             for (int j=0; j<Get_DoF_in(); j++) {
             
-                F.at(j) += dZ.at(i) * dGi_dXj.at(i,j);
+                F[j] += dZ[i] * dGi_dXj.get(i,j);
                 
-                for (int k=0; k<Get_DoF_in(); k++) {
-                    J.at(j,k) += 
-                        (dGi_dXj.at(i,j) * dGi_dXj.at(i,k))   +   (dZ.at(i) * dGi_dXj_dXk[i].at(j,k)); 
+                for (int k=j; k<Get_DoF_in(); k++) {
+                    J.get(j,k) += 
+                        (dGi_dXj.get(i,j) * dGi_dXj.get(i,k))   +   (dZ[i] * dGi_dXj_dXk[i].get(j,k)); 
                 }
             }
         }
         
+        //Since 'J' is symmetric, we only filled the elements on or above the main diagonal. lets fill the rest:        
+        for (int j=1; j<Get_DoF_out(); j++) for (int k=0; k<j; k++) J.get(j,k) = J.get(k,j); 
+
         auto dX = J.Solve( F ); 
 
         //check for NaN in 'adjustment' vector
