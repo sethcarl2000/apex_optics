@@ -10,6 +10,10 @@
 
 using namespace std; 
    
+struct Track_t {
+    double x,y,dxdz,dydz,dpp; 
+};
+
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int fitpoints_mc_fp_sv( const int poly_order=2,
                         const char* path_infile="",
@@ -94,7 +98,7 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
         "dydz_fp"
     };
 
-    cout << "Creating polynomials for fp => sv..." << endl; 
+    cout << "Creating polynomials for fp => sv..." << flush; 
     
     //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
     // of the 'branches_fp' vec 
@@ -122,7 +126,49 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
 
     
     //draw the reults of all models
-    vector<ROOT::RDF::RNode> error_nodes{ df_output }; 
+    //reconstruct the sieve coordinates
+    NPolyArray* parr = new NPolyArray({
+        polymap["x_sv"],
+        polymap["y_sv"],
+        polymap["dxdz_sv"],
+        polymap["dydz_sv"],
+        polymap["dpp_sv"]
+    }); 
+    
+    auto df_sieve_reco = df_output 
+        
+        //Define the reconstructed sieve coordinates using our model
+        .Define("reco_X_sv",    [parr](double x, double y, double dxdz, double dydz)
+        {
+            auto X_sv = parr->Eval({x, y, dxdz, dydz}); 
+            return Track_t{ 
+                .x      =X_sv[0], 
+                .y      =X_sv[1], 
+                .dxdz   =X_sv[2],
+                .dydz   =X_sv[3],
+                .dpp    =X_sv[4]
+            };
+        }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"}); 
+    
+        
+    vector<ROOT::RDF::RNode> error_nodes{ df_sieve_reco }; 
+    
+    auto Define_Track_t_branch = [&error_nodes](const char* coord_name, double Track_t::*coord)
+    {   
+        auto new_node = error_nodes.back() 
+            .Define(coord_name, [coord](const Track_t& trk) { return trk.*coord; }, {"reco_X_sv"});
+
+        error_nodes.push_back(new_node); 
+        return; 
+    };
+    
+    Define_Track_t_branch("reco_x_sv",      &Track_t::x);
+    Define_Track_t_branch("reco_y_sv",      &Track_t::y);
+    Define_Track_t_branch("reco_dxdz_sv",   &Track_t::dxdz);
+    Define_Track_t_branch("reco_dydz_sv",   &Track_t::dydz);
+    Define_Track_t_branch("reco_dpp_sv",    &Track_t::dpp);
+    
+
     for (auto it = polymap.begin(); it != polymap.end(); it++) {
 
         //get the polynomial and its name
@@ -133,7 +179,7 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
         char br_output_name[50];
         sprintf(br_output_name, "error_%s", poly_name);
 
-        auto new_node = error_nodes.at(error_nodes.size()-1) 
+        auto new_node = error_nodes.back() 
 
             .Define(br_output_name, [poly](double target, double x, double y, double dxdz, double dydz)
             {
@@ -144,13 +190,14 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
         error_nodes.push_back(new_node); 
     }
 
-    auto df_error = error_nodes.at(error_nodes.size()-1); 
+    auto df_error = error_nodes.back(); 
 
-    
     auto h_x    = df_error.Histo1D({"h_x", "Error of x_sv;mm", 200, -10, 10}, "error_x_sv"); 
     auto h_y    = df_error.Histo1D({"h_y", "Error of y_sv;mm", 200, -10, 10}, "error_y_sv"); 
     auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_sv;mrad", 200, -2, 2}, "error_dxdz_sv"); 
     auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_sv;mrad", 200, -2, 2}, "error_dydz_sv"); 
+    
+    auto h_xy_sieve = df_error.Histo2D<double>({"h_xy_sieve", "Reconstructed sieve-coords;x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
     
 
     char b_c_title[120]; 
@@ -169,8 +216,12 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     h_dydz->DrawCopy(); 
 
 
+    new TCanvas("c2", b_c_title); 
+    h_xy_sieve->DrawCopy(); 
+
     //delete our template polynomial
-    delete poly; 
+    delete poly;
+    delete parr;  
 
     //delete our poly models
     for (auto it = polymap.begin(); it != polymap.end(); it++ ) delete it->second;
