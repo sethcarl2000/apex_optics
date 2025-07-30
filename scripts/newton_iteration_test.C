@@ -100,7 +100,7 @@ ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch
     return df_nodes.back(); 
 }
 
-//#define EVENT_RANGE 2000
+#define EVENT_RANGE 2000
 
 //given a DB file to look in, and a list of output polynomial names, will return an NPolyArray object with all the relevant polys filled in
 NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names, const int DoF) 
@@ -194,11 +194,13 @@ int newton_iteration_test(  const char* path_infile="",
     infile->Close(); 
     delete infile; 
 
+
+
 #ifdef EVENT_RANGE
     if (ROOT::IsImplicitMTEnabled()) {
         ROOT::DisableImplicitMT(); 
     }
-    Info(here, "Multi-threadding is disabled. Events to run : %i", EVENT_RANGE); 
+    Info(here, "Multi-threadding is disabled. Max events to run: %i", EVENT_RANGE); 
 #else 
     ROOT::EnableImplicitMT(); 
     Info(here, "Multi-threadding is enabled. Thread pool size : %i", ROOT::GetThreadPoolSize()); 
@@ -206,6 +208,13 @@ int newton_iteration_test(  const char* path_infile="",
 
     //Now, we are ready to process the tree using RDataFrame
     ROOT::RDataFrame df(tree_name, path_infile); 
+
+#ifdef EVENT_RANGE
+    const int n_events_max = *df.Count(); 
+    const int n_events = min<int>(EVENT_RANGE, n_events_max); 
+#else 
+    const int n_events = *df.Count(); 
+#endif
 
     const double hrs_momentum = 1104.0; 
 
@@ -334,9 +343,9 @@ int newton_iteration_test(  const char* path_infile="",
             RVec<double> J0;        J0.reserve(DoF_fp); 
 
             for (int i=0; i<DoF_fp; i++) {
-                for (int j=0; j<DoF_fp; j++) Ji_arr.push_back( J_arr.at(i_elem++) ); 
+                for (int j=0; j<DoF_fp; j++) Ji_arr.push_back( J_arr[i_elem++] ); 
             
-                J0.push_back( J_arr.at(i_elem++) ); 
+                J0.push_back( J_arr[i_elem++] ); 
             }
 
             RMatrix Ji(DoF_fp, DoF_fp, Ji_arr); Ji.ReportSingular()=false; 
@@ -400,6 +409,7 @@ int newton_iteration_test(  const char* path_infile="",
 
         return trajectories; 
     };
+
 
 
     //Define all of the branches we want to create models to map between
@@ -554,7 +564,14 @@ int newton_iteration_test(  const char* path_infile="",
     gStyle->SetPalette(kSunset);
     //gStyle->SetOptStat(0); 
     new TCanvas("c4", b_c_title); 
+    
+    TStopwatch timer; 
+    
     h_n_trajectories->DrawCopy(); 
+    
+    double realtime( timer.RealTime() ); 
+    printf("processed %i events in %f seconds (%f ms/event)\n", n_events, realtime, 1e3 * realtime / ((double)n_events) ); 
+
     return 0; 
     
     
