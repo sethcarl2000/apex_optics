@@ -20,9 +20,16 @@
 class NPolyArray : public TObject {
 
 public: 
+    
+    //default constructor (NPolys empty-initialized with correct DoF)
     NPolyArray(int _DoF_out, int _DoF_in);
+    
+    //constructor with vector of NPoly's (by value)
     NPolyArray(const std::vector<NPoly>& _polys);
 
+    //constructor with vector of NPoly's (by ptr)
+    NPolyArray(const std::vector<NPoly*>& _polys); 
+    
     ~NPolyArray() {}; 
 
     inline int Get_DoF_in()  const { return fDoF_in;  }

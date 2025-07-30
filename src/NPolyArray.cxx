@@ -17,6 +17,7 @@ NPolyArray::NPolyArray(int _DoF_out, int _DoF_in)
     for (int i=0; i<Get_DoF_out(); i++) 
         fPolys.push_back(NPoly(Get_DoF_in()));
 }
+
 //______________________________________________________________________________________________
 NPolyArray::NPolyArray(const vector<NPoly>& _polys) 
 {
@@ -43,6 +44,36 @@ NPolyArray::NPolyArray(const vector<NPoly>& _polys)
     //if we got here, then all polys match one another. 
     fPolys = _polys; 
 }
+
+//______________________________________________________________________________________________
+NPolyArray::NPolyArray(const vector<NPoly*>& _polys) 
+{
+    const char* const here = "NPolyArray(vector<NPoly>)";
+    //use the first polynomial to check the number of input DoF
+    fDoF_out = _polys.size(); 
+    fDoF_in  = 0; 
+    
+    if (fDoF_out < 1) { 
+        Error(here, "Input vector is empty. Cannot construct"); 
+        return; 
+    }
+
+    //check to make sure that each poly has the same input DoF
+    fDoF_in = _polys.at(0)->Get_nDoF(); 
+    for (const NPoly* poly : _polys) {
+        if (fDoF_in != poly->Get_nDoF()) {
+            Error(here, "DoF of input polys does not match. Cannot construct"); 
+            fDoF_in  =0; 
+            fDoF_out =0; 
+            return; 
+        } 
+    }
+
+    //if we got here, then all polys match one another's DoF. We may now construct our vector of NPolys 
+    fPolys.reserve(_polys.size()); 
+    for (const NPoly* poly : _polys) fPolys.push_back(*poly); 
+}
+
 //______________________________________________________________________________________________
 RVec<double> NPolyArray::Eval(const RVec<double>& X) const 
 {
