@@ -228,7 +228,11 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
 
 
     new TCanvas("c2", b_c_title); 
-    h_xy_sieve->DrawCopy(); 
+
+    gStyle->SetPalette(kSunset); 
+    h_xy_sieve->SetStats(0); 
+
+    h_xy_sieve->DrawCopy("col2"); 
 
     //delete our template polynomial
     delete poly;
