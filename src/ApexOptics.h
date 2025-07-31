@@ -50,16 +50,16 @@ namespace ApexOptics {
 
     //units in mm. 
     inline TVector3 Get_APEX_Target_center() {
-        return TVector3( 0., 0., -1053.7952 );
+        return TVector3( 0., 0., -1053.7952e-3 );
     }
         
     //units in mm. These are in Target coordinates (TCS), obtained by rotating hall
     // coordinates first by '-sieve_angle' about the y-axis, then by pi/2 about the
     // z-axis. 
     inline TVector3 Get_sieve_pos(bool _is_RHRS) {
-        return TVector3( _is_RHRS ?  -1.101 :  -1.301,
-                         _is_RHRS ?  -3.885 :   6.672,
-                         _is_RHRS ? 794.609 : 795.766 ); 
+        return TVector3( _is_RHRS ?  -1.101e-3 :  -1.301e-3,
+                         _is_RHRS ?  -3.885e-3 :   6.672e-3,
+                         _is_RHRS ? 794.609e-3 : 795.766e-3 ); 
     }
 
 };
