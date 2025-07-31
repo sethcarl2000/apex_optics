@@ -76,12 +76,12 @@ private:
 
 //_______________________________________________________________________________________________________________________________________________
 //this is a helper function which automates the creation of branches, which are just members of the Track_t struct. 
-ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch_in, map<string, double Track_t::*> branches)
+void add_branch_from_Track_t(   std::vector<ROOT::RDF::RNode>& df_nodes, 
+                                const char* branch_in, 
+                                map<string, double Track_t::*> branches )
 {
     const int n_nodes = branches.size() + 1; 
-    RVec<ROOT::RDF::RNode> df_nodes{ df }; 
-
-    int i_branch=0; 
+    
     for (auto it = branches.begin(); it != branches.end(); it++) {
         
         //name of this output branch
@@ -97,10 +97,10 @@ ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch
         df_nodes.push_back(new_node); 
     }
     
-    return df_nodes.back(); 
+    return; 
 }
 
-#define EVENT_RANGE 2000
+#define EVENT_RANGE 20000
 
 //given a DB file to look in, and a list of output polynomial names, will return an NPolyArray object with all the relevant polys filled in
 NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names, const int DoF) 
@@ -181,7 +181,7 @@ int newton_iteration_test(  const char* path_infile="",
         Error(here, "could not find TTree '%s'", tree_name); 
         return 1; 
     }
-
+    
     //check if we can find the 'is_RHRS' parameter. Fatal error if not! 
     TParameter<bool>* param_is_RHRS = (TParameter<bool>*)infile->Get("is_RHRS"); 
     if (!param_is_RHRS) {
@@ -367,11 +367,11 @@ int newton_iteration_test(  const char* path_infile="",
             parr->Iterate_to_root( Xsv, Xfp_rv, 3 ); 
 
             t_vec->push_back({
-                .x = Xsv[0], 
-                .y = Xsv[1],
-                .dxdz = Xsv[2],
-                .dydz = Xsv[3],
-                .dpp = Xsv[4]
+                .x      = Xsv[0], 
+                .y      = Xsv[1],
+                .dxdz   = Xsv[2],
+                .dydz   = Xsv[3],
+                .dpp    = Xsv[4]
             }); 
             return 1; 
         };
@@ -411,9 +411,15 @@ int newton_iteration_test(  const char* path_infile="",
     };
 
 
+#ifdef EVENT_RANGE
+    printf("Processing %i events...", min<int>(EVENT_RANGE, n_events)); 
+#else 
+    printf("Processing %i events...", n_events); 
+#endif
+    cout << flush; 
 
     //Define all of the branches we want to create models to map between
-    auto df_output = df
+    auto df_proc = df
 
 #ifdef EVENT_RANGE
         .Range(EVENT_RANGE)
@@ -435,79 +441,84 @@ int newton_iteration_test(  const char* path_infile="",
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=dpp };  
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
 
-        .Define("Xsv_first_guess", [parr_forward](Track_t& Xfp)
+        .Define("Xsv_first_guess", [parr_forward, parr](Track_t& Xfp)
         {
-            auto v = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});  
+            auto Xsv = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});  
             
-            return Track_t{ 
-                .x      = v[0],
-                .y      = v[1],
-                .dxdz   = v[2],
-                .dydz   = v[3],
-                .dpp    = v[4]
-            };
-        }, {"Xfp"})
-
-        .Define("Xsv_model", [parr](Track_t& Xfp, Track_t& Xsv)
-        {
-            RVec<double> Xsv_rvec{
-                Xsv.x,
-                Xsv.y,
-                Xsv.dxdz,
-                Xsv.dydz,
-                Xsv.dpp    
-            }; 
-
-            parr->Iterate_to_root(Xsv_rvec, {Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}, 8);
+            parr->Iterate_to_root(Xsv, {Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}, 8);
             
             return Track_t{
-                .x      = Xsv_rvec[0],
-                .y      = Xsv_rvec[1],
-                .dxdz   = Xsv_rvec[2],
-                .dydz   = Xsv_rvec[3],
-                .dpp    = Xsv_rvec[4]
+                .x      = Xsv[0],
+                .y      = Xsv[1],
+                .dxdz   = Xsv[2],
+                .dydz   = Xsv[3],
+                .dpp    = Xsv[4]
             }; 
 
-        }, {"Xfp", "Xsv_first_guess"})
+        }, {"Xfp"})
 
         .Define("Xsv_trajectories",     [&Find_trajectories](const Track_t& Xfp, const Track_t& Xsv)
         {
             return Find_trajectories(Xfp, Xsv); 
 
-        }, {"Xfp", "Xsv_model"})  
+        }, {"Xfp", "Xsv_first_guess"})  
+
+        .Define("Xsv_best",     [is_RHRS](const RVec<Track_t>& traj, const TVector3& vtx)
+        {
+            const Track_t *Xsv_best = nullptr;
+            double err2_best = 1e30; 
+
+            //look for the best track
+            for (const Track_t& track_scs : traj) {
+                
+                Track_t track_hcs{track_scs}; 
+
+                SCS_to_HCS(track_hcs, is_RHRS); 
+                
+                //project our 'track' onto the z-plane of the react vertex
+                double err2(0.); 
+                err2 += pow( (track_hcs.x  +  track_hcs.dxdz * vtx.z()) - vtx.x(), 2 );
+                err2 += pow( (track_hcs.y  +  track_hcs.dydz * vtx.z()) - vtx.y(), 2 ); 
+
+                if (err2 < err2_best) {
+                    Xsv_best = &track_scs;
+                    err2_best = err2; 
+                }
+            }
+
+            if (!Xsv_best) {
+                Error("Define(Xsv_best)", "No good sieve coord found!"); return Track_t{}; 
+            }
+
+            return *Xsv_best; 
+
+        }, {"Xsv_trajectories", "position_vtx"})
 
         .Define("n_trajectories", [](const RVec<Track_t>& traj){ return (int)traj.size(); }, {"Xsv_trajectories"})
 
-        .Define("reco_x_sv",        [](const Track_t& X){ return X.x; },    {"Xsv_model"})
-        .Define("reco_y_sv",        [](const Track_t& X){ return X.y; },    {"Xsv_model"})
-        .Define("reco_dxdz_sv",     [](const Track_t& X){ return X.dxdz; },    {"Xsv_model"})
-        .Define("reco_dydz_sv",     [](const Track_t& X){ return X.dydz; },    {"Xsv_model"})
-        .Define("reco_dpp_sv",      [](const Track_t& X){ return X.dpp; },    {"Xsv_model"})
-        
         .Define("Xfp_model",  [parr](const Track_t&Xsv)
         {
             auto Xfp = parr->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp});
             return Track_t{.x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3], .dpp=Xfp[4]}; 
 
-        }, {"Xsv_model"})   
+        }, {"Xsv_best"})   
 
         .Define("err_x_fp",     [](Track_t& Xfp, double x){ return (Xfp.x-x)*1e3; }, {"Xfp_model", "x_fp"})
         .Define("err_y_fp",     [](Track_t& Xfp, double x){ return (Xfp.y-x)*1e3; }, {"Xfp_model", "y_fp"})
         .Define("err_dxdz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dxdz-x)*1e3; }, {"Xfp_model", "dxdz_fp"})
         .Define("err_dydz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dydz-x)*1e3; }, {"Xfp_model", "dydz_fp"})
 
-        .Define("err_x_sv",     [](Track_t& Xsv, double x){ return (Xsv.x-x)*1e3; }, {"Xsv_model", "x_sv"})
-        .Define("err_y_sv",     [](Track_t& Xsv, double x){ return (Xsv.y-x)*1e3; }, {"Xsv_model", "y_sv"})
-        .Define("err_dxdz_sv",  [](Track_t& Xsv, double x){ return (Xsv.dxdz-x)*1e3; }, {"Xsv_model", "dxdz_sv"})
-        .Define("err_dydz_sv",  [](Track_t& Xsv, double x){ return (Xsv.dydz-x)*1e3; }, {"Xsv_model", "dydz_sv"})
-        .Define("err_dpp_sv",   [](Track_t& Xsv, double x){ return (Xsv.dpp-x)*1e3; }, {"Xsv_model", "dpp_sv"})
+        .Define("Xsv_error", [](Track_t Xsv_mod, Track_t Xsv)
+        {   
+            return (Xsv_mod - Xsv) * 1e3; 
+        }, {"Xsv_best", "Xsv"})
 
         .Define("Xhcs", [is_RHRS](const Track_t& Xsv)
         {
             Track_t Xhcs{Xsv};
             SCS_to_HCS(Xhcs, is_RHRS);
             return Xhcs;
-        }, {"Xsv_model"}) 
+        }, {"Xsv_best"}) 
 
         .Define("Xhcs_first_guess", [is_RHRS](const Track_t& Xsv)
         {
@@ -517,7 +528,9 @@ int newton_iteration_test(  const char* path_infile="",
         }, {"Xsv_first_guess"});
 
 
-    auto df_hcs = add_branch_from_Track_t(df_output, "Xhcs", {
+    vector<ROOT::RDF::RNode> output_nodes{ df_proc };  
+
+    add_branch_from_Track_t( output_nodes, "Xhcs", {
         {"x_hcs",       &Track_t::x},
         {"y_hcs",       &Track_t::y},
         {"dxdz_hcs",    &Track_t::dxdz},
@@ -525,26 +538,50 @@ int newton_iteration_test(  const char* path_infile="",
         {"dpp_hcs",     &Track_t::dpp}
     }); 
 
-    auto df_hcs_guess = add_branch_from_Track_t(df_output, "Xhcs_first_guess", {
-        {"x_hcs_fg",       &Track_t::x},
-        {"y_hcs_fg",       &Track_t::y},
-        {"dxdz_hcs_fg",    &Track_t::dxdz},
-        {"dydz_hcs_fg",    &Track_t::dydz},
-        {"dpp_hcs_fg",     &Track_t::dpp}
-    });
+    add_branch_from_Track_t( output_nodes, "Xsv_first_guess", {
+        {"x_sv_fg",       &Track_t::x},
+        {"y_sv_fg",       &Track_t::y},
+        {"dxdz_sv_fg",    &Track_t::dxdz},
+        {"dydz_sv_fg",    &Track_t::dydz},
+        {"dpp_sv_fg",     &Track_t::dpp}
+    }); 
+
+    add_branch_from_Track_t( output_nodes, "Xsv_best", {
+        {"reco_x_sv",       &Track_t::x},
+        {"reco_y_sv",       &Track_t::y},
+        {"reco_dxdz_sv",    &Track_t::dxdz},
+        {"reco_dydz_sv",    &Track_t::dydz},
+        {"reco_dpp_sv",     &Track_t::dpp}
+    }); 
+
+    add_branch_from_Track_t( output_nodes, "Xsv_error", {
+        {"err_x_sv",       &Track_t::x},
+        {"err_y_sv",       &Track_t::y},
+        {"err_dxdz_sv",    &Track_t::dxdz},
+        {"err_dydz_sv",    &Track_t::dydz},
+        {"err_dpp_sv",     &Track_t::dpp}
+    }); 
+
+    auto df_output = output_nodes.back(); 
 
     //book the histograms we need. 
     char buff_hxy_title[200];  
     sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
     
-    auto h_xy_sieve = df_output.Histo2D<double>({"h_xy_sieve", buff_hxy_title, 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
-    
+    auto h_xy_sieve 
+        = df_output.Histo2D<double>({"h_xy_sieve", "Sieve coordinates (best fit);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, 
+        "reco_x_sv", "reco_y_sv"); 
 
-    auto h_xy_hcs = df_hcs
+    auto h_xy_sieve_fg 
+        = df_output.Histo2D<double>({"h_xy_sieve", "Sieve coordinates (first guess);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, 
+        "x_sv_fg", "y_sv_fg"); 
+
+
+    auto h_xy_hcs = df_output
         .Histo2D<double>({"h_xy_hcs", "Projection of sieve-coords onto z_HCS=0;x_hcs;y_hcs", 250, -25e-3,25e-3, 250, -25e-3,25e-3}, "x_hcs", "y_hcs"); 
 
 
-    auto h_n_trajectories = df_hcs
+    auto h_n_trajectories = df_output
         .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5}, "n_trajectories"); 
 
 
@@ -557,7 +594,6 @@ int newton_iteration_test(  const char* path_infile="",
     //this histogram will be of the actual sieve-coords
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords. db:'%s', data:'%s'", path_dbfile, path_infile); 
-    
 
 
     
@@ -567,17 +603,21 @@ int newton_iteration_test(  const char* path_infile="",
     
     TStopwatch timer; 
     
-    h_n_trajectories->DrawCopy(); 
+    h_xy_sieve->DrawCopy("col2"); 
     
     double realtime( timer.RealTime() ); 
-    printf("processed %i events in %f seconds (%f ms/event)\n", n_events, realtime, 1e3 * realtime / ((double)n_events) ); 
-
-    return 0; 
+    printf("done.\nprocessed %i events in %f seconds (%f ms/event) - %i thread(s)\n", 
+        n_events, 
+        realtime, 
+        1e3 * realtime / ((double)n_events), 
+        (ROOT::GetThreadPoolSize()==0 ? 1 : ROOT::GetThreadPoolSize()) 
+    );
+    cout << endl;  
     
     
     new TCanvas("c2", b_c_title); 
-    h_xy_sieve->DrawCopy("col2"); 
-
+    h_xy_sieve_fg->DrawCopy("col2"); 
+    return 0; 
 
     new TCanvas("c3", b_c_title); 
     h_xy_hcs->DrawCopy("col2"); 
