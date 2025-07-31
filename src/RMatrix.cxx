@@ -281,5 +281,23 @@ void RMatrix::Print()
   } 
 }
 //_______________________________________________________________________________
+RMatrix RMatrix::Square_identity(int size) 
+{
+  //return a square identity matrix of the given size 
+  if (size <= 0 ) {
+    fprintf(stderr, "Error in <RMatrix::Square_identity>: Tried to construct a square matrix of size '%i'!\n", size);
+    return RMatrix(0,0);  
+  }
+
+  vecd data(size*size, 0.); 
+  int index=0;
+  for (int i=0; i<size; i++) {
+    data.at(index) = 1.; 
+    index += size + 1; 
+  } 
+
+  return RMatrix(size, size, data); 
+}
+//_______________________________________________________________________________
 
 ClassImp(RMatrix)

@@ -55,6 +55,9 @@ public:
   //add a matrix to this one. this is optimized for speed. 
   void               operator+=(RMatrix &rhs);       
 
+  //perform matrix multiplication
+  //void operator*=(const RMatrix& rhs); 
+
   
   inline unsigned int GetNCols() const { return fnCols; }
   inline unsigned int GetNRows() const { return fnRows; }
@@ -78,6 +81,10 @@ public:
    
   //return a const ptr to the underlying data 
   const ROOT::RVec<double> *Data_const() const { return &fElems; }
+
+  //return a sqaure identity matrix
+  static RMatrix Square_identity(int size); 
+
   
 private:
 
