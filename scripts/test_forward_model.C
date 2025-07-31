@@ -11,91 +11,6 @@
 using namespace std; 
 using namespace ROOT::VecOps; 
 
-//this will be a temporary funct., that I may absorb into NPoly.cxx. 
-int parse_poly_from_file(const char* path_dbfile, const char* poly_name, NPoly *poly) 
-{
-    //uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuer89999999999999999999999999999999999uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
-    // -bear 
-
-    //parse each line separately. in each line, each 'token' is separated by whitespace. 
-    //each line must have the following format: 
-    //
-    //      dxdz_sv   0   0   2   0   -3.044778720e-01
-    //
-    //The first token is the name of the polynomial to which this element belongs.
-    // the next 4 tokens are the power to which this polynomial must be raised. 
-    // the last token is the coefficient of this element.
-    
-    //The file must be headed by the line: 
-    //
-    //      poly-DoF 4
-    
-    const char* const here = "parse_poly_from_file"; 
-
-    //open the db file
-    ifstream dbfile(path_dbfile); 
-    
-    if (!dbfile.is_open()) {
-        Error(here, "unable to open db file '%s'", path_dbfile); 
-        return -1; 
-    }
-
-    //now, read the file
-    string line; 
-    
-    //get the DoF of this poly
-    getline(dbfile, line); 
-    istringstream iss_init(line);
-    
-    string token; 
-
-    iss_init >> token; 
-    if (token != "poly-DoF") {
-        Error(here, "Missing 'poly-DoF [n]' header at top of dbfile '%s'", path_dbfile); 
-        return -1; 
-    }
-
-    int poly_DoF; 
-    iss_init >> poly_DoF; 
-
-    if (poly_DoF != poly->Get_nDoF()) {
-        //Error(here, "Poly DoF in db file (%i) does not match DoF of passed Poly (%i)", 
-        //    poly_DoF, poly->Get_nDoF()); 
-        //return -1;
-        //this polynomial cannot belong to this file, it has the wrong DoF! 
-        return 0;  
-    }
-
-    int start_nElems = poly->Get_nElems(); 
-
-    //now, we can ready the rest of the file. 
-    while (getline(dbfile, line)) {
-
-        //parse the string into token (delimited by whitespace!)
-        istringstream iss(line); 
-
-        string elem_name; iss >> elem_name; 
-
-        //this line is not the poly you're looking for
-        if (elem_name != poly_name) continue; 
-        
-        //now, we can read the powers / coefficient
-        RVec<int> powers(poly_DoF, 0); 
-        double coeff; 
-
-        //read the powers
-        for (int &pow : powers) iss >> pow;
-
-        //read the coefficient
-        iss >> coeff; 
-
-        poly->Add_element(powers, coeff); 
-    }
-    
-    dbfile.close(); 
-
-    return poly->Get_nElems() - start_nElems; //noop
-}
 
 struct Track_t { 
     double x,y,dxdz,dydz,dpp; 
@@ -266,10 +181,10 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
 
         //try to parse all elements for this polynomial. search both db_files. 
         int elems_found = 0; 
-        elems_found += parse_poly_from_file(path_dbfile_1, poly_name.data(), it->second.get()); 
+        elems_found += ApexOptics::Parse_NPoly_from_file(path_dbfile_1, poly_name.data(), it->second.get()); 
         
         if (use_fp_q1_sv_mode) {
-            elems_found += parse_poly_from_file(path_dbfile_2, poly_name.data(), it->second.get()); 
+            elems_found += ApexOptics::Parse_NPoly_from_file(path_dbfile_2, poly_name.data(), it->second.get()); 
         } 
 
         if (elems_found < 0) {
@@ -321,17 +236,17 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
                 // to FOCAL PLANE Coordinates (fp). 
 
                 //create the vector of our 'Track_t' struct. '.reserve()' tells the vector what size it should expect to eventually be. 
-                RVec<Track_t> tracks; 
+                RVec<Track_t> tracks;
                 tracks.reserve(v_x.size());
 
                 //fill our new vector
                 for (int i=0; i<v_x.size(); i++) {
                     tracks.push_back({
-                        .x = v_x.at(i),
-                        .y = v_y.at(i),
-                        .dxdz = v_dxdz.at(i),
-                        .dydz = v_dydz.at(i),
-                        .dpp  = 0. 
+                        .x      = v_x.at(i),
+                        .y      = v_y.at(i),
+                        .dxdz   = v_dxdz.at(i) - v_x.at(i)/6.,
+                        .dydz   = v_dydz.at(i),
+                        .dpp    = 0. 
                     });    
                 }
                 
@@ -412,8 +327,7 @@ int test_forward_model( const char* path_infile="data/replay/replay.4768.root",
     }); 
 
     //create both histograms
-    auto hist_xy        
-        = df_fp
+    auto hist_xy = df_fp
         
         //correct for react-vertex position
         .Define("x_react_vtx_fix", [](RVec<double> x, TVector3 r){return x + r.x();}, {"x_sv", "react_vertex_TCS"})
