@@ -100,7 +100,7 @@ void add_branch_from_Track_t(   std::vector<ROOT::RDF::RNode>& df_nodes,
     return; 
 }
 
-#define EVENT_RANGE 20000
+#define EVENT_RANGE 30000
 
 //given a DB file to look in, and a list of output polynomial names, will return an NPolyArray object with all the relevant polys filled in
 NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names, const int DoF) 
@@ -181,7 +181,7 @@ int newton_iteration_test(  const char* path_infile="",
         Error(here, "could not find TTree '%s'", tree_name); 
         return 1; 
     }
-    
+
     //check if we can find the 'is_RHRS' parameter. Fatal error if not! 
     TParameter<bool>* param_is_RHRS = (TParameter<bool>*)infile->Get("is_RHRS"); 
     if (!param_is_RHRS) {
@@ -316,6 +316,9 @@ int newton_iteration_test(  const char* path_infile="",
 
     //number of microns to compute vdc-smearing by
     double vdc_smearing_um = 0.; 
+
+    const double vertex_uncertainty_x = 1.00e-3;
+    const double vertex_uncertainty_y = 1.00e-3;  
 
  
     //'fan out' from the central found trajcetory, to adjacent trajectories. see which will be best. 
@@ -463,10 +466,15 @@ int newton_iteration_test(  const char* path_infile="",
 
         }, {"Xfp", "Xsv_first_guess"})  
 
-        .Define("Xsv_best",     [is_RHRS](const RVec<Track_t>& traj, const TVector3& vtx)
+        .Define("Xsv_best",     [ is_RHRS,
+                                  vertex_uncertainty_x,
+                                  vertex_uncertainty_y ](const RVec<Track_t>& traj, TVector3 vtx)
         {
             const Track_t *Xsv_best = nullptr;
             double err2_best = 1e30; 
+
+            double vx = vtx.x() + gRandom->Gaus() * vertex_uncertainty_x; 
+            double vy = vtx.y() + gRandom->Gaus() * vertex_uncertainty_y; 
 
             //look for the best track
             for (const Track_t& track_scs : traj) {
@@ -477,8 +485,8 @@ int newton_iteration_test(  const char* path_infile="",
                 
                 //project our 'track' onto the z-plane of the react vertex
                 double err2(0.); 
-                err2 += pow( (track_hcs.x  +  track_hcs.dxdz * vtx.z()) - vtx.x(), 2 );
-                err2 += pow( (track_hcs.y  +  track_hcs.dydz * vtx.z()) - vtx.y(), 2 ); 
+                err2 += pow( ((track_hcs.x  +  track_hcs.dxdz * vtx.z())    -   vx)/vertex_uncertainty_x, 2 );
+                err2 += pow( ((track_hcs.y  +  track_hcs.dydz * vtx.z())    -   vy)/vertex_uncertainty_y, 2 ); 
 
                 if (err2 < err2_best) {
                     Xsv_best = &track_scs;
@@ -568,18 +576,14 @@ int newton_iteration_test(  const char* path_infile="",
     char buff_hxy_title[200];  
     sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
     
-    auto h_xy_sieve 
-        = df_output.Histo2D<double>({"h_xy_sieve", "Sieve coordinates (best fit);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, 
-        "reco_x_sv", "reco_y_sv"); 
+    auto h_xy_sieve = df_output
+        .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (best fit);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
 
-    auto h_xy_sieve_fg 
-        = df_output.Histo2D<double>({"h_xy_sieve", "Sieve coordinates (first guess);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, 
-        "x_sv_fg", "y_sv_fg"); 
-
+    auto h_xy_sieve_fg = df_output
+        .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (first guess);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "x_sv_fg", "y_sv_fg"); 
 
     auto h_xy_hcs = df_output
         .Histo2D<double>({"h_xy_hcs", "Projection of sieve-coords onto z_HCS=0;x_hcs;y_hcs", 250, -25e-3,25e-3, 250, -25e-3,25e-3}, "x_hcs", "y_hcs"); 
-
 
     auto h_n_trajectories = df_output
         .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5}, "n_trajectories"); 
@@ -617,10 +621,7 @@ int newton_iteration_test(  const char* path_infile="",
     
     new TCanvas("c2", b_c_title); 
     h_xy_sieve_fg->DrawCopy("col2"); 
-    return 0; 
 
-    new TCanvas("c3", b_c_title); 
-    h_xy_hcs->DrawCopy("col2"); 
 
     auto c = new TCanvas("c1", b_c_title, 1200, 800); 
     c->Divide(2,2, 0.005,0.005); 
