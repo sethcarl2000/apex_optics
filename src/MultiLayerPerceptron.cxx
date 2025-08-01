@@ -106,14 +106,14 @@ inline double MultiLayerPerceptron::Activation_fcn_deriv(double x) const
 
 
 //__________________________________________________________________________________________________________________________________
-RVec<double> MultiLayerPerceptron::Activation_fcn(RVec<double>& X) const
+RVec<double> MultiLayerPerceptron::Activation_fcn(const RVec<double>& X) const
 {
     //for right now, we're just going to use the cmath exp() function to make a sigmoid. 
     return 1./( 1. + exp(X) ) - 0.5;  
 }
 
 //__________________________________________________________________________________________________________________________________
-RVec<double> MultiLayerPerceptron::Activation_fcn_deriv(RVec<double>& X) const
+RVec<double> MultiLayerPerceptron::Activation_fcn_deriv(const RVec<double>& X) const
 {
     //Compute the derivative of the sigmoid 
     auto Y = Activation_fcn(X); 
@@ -204,15 +204,19 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
 
     //we want to allocate this on the heap to avoid copying it, but it would be more convenient to access it by reference 
     // in this function. once we're done, we'll return a ptr to it.
-    WeightGradient_t *weight_gradient = new WeightGradient_t;  
+    WeightGradient_t *weight_gradient = new WeightGradient_t{ 
+        .data       = RVec<double>(Get_n_layers()-1, {}), 
+        .layer_size = fLayer_size 
+    };  
 
     //structure is: 
     // outermost vector: each element is a coordinate of the output vector (i)
     // middle vector: each element is a distinct layer of weights (l)
     // inner vector:  each element is the gradient computed w/r/t a specific weight. so: 
     //
-    //      dZ_i / dW^l_jk =  grad[l][]
-    // 
+    //      dZ_i / dW^l_jk =  grad[l][ (i * layer_size[l+1] * (layer_size[l]+1)) + (j * (layer_size[l]+1)) + k ]
+    //                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^        ^^^^^^^^^^^^^^^^^^   
+    //                                      Total number of weights in layer 'l'        Total number of weights for output 'j' of layer 'l'
     // Where: 
     // Z_i is the output node the gradient is computed in respect to. 
     // dW^l_jk is the specific weight. 'l' is layer [0,N-1], 'k' is input variable index (x^l_k), and 'j' is output variable index (y^l_j)
@@ -223,39 +227,28 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
     //
     //   where the index 'k' is summed over on the RHS. 
     //
-    <RVec<RVec<double>>& grad = weight_gradient->data; 
-
-    auto dZi_dWljk = [&grad, fLayer_size](int i, int l, int j, int k) { return &grad[i][l][ j*(fLayer_size[l]+1) + k ]; }; 
-    
-
-    //initialize the gradient nested vector.   
-    grad = RVec<RVec<double>>(Get_DoF_out(), {});
-
-    for (int i=0; i<Get_DoF_out(); i++) {
-        
-        auto& grad_i = grad[i];
-        grad_i = RVec<RVec<double>>(Get_n_layers(), {}); 
-
-        for (const auto& weights : fWeights) { int l=0; 
-             grad_i[l++].reserve(weights.size()); 
-        }
-    }
-
+    RVec<RVec<double>>& grad = weight_gradient->data; 
 
     //the first step is actually quite similar to the feed-forward evaluation of the network. 
     //these vectors will propagate all values throughout the network.
     RVec<double> X_l[Get_n_layers()-1]; 
     RVec<double> Y_l[Get_n_layers()-1]; 
 
-    int l=0; 
+    for (int l=0; l<Get_n_layers()-1; l++) { 
 
-    for (int l=0; l<Get_n_layers()-1; l++) {
-        Y_l[l] = RVec<double>(fLayer_size[l+1], 0.);
-        X_l[l].reserve(fLayer_size[l]);
-    } 
+        //initialize the gradient nested vector, and the 'layer buffers' 
+        grad[l].reserve( Get_DoF_out() * fLayer_size[l+1] * (fLayer_size[l]+1) );
+        //                               ^^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^
+        //              For layer 'l':   n. outputs        n. inputs + 1 constant      
+
+        //initialize the layer buffers
+        Y_l[l] = RVec<double>(fLayer_size[l+1], 0.); //this is the 'output' of each layer
+        X_l[l].reserve(fLayer_size[l]);              //this is the 'input' to each layer
+    }
 
     X_l[0] = X; 
     
+    int l=0; 
     //iterate through each layer, starting with the input layer
     for (const RVec<double>& weights : fWeights) {
 
@@ -283,22 +276,12 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
 
     //now that we have cached all the layers, we're ready to start computing the gradient. 
     //we start with the last layer, and recursivley propagate all the way to the first layer. 
-    l=Get_n_layers()-2; 
     
     //this 'A' matrix will be what we use to back-propagate thru all the layers, starting with the last. 
     RMatrix A = RMatrix::Square_identity(Get_DoF_out()); 
 
-    //the last layer is a little special. 
-    for (; l>=0; l--) {
-        
-        for (int i=0; i<Get_DoF_out(); i++) {
-            for (int j=0; j<fLayer_size[l+1]; j++) {
-
-                dZi_dWljk(i,l,j,0) = A.get(i,j); 
-                for (int k=1; k<fLayer_size[l]; k++) *dZi_dWljk(i,l,j,k) = A.get(i,j) * X_l[k]; 
-            }
-        }
-        //compute the new A-matrix
+    for (int l=Get_n_layers()-2; l>=0; l--) {
+        auto& grad_l = grad[l];         
     }
     
     return weight_gradient; 

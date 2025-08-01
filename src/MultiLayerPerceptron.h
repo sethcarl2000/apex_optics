@@ -47,7 +47,7 @@ public:
 
     struct WeightGradient_t{ 
         ROOT::RVec<ROOT::RVec<double>> data; 
-        ROOT::RVec<int> fLayer_size; 
+        ROOT::RVec<int> layer_size; 
     };
 
     MultiLayerPerceptron::WeightGradient_t* Weight_gradient(const ROOT::RVec<double>& X) const; 
@@ -63,8 +63,8 @@ private:
     inline double Activation_fcn(double x) const; 
     inline double Activation_fcn_deriv(double x) const; 
 
-    inline ROOT::RVec<double> Activation_fcn(ROOT::RVec<double>& X) const; 
-    inline ROOT::RVec<double> Activation_fcn_deriv(ROOT::RVec<double>& X) const; 
+    inline ROOT::RVec<double> Activation_fcn(const ROOT::RVec<double>& X) const; 
+    inline ROOT::RVec<double> Activation_fcn_deriv(const ROOT::RVec<double>& X) const; 
 
     int fN_layers; 
 

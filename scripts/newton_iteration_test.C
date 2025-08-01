@@ -337,7 +337,7 @@ int newton_iteration_test(  const char* path_infile="",
 
         auto Get_next_trajectory = [parr, trajectory_spacing, &rv_mag, &Xfp_rv](RVec<Track_t>* t_vec, RVec<double>& Xsv, double oreintation)
         {
-            RVec<double> J_arr{ *(parr->Jacobian(Xsv).Data()) }; 
+            RVec<double> J_arr = parr->Jacobian(Xsv).Data(); 
             int i_elem=0; 
 
             //this jacobian is 4x5, as we're mapping from R^5 => R^4. we're gonna 'peel off' the last column, and

@@ -87,10 +87,10 @@ public:
   inline void Set_report_singular(bool _val) { f_reportSingular=_val; }
 
   //return a copy to the data
-  ROOT::RVec<double> *Data() { return &fElems; };
+  ROOT::RVec<double>& Data() { return fElems; };
    
   //return a const ptr to the underlying data 
-  const ROOT::RVec<double> *Data_const() const { return &fElems; }
+  const ROOT::RVec<double> Data_cpy() const { return fElems; }
 
   //return a sqaure identity matrix
   static RMatrix Square_identity(int size); 

@@ -71,7 +71,7 @@ RMatrix::RMatrix(const RMatrix& rhs) noexcept
 
   f_reportSingular = rhs.ReportSingular(); 
 
-  fElems = *(rhs.Data_const()); 
+  fElems = rhs.Data_cpy(); 
 
   f_n_elems = fnCols*fnRows; 
 
@@ -84,10 +84,8 @@ RMatrix::RMatrix(RMatrix&& rhs) noexcept
   f_isSquare = ( (fnCols = rhs.GetNCols()) == (fnRows = rhs.GetNRows()) ); 
 
   f_reportSingular = rhs.ReportSingular(); 
-  fElems = move(*(rhs.Data())); 
+  fElems = move(rhs.Data()); 
   f_n_elems = fnCols * fnRows; 
-
-  rhs.Data()->clear(); 
 
   return; 
 }
@@ -100,10 +98,9 @@ RMatrix& RMatrix::operator=(RMatrix&& rhs) noexcept
     f_isSquare = ( (fnCols = rhs.GetNCols()) == (fnRows = rhs.GetNRows()) ); 
 
     f_reportSingular = rhs.ReportSingular(); 
-    fElems = move(*(rhs.Data())); 
+    fElems = move(rhs.Data()); 
     f_n_elems = fnCols * fnRows; 
-
-    rhs.Data()->clear(); 
+    
   }
   return *this; 
 }
@@ -149,7 +146,7 @@ RMatrix RMatrix::operator*(double mult) const
 {
   RMatrix ret(*this); 
 
-  *(ret.Data()) *= mult; 
+  ret.Data() *= mult; 
 
   return ret; 
 }
@@ -185,7 +182,7 @@ RMatrix RMatrix::operator+(const RMatrix &rhs) const
     return RMatrix();
   }
 
-  return RMatrix(GetNRows(), GetNCols(), fElems + *(rhs.Data_const())); 
+  return RMatrix(GetNRows(), GetNCols(), fElems + rhs.Data_cpy()); 
 } 
 //_______________________________________________________________________________
 void RMatrix::operator+=(RMatrix& rhs)
@@ -200,7 +197,7 @@ void RMatrix::operator+=(RMatrix& rhs)
     return;
   }
 
-  fElems += *(rhs.Data()); 
+  fElems += rhs.Data(); 
 
   return; 
 }
