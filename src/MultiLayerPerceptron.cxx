@@ -74,7 +74,7 @@ bool MultiLayerPerceptron::Check_index(int l, int j, int k) const
 }
 RVec<double>& MultiLayerPerceptron::Get_layer(int l) 
 {
-    if (l < 0 || l >= Get_n_layers()-2 ) {
+    if (l < 0 || l >= Get_n_layers()-1 ) {
         throw logic_error("Tried to acess layer out-of-range; can only be l=[0, Get_n_layers()-2]"); 
         return fWeights[0];
     }
@@ -292,11 +292,13 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
     int i_elem=0; 
     for (int l=Get_n_layers()-2; l>=0; l--) {
 
+        printf("back-propagating... Layer: %i. A-matrix: \n", l); 
+        A.Print(); 
         //get the gradient for this layer
         auto& grad_l = grad[l];        
         
-        for (int i=0; i<Get_DoF_out(); i++) {           //i -- index of the ouput we're computing the gradient w/r/t 
-            for (int j=0; j<fLayer_size[l+1]; j++) {    //j -- index of the 'output' that this weight is associated with. 
+        for (int i=0; i<fLayer_size[l+1]; i++) {           //i -- index of the ouput we're computing the gradient w/r/t 
+            for (int j=0; j<fLayer_size[l]; j++) {    //j -- index of the 'output' that this weight is associated with. 
                 
                 grad_l.push_back( A.at(i,j) );          // this is the 'weight' that is just a constant offset.      
                     
