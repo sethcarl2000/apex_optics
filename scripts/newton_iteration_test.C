@@ -351,7 +351,7 @@ int newton_iteration_test(  const char* path_infile="",
                 J0.push_back( J_arr[i_elem++] ); 
             }
 
-            RMatrix Ji(DoF_fp, DoF_fp, Ji_arr); Ji.ReportSingular()=false; 
+            RMatrix Ji(DoF_fp, DoF_fp, Ji_arr); Ji.Set_report_singular(false); 
 
             auto dX = Ji.Solve( J0 ); 
 
