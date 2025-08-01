@@ -100,7 +100,7 @@ RMatrix& RMatrix::operator=(RMatrix&& rhs) noexcept
     f_reportSingular = rhs.ReportSingular(); 
     fElems = move(rhs.Data()); 
     f_n_elems = fnCols * fnRows; 
-    
+
   }
   return *this; 
 }
@@ -200,6 +200,28 @@ void RMatrix::operator+=(RMatrix& rhs)
   fElems += rhs.Data(); 
 
   return; 
+}
+//_______________________________________________________________________________
+RMatrix RMatrix::operator*(RMatrix& rhs)
+{
+  //check matrix sizes
+  if (rhs.GetNRows() != GetNCols()) {
+    Error("operator*", "rhs n. rows (%i) does not match lhs n. cols (%i)", rhs.GetNRows(), rhs.GetNCols()); 
+    return RMatrix(0,0); 
+  }
+
+  vecd data(GetNRows() * rhs.GetNCols(), 0.); 
+
+  
+  int i_elem=0; 
+  for (int i=0; i<GetNRows(); i++) {
+    for (int j=0; j<rhs.GetNCols(); j++) {
+      for (int k=0; k<GetNCols(); k++) data[i_elem] += get(i,k) * rhs.get(k,j); 
+      i_elem++; 
+    }
+  }
+
+  return RMatrix(GetNRows(), rhs.GetNCols(), data); 
 }
 //_______________________________________________________________________________
 double RMatrix::Determinant() const

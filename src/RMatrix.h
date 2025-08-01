@@ -65,7 +65,9 @@ public:
   void               operator+=(RMatrix &rhs);       
 
   //perform matrix multiplication
-  //void operator*=(const RMatrix& rhs); 
+  RMatrix operator*(RMatrix& rhs); 
+
+
 
   
   inline unsigned int GetNCols() const { return fnCols; }
