@@ -43,6 +43,7 @@ public:
     double Get_weight(int l, int j, int k) const; 
 
     ROOT::RVec<double>& Get_layer(int l); 
+    int Get_layer_size(int l) const; 
 
     //Evaluate the mlp for a given input value
     ROOT::RVec<double> Eval(const ROOT::RVec<double>& X) const; 
@@ -50,6 +51,8 @@ public:
     struct WeightGradient_t{ 
         ROOT::RVec<ROOT::RVec<double>> data; 
         ROOT::RVec<int> layer_size; 
+        int DoF_out; 
+        double& at(int i, int l, int j, int k); 
     };
 
     MultiLayerPerceptron::WeightGradient_t* Weight_gradient(const ROOT::RVec<double>& X) const; 

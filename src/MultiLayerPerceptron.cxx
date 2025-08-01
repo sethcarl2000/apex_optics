@@ -72,6 +72,7 @@ bool MultiLayerPerceptron::Check_index(int l, int j, int k) const
 
     return true; 
 }
+//__________________________________________________________________________________________________________________________________
 RVec<double>& MultiLayerPerceptron::Get_layer(int l) 
 {
     if (l < 0 || l >= Get_n_layers()-1 ) {
@@ -79,6 +80,15 @@ RVec<double>& MultiLayerPerceptron::Get_layer(int l)
         return fWeights[0];
     }
     return fWeights[l]; 
+}
+//__________________________________________________________________________________________________________________________________
+int MultiLayerPerceptron::Get_layer_size(int l) const
+{
+    if (l < 0 || l >= Get_n_layers() ) {
+        throw logic_error("Tried to acess layer out-of-range; can only be l=[0, Get_n_layers()-2]"); 
+        return fLayer_size[0];
+    }
+    return fLayer_size[l]; 
 }
 //__________________________________________________________________________________________________________________________________
 double& MultiLayerPerceptron::Weight(int l, int j, int k) 
@@ -94,6 +104,36 @@ double MultiLayerPerceptron::Get_weight(int l, int j, int k) const
     if (!Check_index(l,j,k)) return numeric_limits<double>::quiet_NaN(); 
 
     return fWeights[l][ j * (fLayer_size[l]+1) + k ]; 
+}
+
+//__________________________________________________________________________________________________________________________________
+double& MultiLayerPerceptron::WeightGradient_t::at(int i, int l, int j, int k) 
+{
+    //Check layer index
+    if (l < 0 || l >= layer_size.size()-1 ) {
+        throw logic_error("WeightGradient_t::at() - invalid 'l' index passed; must be l=[0,layer_size.size()-2]"); 
+        return *(new double(numeric_limits<double>::quiet_NaN()));
+    }
+
+    if (i < 0 || i >= DoF_out) {
+        throw logic_error("WeightGradient_t::at() - invalid 'j' index passed; must be i=[0,DoF_out-1]"); 
+        return *(new double(numeric_limits<double>::quiet_NaN()));
+    }
+
+    if (j < 0 || j >= layer_size[l+1]) {
+        throw logic_error("WeightGradient_t::at() - invalid 'j' index passed; must be j=[0,layer_size[l+1]-1]"); 
+        return *(new double(numeric_limits<double>::quiet_NaN()));
+    }
+    
+    if (k < 0 || k >= layer_size[l]) {
+        throw logic_error("WeightGradient_t::at() - invalid 'k' index passed; must be k=[0,layer_size[l]-1]"); 
+        return *(new double(numeric_limits<double>::quiet_NaN()));
+    }
+    
+    return data[l][ i * (layer_size[l+1] * (layer_size[l]+1))    +   j * (layer_size[l]+1)   +   k ]; 
+    //                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^        ^^^^^^^^^^^^^^^^^^^^^   
+    //                  Total number of weights in layer 'l'         Total number of weights for output 'j' of layer 'l'
+    
 }
 
 //__________________________________________________________________________________________________________________________________
@@ -213,7 +253,8 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
     // in this function. once we're done, we'll return a ptr to it.
     WeightGradient_t *weight_gradient = new WeightGradient_t{ 
         .data       = RVec<double>(Get_n_layers()-1, {}), 
-        .layer_size = fLayer_size 
+        .layer_size = fLayer_size, 
+        .DoF_out    = Get_DoF_out()
     };  
 
     //structure is: 
