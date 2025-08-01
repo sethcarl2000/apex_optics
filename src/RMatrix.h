@@ -30,6 +30,15 @@ public:
   RMatrix(unsigned int nr, unsigned int nc, const ROOT::RVec<double> &array);
   
   RMatrix(unsigned int nr, unsigned int nc, const ROOT::RVec<double> *array);
+
+  //copy constructor
+  RMatrix(const RMatrix& rhs) noexcept; 
+  
+  //move constructor
+  RMatrix(RMatrix&& rhs) noexcept; 
+  
+  //move assignment operator
+  RMatrix& operator=(RMatrix&& rhs) noexcept; 
   
   //copy constructor
   //RMatrixD(const RMatrixD &mat); 
@@ -74,7 +83,8 @@ public:
   void Print(); 
   
   //toggle whether or not this matrix will spit out an error if its singular 
-  inline bool &ReportSingular() { return f_reportSingular; }
+  inline bool ReportSingular() const { return f_reportSingular; }
+  inline void Set_report_singular(bool _val) { f_reportSingular=_val; }
 
   //return a copy to the data
   ROOT::RVec<double> *Data() { return &fElems; };

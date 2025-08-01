@@ -64,6 +64,50 @@ RMatrix::RMatrix(const unsigned int nr,const unsigned int nc, const vecd *array)
   }
 }
 //_______________________________________________________________________________
+RMatrix::RMatrix(const RMatrix& rhs) noexcept
+{
+  //copy constructor
+  f_isSquare = ( (fnCols = rhs.GetNCols()) == (fnRows = rhs.GetNRows()) ); 
+
+  f_reportSingular = rhs.ReportSingular(); 
+
+  fElems = *(rhs.Data_const()); 
+
+  f_n_elems = fnCols*fnRows; 
+
+  return; 
+}
+//_______________________________________________________________________________
+RMatrix::RMatrix(RMatrix&& rhs) noexcept
+{
+  //move constructor
+  f_isSquare = ( (fnCols = rhs.GetNCols()) == (fnRows = rhs.GetNRows()) ); 
+
+  f_reportSingular = rhs.ReportSingular(); 
+  fElems = move(*(rhs.Data())); 
+  f_n_elems = fnCols * fnRows; 
+
+  rhs.Data()->clear(); 
+
+  return; 
+}
+//_______________________________________________________________________________
+RMatrix& RMatrix::operator=(RMatrix&& rhs) noexcept
+{
+  //move assignment operator
+  if (this != &rhs) { //check if this object is being assigned to itself. if not, proceed. 
+
+    f_isSquare = ( (fnCols = rhs.GetNCols()) == (fnRows = rhs.GetNRows()) ); 
+
+    f_reportSingular = rhs.ReportSingular(); 
+    fElems = move(*(rhs.Data())); 
+    f_n_elems = fnCols * fnRows; 
+
+    rhs.Data()->clear(); 
+  }
+  return *this; 
+}
+//_______________________________________________________________________________
 RMatrix RMatrix::OuterProduct(const vecd& u, const vecd& v)
 {
   //construct a matrix via an outer product of two vectors
@@ -103,7 +147,7 @@ double RMatrix::at(unsigned int i, unsigned int j) const
 //_______________________________________________________________________________
 RMatrix RMatrix::operator*(double mult) const 
 {
-  RMatrix ret = *this; 
+  RMatrix ret(*this); 
 
   *(ret.Data()) *= mult; 
 
@@ -177,7 +221,7 @@ double RMatrix::Determinant() const
   //ASSUMES MATRIX IS NONSINGULAR!!!!
 
   //the U-matrix starts as a copy of the 'A' input-matrix
-  RMatrix U = *this;  
+  RMatrix U(*this);  
   
   //Create the U (upper triangular) and L (lower triangular) matrices
   for (unsigned int ii=0; ii<N; ii++) { 
@@ -221,7 +265,7 @@ vecd RMatrix::Solve(const vecd &B) const
   }
 
   //the U-matrix starts as a copy of the 'A' input-matrix
-  RMatrix U = *this;  
+  RMatrix U(*this);  
   //we initialize the L-matrix with all zeros
   RMatrix L(N,N, 0.);  
   
