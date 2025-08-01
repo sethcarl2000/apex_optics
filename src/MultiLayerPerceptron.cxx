@@ -72,7 +72,14 @@ bool MultiLayerPerceptron::Check_index(int l, int j, int k) const
 
     return true; 
 }
-
+RVec<double>& MultiLayerPerceptron::Get_layer(int l) 
+{
+    if (l < 0 || l >= Get_n_layers()-2 ) {
+        throw logic_error("Tried to acess layer out-of-range; can only be l=[0, Get_n_layers()-2]"); 
+        return fWeights[0];
+    }
+    return fWeights[l]; 
+}
 //__________________________________________________________________________________________________________________________________
 double& MultiLayerPerceptron::Weight(int l, int j, int k) 
 {      
@@ -182,7 +189,7 @@ RVec<double> MultiLayerPerceptron::Eval(const RVec<double>& X) const
         }
 
         //do this so we don't apply the Activation function to the last layer
-        if (l >= Get_n_layers()-1) return output; 
+        if (l >= Get_n_layers()-2) return output; 
 
         //apply the activation function to each element of the output vector
         for (double& out_val : output) out_val = Activation_fcn(out_val); 
@@ -239,7 +246,7 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
         //initialize the gradient nested vector, and the 'layer buffers' 
         grad[l].reserve( Get_DoF_out() * fLayer_size[l+1] * (fLayer_size[l]+1) );
         //                               ^^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^^^
-        //              For layer 'l':   n. outputs        n. inputs + 1 constant      
+        //              For layer 'l':   n. outputs         n. inputs + 1 constant      
 
         //initialize the layer buffers
         Y_l[l] = RVec<double>(fLayer_size[l+1], 0.); //this is the 'output' of each layer
@@ -247,6 +254,7 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
     }
 
     X_l[0] = X; 
+    
     
     int l=0; 
     //iterate through each layer, starting with the input layer
@@ -258,31 +266,65 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
         int i_elem=0; 
 
         //iterate over all rows (elements of the output vector)
-        for (int j=0; j<fLayer_size[l+1]; j++) {
+        for (int j=0; j<fLayer_size.at(l+1); j++) {
 
             //add the constant (which is the last element in each column of the 'weight matrix')
-            output[j] += weights[i_elem++];
+            output.at(j) += weights.at(i_elem++);
 
             //iterate through all the columns (input vector elements + a constant )
-            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k];  
+            for (int k=0; k<fLayer_size.at(l); k++) output[j] += weights.at(i_elem++) * input.at(k);  
         }
 
+        if (l >= Get_n_layers()-2) break; 
         //apply the activation function to each element of the output vector
         X_l[l+1] = Activation_fcn(output); 
         
         //now, start again with the next row (or exit if we're done)
         l++; 
     }
-
+    
     //now that we have cached all the layers, we're ready to start computing the gradient. 
     //we start with the last layer, and recursivley propagate all the way to the first layer. 
     
     //this 'A' matrix will be what we use to back-propagate thru all the layers, starting with the last. 
     RMatrix A = RMatrix::Square_identity(Get_DoF_out()); 
 
+    int i_elem=0; 
     for (int l=Get_n_layers()-2; l>=0; l--) {
-        auto& grad_l = grad[l];         
-    }
+
+        //get the gradient for this layer
+        auto& grad_l = grad[l];        
+        
+        for (int i=0; i<Get_DoF_out(); i++) {           //i -- index of the ouput we're computing the gradient w/r/t 
+            for (int j=0; j<fLayer_size[l+1]; j++) {    //j -- index of the 'output' that this weight is associated with. 
+                
+                grad_l.push_back( A.at(i,j) );          // this is the 'weight' that is just a constant offset.      
+                    
+                for (int k=0; k<fLayer_size[l]; k++) {  //k -- index of the 'input' that this weight is associated with. 
+                    
+                    grad_l.push_back( A.at(i,j) * X_l[l].at(k) );
+                } 
+            }
+        }
+
+        //if we haven't reached the last layer yet, update the 'A' matrix
+        if (l==0) break; 
+
+        RVec<double> A_update_data; A_update_data.reserve(fLayer_size[l] * fLayer_size[l-1]);
+        
+        auto& weights = fWeights[l]; 
+
+        for (int i=0; i<fLayer_size[l]; i++) {
+            for (int j=0; j<fLayer_size[l-1]; j++) {
+                A_update_data.push_back( 
+                    weights.at( i*(fLayer_size[l]+1) + 1 + j ) * Activation_fcn_deriv(Y_l[l-1].at(j))
+                ); 
+            }
+        }
+        RMatrix A_update(fLayer_size[l], fLayer_size[l-1], A_update_data); 
+
+        A = A * A_update; 
+    }   
     
     return weight_gradient; 
 }

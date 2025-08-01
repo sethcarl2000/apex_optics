@@ -33,7 +33,7 @@ public:
     //const methods which will be guranteed thread-safe for quick evaluation at runtime
 
     //Get number of layers
-    inline int Get_n_layers() const { return fN_layers; }
+    inline int Get_n_layers()   const { return fN_layers; }
 
     //Get number of input nodes
     inline int Get_DoF_in()     const { return fLayer_size[0]; }
@@ -41,6 +41,8 @@ public:
 
     //get value of a particular weight, as a const method. 
     double Get_weight(int l, int j, int k) const; 
+
+    ROOT::RVec<double>& Get_layer(int l); 
 
     //Evaluate the mlp for a given input value
     ROOT::RVec<double> Eval(const ROOT::RVec<double>& X) const; 
