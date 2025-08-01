@@ -20,8 +20,15 @@
 class NPolyArray : public TObject {
 
 public: 
+    
+    //default constructor (NPolys empty-initialized with correct DoF)
     NPolyArray(int _DoF_out, int _DoF_in);
+    
+    //constructor with vector of NPoly's (by value)
     NPolyArray(const std::vector<NPoly>& _polys);
+
+    //constructor with vector of NPoly's (by ptr)
+    NPolyArray(const std::vector<NPoly*>& _polys); 
 
     ~NPolyArray() {}; 
 
@@ -46,6 +53,17 @@ public:
     // this has the potential to reduce a large number of redundant calculations, as well as making the logic needed to compute Jacobians/Hessians
     // much simpler. 
     static NPolyArray Nest(const NPolyArray& output, const NPolyArray &input); 
+
+
+    //what we're effectivley doing here is using newton's method for iterating towrads the root of a nonlinear system.
+    // the system we're trying to solve is the following least-square problem: 
+    //  - the 'chi-square' in this case is the square error between the model's value for Xfp, and the actual value.
+    //    this is given by the d_Xfp vector above. 
+    //  - Therefore, the 'F' vector is our evaluation of the gradient of this function, which will be zero at the 
+    //    minimum error value (if it isn't a local, false minima.)
+    //  - to use newton's method, we need to compute the Jacobian of our 'F' funciton. this is what 'J' will be. 
+    //
+    int Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, int n_iterations=1) const;
 
 
 private: 

@@ -48,7 +48,6 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
     const bool is_RHRS = param_is_RHRS->GetVal(); 
 
     delete tree; 
-    delete param_is_RHRS; 
     infile->Close(); 
     delete infile; 
 
@@ -63,9 +62,6 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
 
     //Define all of the branches we want to create models to map between
     auto df_output = df
-
-        //this is the only difference between VDC TRANSPORT COORDINATES (tra) and FOCAL PLANE COORDINATES (fp)
-        .Redefine("dxdz_fp", [](double x_tra, double dxdz_tra){return dxdz_tra - x_tra/6.;}, {"x_fp", "dxdz_fp"})
 
         .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
         .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
@@ -93,13 +89,11 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
     
     //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
     // of the 'branches_fp' vec 
-    map<string,NPoly*> polymap;     
-    for (const string& output : branches_fp ) {
-        polymap[output] = ApexOptics::Create_NPoly_fit( df_output, //the dataframe object with all of our branches defined 
-                                                        poly_order, //the order of the NPoly to create 
-                                                        branches_sv, //the input branches 
-                                                        output.data() ); //the output branch for this NPoly to target
-    }
+    map<string,NPoly*> polymap = 
+        ApexOptics::Create_NPoly_fit( df_output, //the dataframe object with all of our branches defined 
+                                      poly_order, //the order of the NPoly to create 
+                                      branches_sv, //the input branches 
+                                      branches_fp ); //the output branch for this NPoly to target
 
     cout << "done." << endl;    
 

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cmath>
 #include <fstream>
+#include <algorithm> 
 #include <ROOT/RVec.hxx> 
 #include <ROOT/RResultPtr.hxx>
 #include "RMatrix.h"
@@ -13,27 +14,34 @@ using namespace std;
 using namespace ROOT::VecOps; 
 
 //__________________________________________________________________________________________________________________
-NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df, 
-                                     const int poly_order, 
-                                     const vector<string> &inputs, 
-                                     const char* output )
+map<string, NPoly*> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df, 
+                                                  const int poly_order, 
+                                                  const vector<string> &inputs, 
+                                                  const vector<string> &outputs )
 {
     const char* const here = "ApexOptics::Create_NPoly_fit"; 
     
-    const int nDoF = inputs.size();  
+    const int nDoF_in  = inputs.size();  
+    const int nDoF_out = outputs.size(); 
 
-    if (nDoF < 1 ) {
+    if (nDoF_in < 1 ) {
         fprintf(stderr, "Error in <%s>: No inputs given.\n", here); 
-        return nullptr; 
+        return {}; 
+    }
+
+    if (nDoF_out < 1) {
+        fprintf(stderr, "Error in <%s>: No outputs given.\n", here); 
+        return {};
     }
 
     //check for the existence of all required columns    
     vector<string> column_names = df.GetColumnNames(); 
-    vector<string> missing_columns{}; 
+    vector<string> missing_columns{};  
     
     //make a vector of all the columns we need to find to proceed
-    vector<string> all_columns_needed(inputs); 
-    all_columns_needed.push_back(string(output)); 
+    vector<string> all_columns_needed; 
+    copy( inputs.begin(),  inputs.end(),  back_inserter(all_columns_needed) ); 
+    copy( outputs.begin(), outputs.end(), back_inserter(all_columns_needed) ); 
 
     //loop through all branches needed, check if any are missing.
     for ( const string& column_needed : all_columns_needed ) { 
@@ -52,10 +60,10 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
             fprintf(stderr, "'%s' ", col.data()); 
         }
         cerr << "\n"; 
-        return nullptr; 
+        return {}; 
     }
 
-
+    
     //now that we know all the necessary columns exist, we can proceed: 
     //first, define the vector of inputs. 
     // since this function can take a variable number of inputs, we need to 'tack' each input onto a single vector. 
@@ -77,11 +85,10 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     }
 
     //The polynomial we output will follow the same template as this one:
-    NPoly* poly_template = new NPoly(nDoF, poly_order); 
+    NPoly* poly_template = new NPoly(nDoF_in, poly_order); 
 
     const int n_elems = poly_template->Get_nElems(); 
 
-   
     //now that we have put all the inputs into a vector, we can continue. 
     auto df_output = df_vec.at(df_vec.size()-1)
     
@@ -99,23 +106,28 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
                 .Define("val", [i,j](const ROOT::RVec<double> &X){ return X[i]*X[j]; }, {"X_elems"}).Sum("val"); 
         }
     }
-
+    
+    
     //these are the 'outputs'; what the polynomial maps onto. 
     //the 'outside' vector will have .size()=num_of_output_branches (output_branches.size()), and the 'inside' vector  
     // will have .size()=num_of_input_branches
-    ROOT::RDF::RResultPtr<double> B_ptr[n_elems];  
+    ROOT::RDF::RResultPtr<double> B_ptr[nDoF_out][n_elems];  
     
     //'book' the calculations for each element
-    for (int i=0; i<n_elems; i++) {
-
-        //this RResultPtr<double> will be the sum of the branch 'str' (see the construction of the output_branches vector above)
-        B_ptr[i] = df_output
-            .Define("val", [i](const ROOT::RVec<double> &X, double y){ return X[i] * y; }, {"X_elems", output}).Sum("val"); 
+    int i_br=0; 
+    for (const string& out_branch : outputs) {
+        for (int i=0; i<n_elems; i++) {
+            
+            //this RResultPtr<double> will be the sum of the branch 'str' (see the construction of the output_branches vector above)
+            B_ptr[i_br][i] = df_output
+                .Define("val", [i](const ROOT::RVec<double> &X, double y){ return X[i] * y; }, {"X_elems", out_branch.data()}).Sum("val"); 
+        }
+        i_br++;
     }
-    
+
     //this matrix will be used to find the best coefficients for each element 
     RMatrix A(n_elems, n_elems); 
-    ROOT::RVec<double> B; 
+    ROOT::RVec<double> B[nDoF_out]; 
 
     //now, fill the matrix, and the 'b' values. 
     // When we request access to the RResultPtr objects created above (which is what the B_ptr and A_ptr arrays are), 
@@ -123,7 +135,7 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     //cout << "--filling matrix..." << flush; 
     for (int i=0; i<n_elems; i++) {
         
-        B.push_back( *(B_ptr[i]) ); 
+        for (int i_br=0; i_br<nDoF_out; i_br++) B[i_br].push_back( *(B_ptr[i_br][i]) ); 
         
         for (int j=0; j<n_elems; j++) {
             A.get(i,j) = *(A_ptr[i][j]);
@@ -135,23 +147,30 @@ NPoly* ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     //cout << "--Solving linear system(s)..." << flush; 
     
     //Solve the linear system of equations to get our best-fit coefficients
-    auto coeffs = A.Solve( B ); 
+    map<string, NPoly*> polymap; 
 
-    auto poly = new NPoly(nDoF); 
+    i_br=0; 
+    for (const string& out_branch : outputs) {
+     
+        auto coeffs = A.Solve( B[i_br++] ); 
 
-    for (int i=0; i<n_elems; i++) { 
-        
-        //we're gonna make a copy of each element in the 'template' polynomial
-        const NPoly::NPolyElem *elem = poly_template->Get_elem(i); 
+        auto poly = new NPoly(nDoF_in); 
 
-        //now, we just add our coefficient we just computed to it
-        poly->Add_element( elem->powers, coeffs.at(i) ); 
+        for (int i=0; i<n_elems; i++) { 
+            
+            //we're gonna make a copy of each element in the 'template' polynomial
+            const auto *elem = poly_template->Get_elem(i); 
+
+            //now, we just add our coefficient we just computed to it
+            poly->Add_element( elem->powers, coeffs.at(i) ); 
+        }
+
+        polymap[out_branch] = poly; 
     }
-
     //cout << "done." << endl; 
 
     delete poly_template; 
-    return poly; 
+    return polymap; 
 }
 //__________________________________________________________________________________________________________________
 int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 

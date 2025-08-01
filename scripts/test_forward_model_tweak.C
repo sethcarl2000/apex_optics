@@ -168,7 +168,7 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
         Error(here, "could not find TTree '%s'", tree_name); 
         return 1; 
     }
-       
+    
     delete tree; 
     infile->Close(); 
     delete infile; 
@@ -207,7 +207,6 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
         dbfile2.close(); 
     }
  
-
     //now, read the file
     string line;
     istringstream iss_init;
@@ -330,7 +329,7 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
                     tracks.push_back({
                         .x = v_x.at(i),
                         .y = v_y.at(i),
-                        .dxdz = v_dxdz.at(i) - v_x.at(i)/6.,  //the only difference between TRANSPORT (tra) and FOCAL-PLANE (fp) coordinates.
+                        .dxdz = v_dxdz.at(i), 
                         .dydz = v_dydz.at(i), 
                         .dpp  = 0. 
                     });    
@@ -342,8 +341,8 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
 
     //now, create a 'frame' for each different tweak of the parameter we've chosen.
     const int n_frames = 20; 
-    const char* tweak_coord = "y_q1"; 
-    const double tweak_range = 10e-3; //+/- magnitude of perturbation range
+    const char* tweak_coord = "dydz_fp"; 
+    const double tweak_range = 15e-3; //+/- magnitude of perturbation range
 
 #define MAKE_OUTGIF true
     
@@ -398,14 +397,14 @@ int test_forward_model_tweak( const char* path_infile="data/replay/replay.4768.r
                             trk_fp.x,           //x_fp
                             trk_fp.y,           //y_fp
                             trk_fp.dxdz,        //dxdz_fp
-                            trk_fp.dydz         //dydz_fp
+                            trk_fp.dydz + perturb         //dydz_fp
                         }; 
                         
                         if (use_fp_q1_sv_mode) {
                             //frist evaluate fp=>q1, then q1=>sv
                             RVec<double> X_q1 = {
                                 pol_x_q1->Eval(X_fp),     //x_q1
-                                pol_y_q1->Eval(X_fp) + perturb,     //y_q1
+                                pol_y_q1->Eval(X_fp),     //y_q1
                                 pol_dxdz_q1->Eval(X_fp),  //dxdz_q1
                                 pol_dydz_q1->Eval(X_fp),  //dydz_q1
                                 pol_dpp_q1->Eval(X_fp)    //dpp_q1
