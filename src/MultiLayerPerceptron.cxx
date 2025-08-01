@@ -56,25 +56,27 @@ MultiLayerPerceptron::MultiLayerPerceptron(const ROOT::RVec<int>& _structure)
 }
 
 //__________________________________________________________________________________________________________________________________
+bool MultiLayerPerceptron::Check_index(int l, int j, int k) const 
+{
+    //Check layer index
+    if ((l < 0 || l >= Get_n_layers()-1 )   || 
+        (j < 0 || j >= fLayer_size[l+1])    ||
+        (k < 0 || k >= fLayer_size[l]+1)) {
+        
+        Error("Check_index", "Invalid index: [l,j,k]=>[%i, %i, %i], can only be l=>[0,%i].",  l,j,k,  Get_n_layers()-1);
+
+        Print(); 
+        
+        return false;
+    }
+
+    return true; 
+}
+
+//__________________________________________________________________________________________________________________________________
 double& MultiLayerPerceptron::Weight(int l, int j, int k) 
 {      
-    //Check layer index
-    if (l < 0 || l >= Get_n_layers()-1 ) {
-        Error("Weight", "Invalid layer index (%i), must be [1,%i]", l, Get_n_layers()-2);
-        return (fQuiet_nan=numeric_limits<double>::quiet_NaN());
-    }
-
-    //check 'row' (output) index
-    if (j < 0 || j >= fLayer_size[l+1]) {
-        Error("Weight", "Invalid 'j' (output) index (%i), must be [0,%i]", j, fLayer_size[l+1]-1);
-        return (fQuiet_nan=numeric_limits<double>::quiet_NaN());
-    }
-
-    //check 'column' (input) index
-    if (k < 0 || k >= fLayer_size[l]+1) {
-        Error("Weight", "Invalid 'k' (input) index (%i), must be [0,%i]", k, fLayer_size[l]);
-        return (fQuiet_nan=numeric_limits<double>::quiet_NaN());  
-    }
+    if (!Check_index(l,j,k)) return (fQuiet_nan=numeric_limits<double>::quiet_NaN()); 
 
     return fWeights[l][ j * (fLayer_size[l]+1) + k ]; 
 }
@@ -82,23 +84,7 @@ double& MultiLayerPerceptron::Weight(int l, int j, int k)
 //__________________________________________________________________________________________________________________________________
 double MultiLayerPerceptron::Get_weight(int l, int j, int k) const
 {      
-    //Check layer index
-    if (l < 0 || l >= Get_n_layers()-1 ) {
-        Error("Get_weight", "Invalid layer index (%i), must be [1,%i]", l, Get_n_layers()-2);
-        return numeric_limits<double>::quiet_NaN();
-    }
-
-    //check 'row' (output) index
-    if (j < 0 || j >= fLayer_size[l+1]) {
-        Error("Get_weight", "Invalid 'j' (output) index (%i), must be [0,%i]", j, fLayer_size[l+1]-1);
-        return numeric_limits<double>::quiet_NaN();
-    }
-
-    //check 'column' (input) index
-    if (k < 0 || k >= fLayer_size[l]+1) {
-        Error("Get_weight", "Invalid 'k' (input) index (%i), must be [0,%i]", k, fLayer_size[l]);
-        return numeric_limits<double>::quiet_NaN();
-    }
+    if (!Check_index(l,j,k)) return numeric_limits<double>::quiet_NaN(); 
 
     return fWeights[l][ j * (fLayer_size[l]+1) + k ]; 
 }
@@ -120,18 +106,18 @@ inline double MultiLayerPerceptron::Activation_fcn_deriv(double x) const
 
 
 //__________________________________________________________________________________________________________________________________
-inline void MultiLayerPerceptron::Activation_fcn(RVec<double>& X) const
+RVec<double> MultiLayerPerceptron::Activation_fcn(RVec<double>& X) const
 {
     //for right now, we're just going to use the cmath exp() function to make a sigmoid. 
-    X = 1./( 1. + exp(X) ) - 0.5;  
+    return 1./( 1. + exp(X) ) - 0.5;  
 }
 
 //__________________________________________________________________________________________________________________________________
-inline void MultiLayerPerceptron::Activation_fcn_deriv(RVec<double>& X) const
+RVec<double> MultiLayerPerceptron::Activation_fcn_deriv(RVec<double>& X) const
 {
     //Compute the derivative of the sigmoid 
-    Activation_fcn(X); 
-    X = ( 0.5 + X ) * ( 0.5 - X ); 
+    auto Y = Activation_fcn(X); 
+    return ( 0.5 + Y ) * ( 0.5 - Y ); 
 }
 
 
@@ -188,11 +174,11 @@ RVec<double> MultiLayerPerceptron::Eval(const RVec<double>& X) const
         //iterate over all rows (elements of the output vector)
         for (int j=0; j<fLayer_size[l+1]; j++) {
 
-            //iterate through all the columns (input vector elements + a constant )
-            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k]; 
-            
             //add the constant (which is the last element in each column of the 'weight matrix')
             output[j] += weights[i_elem++]; 
+            
+            //iterate through all the columns (input vector elements + a constant )
+            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k]; 
         }
 
         //do this so we don't apply the Activation function to the last layer
@@ -209,63 +195,113 @@ RVec<double> MultiLayerPerceptron::Eval(const RVec<double>& X) const
     return {}; 
 }
 //__________________________________________________________________________________________________________________________________
-RVec<RVec<double>>* Weight_gradient(const RVec<double>& X) const
+MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(const RVec<double>& X) const
 {
     if ((int)X.size() != Get_DoF_in()) {
-        Error("Eval", "Input vector wrong size (%i), expected (%i).", (int)X.size(), Get_DoF_in()); 
+        Error("Weight_gradient", "Input vector wrong size (%i), expected (%i).", (int)X.size(), Get_DoF_in()); 
         return nullptr; 
     }
 
     //we want to allocate this on the heap to avoid copying it, but it would be more convenient to access it by reference 
     // in this function. once we're done, we'll return a ptr to it.
-    RVec<RVec<double>>& grad = *(new RVec<RVec<double>>{}); 
+    WeightGradient_t *weight_gradient = new WeightGradient_t;  
 
-    //initialize the gradient 
-    const int n_weights(0); for (const auto& layer : fWeights) n_weights += layer.size(); 
+    //structure is: 
+    // outermost vector: each element is a coordinate of the output vector (i)
+    // middle vector: each element is a distinct layer of weights (l)
+    // inner vector:  each element is the gradient computed w/r/t a specific weight. so: 
+    //
+    //      dZ_i / dW^l_jk =  grad[l][]
+    // 
+    // Where: 
+    // Z_i is the output node the gradient is computed in respect to. 
+    // dW^l_jk is the specific weight. 'l' is layer [0,N-1], 'k' is input variable index (x^l_k), and 'j' is output variable index (y^l_j)
+    //   note each element with index k=0 is the constant-offset index. 
+    //   so each layer is computed as: 
+    // 
+    //      y^l_j = w^l_jk * x^l_k + w^l_j0 
+    //
+    //   where the index 'k' is summed over on the RHS. 
+    //
+    <RVec<RVec<double>>& grad = weight_gradient->data; 
 
-    for (int i=0; i<Get_DoF_out(); i++) { grad.push_back({}); grad[i].reserve(n_weights); }
+    auto dZi_dWljk = [&grad, fLayer_size](int i, int l, int j, int k) { return &grad[i][l][ j*(fLayer_size[l]+1) + k ]; }; 
     
+
+    //initialize the gradient nested vector.   
+    grad = RVec<RVec<double>>(Get_DoF_out(), {});
+
+    for (int i=0; i<Get_DoF_out(); i++) {
+        
+        auto& grad_i = grad[i];
+        grad_i = RVec<RVec<double>>(Get_n_layers(), {}); 
+
+        for (const auto& weights : fWeights) { int l=0; 
+             grad_i[l++].reserve(weights.size()); 
+        }
+    }
+
+
     //the first step is actually quite similar to the feed-forward evaluation of the network. 
     //these vectors will propagate all values throughout the network.
-    RVec<double> X_layers[Get_n_layers()-1]; 
-    RVec<double> Y_layers[Get_n_layers()-1]; 
+    RVec<double> X_l[Get_n_layers()-1]; 
+    RVec<double> Y_l[Get_n_layers()-1]; 
 
     int l=0; 
 
-    for (int l=0; l<Get_n_layers()-1; l++) X_layers[l] = RVec<double>(fLayer_size[l+1], 0.);  
-    
-    Y_layers[0] = X; 
+    for (int l=0; l<Get_n_layers()-1; l++) {
+        Y_l[l] = RVec<double>(fLayer_size[l+1], 0.);
+        X_l[l].reserve(fLayer_size[l]);
+    } 
+
+    X_l[0] = X; 
     
     //iterate through each layer, starting with the input layer
     for (const RVec<double>& weights : fWeights) {
 
-        RVec<double>& input  = Y_layers[l]; 
-        RVec<double>& output = X_layers[l]; 
+        RVec<double>& input  = X_l[l]; 
+        RVec<double>& output = Y_l[l]; 
 
         int i_elem=0; 
 
         //iterate over all rows (elements of the output vector)
         for (int j=0; j<fLayer_size[l+1]; j++) {
 
-            //iterate through all the columns (input vector elements + a constant )
-            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k]; 
-            
             //add the constant (which is the last element in each column of the 'weight matrix')
-            output[j] += weights[i_elem++]; 
+            output[j] += weights[i_elem++];
+
+            //iterate through all the columns (input vector elements + a constant )
+            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k];  
         }
 
         //apply the activation function to each element of the output vector
-        Y_layers[l+1] = Activation_fcn(output); 
+        X_l[l+1] = Activation_fcn(output); 
         
         //now, start again with the next row (or exit if we're done)
         l++; 
     }
 
     //now that we have cached all the layers, we're ready to start computing the gradient. 
+    //we start with the last layer, and recursivley propagate all the way to the first layer. 
+    l=Get_n_layers()-2; 
     
+    //this 'A' matrix will be what we use to back-propagate thru all the layers, starting with the last. 
+    RMatrix A = RMatrix::Square_identity(Get_DoF_out()); 
 
+    //the last layer is a little special. 
+    for (; l>=0; l--) {
+        
+        for (int i=0; i<Get_DoF_out(); i++) {
+            for (int j=0; j<fLayer_size[l+1]; j++) {
 
-    return &grad; 
+                dZi_dWljk(i,l,j,0) = A.get(i,j); 
+                for (int k=1; k<fLayer_size[l]; k++) *dZi_dWljk(i,l,j,k) = A.get(i,j) * X_l[k]; 
+            }
+        }
+        //compute the new A-matrix
+    }
+    
+    return weight_gradient; 
 }
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________

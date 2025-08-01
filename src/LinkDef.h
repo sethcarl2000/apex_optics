@@ -9,5 +9,6 @@
 #pragma link C++ class RMatrix+; 
 #pragma link C++ class NPolyArray+; 
 #pragma link C++ class MultiLayerPerceptron+; 
+#pragma link C++ struct MultiLayerPerceptron::WeightGradient_t+; 
 
 #endif 
