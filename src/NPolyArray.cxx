@@ -213,7 +213,7 @@ int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>&
         RVec<RMatrix> dGi_dXj_dXk = HessianTensor(X); 
 
         //Compute the 'F' vector and the 'J' matrix
-        RMatrix J(Get_DoF_in(), Get_DoF_in(), 0.); J.ReportSingular()=false; 
+        RMatrix J(Get_DoF_in(), Get_DoF_in(), 0.); J.Set_report_singular(false); 
         RVec<double> F(Get_DoF_in(), 0.); 
         
         for (int i=0; i<Get_DoF_out(); i++) {
