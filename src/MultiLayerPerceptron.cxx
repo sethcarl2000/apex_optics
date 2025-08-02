@@ -125,8 +125,8 @@ double& MultiLayerPerceptron::WeightGradient_t::at(int i, int l, int j, int k)
         return *(new double(numeric_limits<double>::quiet_NaN()));
     }
     
-    if (k < 0 || k >= layer_size[l]) {
-        throw logic_error("WeightGradient_t::at() - invalid 'k' index passed; must be k=[0,layer_size[l]-1]"); 
+    if (k < 0 || k >= layer_size[l]+1) {
+        throw logic_error("WeightGradient_t::at() - invalid 'k' index passed; must be k=[0,layer_size[l]]"); 
         return *(new double(numeric_limits<double>::quiet_NaN()));
     }
     
@@ -135,8 +135,27 @@ double& MultiLayerPerceptron::WeightGradient_t::at(int i, int l, int j, int k)
     //                  Total number of weights in layer 'l'         Total number of weights for output 'j' of layer 'l'
     
 }
-
 //__________________________________________________________________________________________________________________________________
+MultiLayerPerceptron::WeightGradient_t::WeightGradient_t(MultiLayerPerceptron::WeightGradient_t&& val) noexcept
+{
+    //move constructor
+    data        = move(val.data); 
+    layer_size  = move(val.layer_size);
+    DoF_out = val.DoF_out;
+
+    return; 
+}
+//__________________________________________________________________________________________________________________________________
+MultiLayerPerceptron::WeightGradient_t& MultiLayerPerceptron::WeightGradient_t::operator=(MultiLayerPerceptron::WeightGradient_t&& val) noexcept
+{
+    //move assignment operator
+    if (this != &val) { //check to make sure we aren't trying to copy data to ourself
+        data        = move(val.data); 
+        layer_size  = move(val.layer_size);
+        DoF_out = val.DoF_out; 
+    }
+    return *this;
+}//__________________________________________________________________________________________________________________________________
 inline double MultiLayerPerceptron::Activation_fcn(double x) const
 {
     //for right now, we're just going to use the cmath exp() function to make a sigmoid. 
@@ -147,8 +166,8 @@ inline double MultiLayerPerceptron::Activation_fcn(double x) const
 inline double MultiLayerPerceptron::Activation_fcn_deriv(double x) const
 {
     //Compute the derivative of the sigmoid 
-    double S = Activation_fcn(x) + 0.5; 
-    return S * ( 1. - S ); 
+    double S = Activation_fcn(x); 
+    return ( 0.5 - S ) * ( 0.5 + S );  
 }
 
 
@@ -156,7 +175,7 @@ inline double MultiLayerPerceptron::Activation_fcn_deriv(double x) const
 RVec<double> MultiLayerPerceptron::Activation_fcn(const RVec<double>& X) const
 {
     //for right now, we're just going to use the cmath exp() function to make a sigmoid. 
-    return 1./( 1. + exp(X) ) - 0.5;  
+    return 1./( 1. + exp(-X) ) - 0.5;  
 }
 
 //__________________________________________________________________________________________________________________________________
@@ -182,10 +201,10 @@ void MultiLayerPerceptron::Print() const
         printf(" -- layer connection weights: l%i -> l%i\n", l, l+1);
 
         for (int j=0; j<fLayer_size[l+1]; j++) {
-            printf("\n    ");
-            for (int k=0; k<fLayer_size[l]; k++) printf("% .4e ", Get_weight(l, j, k) ); 
+            printf("\n -  % .4e  --- ", Get_weight(l, j, 0) ); 
+            for (int k=1; k<fLayer_size[l]+1; k++) printf("% .4e ", Get_weight(l, j, k) ); 
             
-            printf(" -  % .4e", Get_weight(l, j, fLayer_size[l]) );     
+               
         }
         printf("\n\n");
     }
@@ -242,20 +261,21 @@ RVec<double> MultiLayerPerceptron::Eval(const RVec<double>& X) const
     return {}; 
 }
 //__________________________________________________________________________________________________________________________________
-MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(const RVec<double>& X) const
+MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(const RVec<double>& X) const
 {
     if ((int)X.size() != Get_DoF_in()) {
         Error("Weight_gradient", "Input vector wrong size (%i), expected (%i).", (int)X.size(), Get_DoF_in()); 
-        return nullptr; 
+        return WeightGradient_t(); 
     }
 
     //we want to allocate this on the heap to avoid copying it, but it would be more convenient to access it by reference 
     // in this function. once we're done, we'll return a ptr to it.
-    WeightGradient_t *weight_gradient = new WeightGradient_t{ 
-        .data       = RVec<double>(Get_n_layers()-1, {}), 
-        .layer_size = fLayer_size, 
-        .DoF_out    = Get_DoF_out()
-    };  
+    WeightGradient_t weight_gradient;
+    
+    weight_gradient.data        = RVec<double>(Get_n_layers()-1, {}); 
+    weight_gradient.layer_size  = fLayer_size; 
+    weight_gradient.DoF_out     = Get_DoF_out(); 
+
 
     //structure is: 
     // outermost vector: each element is a coordinate of the output vector (i)
@@ -275,7 +295,7 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
     //
     //   where the index 'k' is summed over on the RHS. 
     //
-    RVec<RVec<double>>& grad = weight_gradient->data; 
+    RVec<RVec<double>>& grad = weight_gradient.data; 
 
     //the first step is actually quite similar to the feed-forward evaluation of the network. 
     //these vectors will propagate all values throughout the network.
@@ -333,13 +353,11 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
     int i_elem=0; 
     for (int l=Get_n_layers()-2; l>=0; l--) {
 
-        printf("back-propagating... Layer: %i. A-matrix: \n", l); 
-        A.Print(); 
         //get the gradient for this layer
-        auto& grad_l = grad[l];        
+        auto& grad_l = grad[l];   
         
-        for (int i=0; i<fLayer_size[l+1]; i++) {           //i -- index of the ouput we're computing the gradient w/r/t 
-            for (int j=0; j<fLayer_size[l]; j++) {    //j -- index of the 'output' that this weight is associated with. 
+        for (int i=0; i<Get_DoF_out(); i++) {           //i -- index of the ouput we're computing the gradient w/r/t 
+            for (int j=0; j<fLayer_size[l+1]; j++) {    //j -- index of the 'output' that this weight is associated with. 
                 
                 grad_l.push_back( A.at(i,j) );          // this is the 'weight' that is just a constant offset.      
                     
@@ -353,20 +371,21 @@ MultiLayerPerceptron::WeightGradient_t* MultiLayerPerceptron::Weight_gradient(co
         //if we haven't reached the last layer yet, update the 'A' matrix
         if (l==0) break; 
 
-        RVec<double> A_update_data; A_update_data.reserve(fLayer_size[l] * fLayer_size[l-1]);
+        RVec<double> A_update_data; A_update_data.reserve(fLayer_size[l+1] * fLayer_size[l]);
         
         auto& weights = fWeights[l]; 
 
-        for (int i=0; i<fLayer_size[l]; i++) {
-            for (int j=0; j<fLayer_size[l-1]; j++) {
+        for (int j=0; j<fLayer_size[l+1]; j++) {
+            for (int k=0; k<fLayer_size[l]; k++) {
                 A_update_data.push_back( 
-                    weights.at( i*(fLayer_size[l]+1) + 1 + j ) * Activation_fcn_deriv(Y_l[l-1].at(j))
-                ); 
+                    weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Activation_fcn_deriv( Y_l[l-1].at(k) )
+                );
             }
         }
-        RMatrix A_update(fLayer_size[l], fLayer_size[l-1], A_update_data); 
 
-        A = A * A_update; 
+        RMatrix A_l(fLayer_size[l+1], fLayer_size[l], A_update_data); 
+
+        A = A * A_l; 
     }   
     
     return weight_gradient; 

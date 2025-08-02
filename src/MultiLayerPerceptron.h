@@ -49,13 +49,27 @@ public:
     ROOT::RVec<double> Eval(const ROOT::RVec<double>& X) const; 
 
     struct WeightGradient_t{ 
+
+        //default constructor
+        WeightGradient_t() noexcept 
+            : data({}), layer_size({}), DoF_out(0) {}; 
+        //copy constructor
+        WeightGradient_t(const WeightGradient_t &cpy) noexcept
+            : data(cpy.data), layer_size(cpy.layer_size), DoF_out(cpy.DoF_out) {}; 
+        //move constructor
+        WeightGradient_t(WeightGradient_t&& val) noexcept; 
+
+        //move assignment operator
+        WeightGradient_t& operator=(WeightGradient_t&& val) noexcept; 
+
+
         ROOT::RVec<ROOT::RVec<double>> data; 
         ROOT::RVec<int> layer_size; 
         int DoF_out; 
         double& at(int i, int l, int j, int k); 
     };
 
-    MultiLayerPerceptron::WeightGradient_t* Weight_gradient(const ROOT::RVec<double>& X) const; 
+    MultiLayerPerceptron::WeightGradient_t Weight_gradient(const ROOT::RVec<double>& X) const; 
 
     //Print Network structure and all weights
     void Print() const; 
