@@ -136,6 +136,15 @@ double& MultiLayerPerceptron::WeightGradient_t::at(int i, int l, int j, int k)
     
 }
 //__________________________________________________________________________________________________________________________________
+inline double& MultiLayerPerceptron::WeightGradient_t::get(int i, int l, int j, int k) 
+{
+    //same as above, but does *not* perform bounds-checking 
+    //   
+    return data[l][ i * (layer_size[l+1] * (layer_size[l]+1))    +   j * (layer_size[l]+1)   +   k ]; 
+    //                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^        ^^^^^^^^^^^^^^^^^^^^^   
+    //                  Total number of weights in layer 'l'         Total number of weights for output 'j' of layer 'l'
+}
+//__________________________________________________________________________________________________________________________________
 MultiLayerPerceptron::WeightGradient_t::WeightGradient_t(MultiLayerPerceptron::WeightGradient_t&& val) noexcept
 {
     //move constructor
