@@ -301,6 +301,7 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
     //these vectors will propagate all values throughout the network.
     RVec<double> X_l[Get_n_layers()-1]; 
     RVec<double> Y_l[Get_n_layers()-1]; 
+    RVec<double> Y_l_deriv[Get_n_layers()-1]; 
 
     for (int l=0; l<Get_n_layers()-1; l++) { 
 
@@ -312,6 +313,7 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
         //initialize the layer buffers
         Y_l[l] = RVec<double>(fLayer_size[l+1], 0.); //this is the 'output' of each layer
         X_l[l].reserve(fLayer_size[l]);              //this is the 'input' to each layer
+        Y_l_deriv[l].reserve(fLayer_size[l+1]);      //this is the output of each layer, with the deriv. of the A-funct. applied
     }
 
     X_l[0] = X; 
@@ -336,10 +338,14 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
             for (int k=0; k<fLayer_size.at(l); k++) output[j] += weights.at(i_elem++) * input.at(k);  
         }
 
+        Y_l_deriv[l] = Activation_fcn_deriv(output);
+        
         if (l >= Get_n_layers()-2) break; 
         //apply the activation function to each element of the output vector
         X_l[l+1] = Activation_fcn(output); 
         
+        
+
         //now, start again with the next row (or exit if we're done)
         l++; 
     }
@@ -378,7 +384,8 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
         for (int j=0; j<fLayer_size[l+1]; j++) {
             for (int k=0; k<fLayer_size[l]; k++) {
                 A_update_data.push_back( 
-                    weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Activation_fcn_deriv( Y_l[l-1].at(k) )
+                    //weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Activation_fcn_deriv( Y_l[l-1].at(k) )
+                    weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Y_l_deriv[l-1].at(k) 
                 );
             }
         }
