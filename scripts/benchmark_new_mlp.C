@@ -1,5 +1,6 @@
 
 #include "TROOT.h"
+#include <chrono> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -7,7 +8,8 @@ using namespace ROOT::VecOps;
 //true when benchmarking poly, false when benchmarking MLP
 #define BENCHMARK_POLY false
 
-int benchmark_new_mlp()
+int benchmark_new_mlp(const int n_trials = 5,           //number of trials to run
+                      const int n_iterations = 1e6)     //number of iterations per trial
 {
     RVec<int> mlp_structure{5,8,8,8,4}; 
 
@@ -39,34 +41,61 @@ int benchmark_new_mlp()
     cout << "MLP structure (inputs => hidden layers => outputs): " << mlp_structure << endl; 
 #endif 
 
-    const int n_trials = 1e7; 
-
     RVec<double> X(mlp.Get_DoF_in(),    0.); 
     RVec<double> Z(mlp.Get_DoF_out(),   0.); 
     double z; 
 
     
-    //measure this, so we know how must of the elapsed time measured below is due to 'gRandom->Gaus()' 
-    TStopwatch timer_gaus; 
-    for (int i=0; i<n_trials * (mlp.Get_DoF_in()); i++) { z = gRandom->Gaus(); }
-    double time_gaus = timer_gaus.RealTime(); 
+    
+    
+    cout << "Starting evaluation... (" << n_iterations << " iterations/trial)\n" << flush; 
 
-    cout << "Starting evaluation..." << flush; 
-    TStopwatch timer; 
-    for (int i=0; i<n_trials; i++) {
+    vector<double> trial_times; //net time taken to run, in seconds
 
-        //initialize random input vector
-        for (double& x : X) x = gRandom->Gaus(); 
+    for (int t=0; t<n_trials; t++) {
+        
+        //measure this, so we know how must of the elapsed time measured below is due to 'gRandom->Gaus()' 
+        auto start_gaus = chrono::high_resolution_clock::now();  
+        for (int i=0; i<n_iterations * (mlp.Get_DoF_in()); i++) { z = gRandom->Gaus(); }
+        auto end_gaus = chrono::high_resolution_clock::now(); 
+        double time_gaus = chrono::duration_cast<chrono::microseconds>( end_gaus - start_gaus ).count(); 
+
+        printf(" -- Trial %2i...", t); cout << flush; 
+        
+        auto start = chrono::high_resolution_clock::now(); 
+        
+        for (int i=0; i<n_iterations; i++) {
+
+            //initialize random input vector
+            for (double& x : X) x = gRandom->Gaus(); 
 #if BENCHMARK_POLY 
-        Z = parr.Eval(X); 
-#else 
-        Z = mlp.Eval(X);
+            Z = parr.Eval(X); 
+#else   
+            //straightforward evaluation
+            //Z = mlp.Eval(X); 
+            //computation of the 'weight gradient'
+            auto wg = mlp.Weight_gradient(X); 
 #endif  
-    }
-    double time_eval = timer.RealTime() - time_gaus; 
-    cout << "done." << endl; 
+        }
 
-    printf(" %f seconds elapsed to process %i events (%f us/event)\n", time_eval, n_trials, 1e6 * time_eval/((double)n_trials)); 
+        auto end = chrono::high_resolution_clock::now(); 
+        double trial_time = chrono::duration_cast<chrono::microseconds>( end - start ).count() - time_gaus; 
+        
+        printf("done.  %3.3f seconds elapsed (%.3f us/event)\n", trial_time/1e6, trial_time/((double)n_iterations)); 
+        
+        trial_times.push_back(trial_time/1e6); 
+    }
+    cout << "done with all trials." << endl; 
+
+    double avg(0.); 
+    for (double& x : trial_times) avg += x; 
+    avg *= 1./((double)n_trials); 
+
+    double stddev(0.); 
+    for (double& x : trial_times) stddev += pow( x - avg, 2 );
+    stddev = sqrt(stddev/n_trials);  
+
+    printf(" --> Trial times: ~~~~~~~~~~\n --> Average: %f\n Std-dev: %f\n", avg, stddev ); 
 
     return 0; 
 }
