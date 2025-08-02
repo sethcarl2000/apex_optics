@@ -329,21 +329,20 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
         int i_elem=0; 
 
         //iterate over all rows (elements of the output vector)
-        for (int j=0; j<fLayer_size.at(l+1); j++) {
+        for (int j=0; j<fLayer_size[l+1]; j++) {
 
             //add the constant (which is the last element in each column of the 'weight matrix')
-            output.at(j) += weights.at(i_elem++);
+            output[j] += weights[i_elem++];
 
             //iterate through all the columns (input vector elements + a constant )
-            for (int k=0; k<fLayer_size.at(l); k++) output[j] += weights.at(i_elem++) * input.at(k);  
+            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k];  
         }
 
         Y_l_deriv[l] = Activation_fcn_deriv(output);
-        
+
         if (l >= Get_n_layers()-2) break; 
         //apply the activation function to each element of the output vector
         X_l[l+1] = Activation_fcn(output); 
-        
         
 
         //now, start again with the next row (or exit if we're done)
@@ -365,11 +364,11 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
         for (int i=0; i<Get_DoF_out(); i++) {           //i -- index of the ouput we're computing the gradient w/r/t 
             for (int j=0; j<fLayer_size[l+1]; j++) {    //j -- index of the 'output' that this weight is associated with. 
                 
-                grad_l.push_back( A.at(i,j) );          // this is the 'weight' that is just a constant offset.      
+                grad_l.push_back( A.get(i,j) );          // this is the 'weight' that is just a constant offset.      
                     
                 for (int k=0; k<fLayer_size[l]; k++) {  //k -- index of the 'input' that this weight is associated with. 
                     
-                    grad_l.push_back( A.at(i,j) * X_l[l].at(k) );
+                    grad_l.push_back( A.get(i,j) * X_l[l][k] );
                 } 
             }
         }
@@ -385,7 +384,7 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
             for (int k=0; k<fLayer_size[l]; k++) {
                 A_update_data.push_back( 
                     //weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Activation_fcn_deriv( Y_l[l-1].at(k) )
-                    weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Y_l_deriv[l-1].at(k) 
+                    weights[ j*(fLayer_size[l]+1) + 1 + k ] * Y_l_deriv[l-1][k] 
                 );
             }
         }
