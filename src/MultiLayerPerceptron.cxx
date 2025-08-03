@@ -136,7 +136,7 @@ double& MultiLayerPerceptron::WeightGradient_t::at(int i, int l, int j, int k)
     
 }
 //__________________________________________________________________________________________________________________________________
-inline double& MultiLayerPerceptron::WeightGradient_t::get(int i, int l, int j, int k) 
+double& MultiLayerPerceptron::WeightGradient_t::get(int i, int l, int j, int k) 
 {
     //same as above, but does *not* perform bounds-checking 
     //   
