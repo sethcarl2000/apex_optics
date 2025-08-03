@@ -112,10 +112,10 @@ int train_new_mlp(  const int n_events_train = 1e6,
     }
             
     //the extent to which 
-    double eta = 1.50e-1; 
+    double eta = 1.75e-1; 
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum = 0.00; 
+    double momentum = 0.750; 
 
     printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
     mlp->Print(); 
@@ -133,14 +133,12 @@ int train_new_mlp(  const int n_events_train = 1e6,
     
         
     //for (int l=0; l<Get_n_layers()-1; l++) dW[l] = RVec<double>( (mlp->Get_layer_size(l)+1) * mlp->Get_layer_size(l+1) ); 
-    
+    //zero out the weight-update vector
+    for (int l=0; l<mlp->Get_n_layers()-1; l++) dW[l] = RVec<double>( (mlp->Get_layer_size(l)+1) * mlp->Get_layer_size(l+1), 0. ); 
+        
     //gradient descent trials. We will try to 'match' the inputs of the  
     for (int i=0; i<n_grad_iterations; i++) {
 
-        //zero out the weight-update vector
-        for (int l=0; l<mlp->Get_n_layers()-1; l++) dW[l] = RVec<double>( (mlp->Get_layer_size(l)+1) * mlp->Get_layer_size(l+1), 0. ); 
-    
-        x_epoch[i] = i; 
         //loop over all training data 
         for (const TrainingData_t& data : training_data) {
 
@@ -148,6 +146,7 @@ int train_new_mlp(  const int n_events_train = 1e6,
 
             //this is the gradient of each output coordinate (i), w/r/t each weight in the network. 
             auto weight_gradient = mlp->Weight_gradient(data.inputs); 
+            
 
             //now, compute the gradient of the **loss function** w/r/t each weight: 
             for (int l=0; l<mlp->Get_n_layers()-1; l++) {                   // (l) - index of network layer
@@ -157,17 +156,19 @@ int train_new_mlp(  const int n_events_train = 1e6,
 
                         for (int i=0; i<mlp->Get_DoF_out(); i++) {                  // (i) - index of output layer
                     
-                            dW.at(l).at( j*(mlp->Get_layer_size(l)+1) + k ) += Z_err.at(i) * weight_gradient.at(i,l,j,k);   
+                            dW.at(l).at( j*(mlp->Get_layer_size(l)+1) + k ) += Z_err.at(i) * weight_gradient.at(i,l,j,k) * eta;   
                         }
                     }
                 }
             }
 
         }
-        //first, apply the decay to 
 
-        // << dW[0] << endl; 
-        for (int l=0; l<mlp->Get_n_layers()-1; l++) { mlp->Get_layer(l) +=  -eta * dW[l] / ((double)n_events_train); }
+        //update the weights
+        for (int l=0; l<mlp->Get_n_layers()-1; l++) { mlp->Get_layer(l) += - dW[l] / ((double)n_events_train); }
+
+        //apply momentum
+        for (auto& layer : dW) layer *= momentum; 
 
         //compute error with new weights
         double error(0.); 
@@ -184,7 +185,7 @@ int train_new_mlp(  const int n_events_train = 1e6,
         } else    {
             graph->SetPointY(i, log(error)); 
         } 
-        char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), Error = %.2e;Epoch;Error", i, n_grad_iterations, error ); 
+        char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), Error = %.2e;Epoch;log(Error)", i, n_grad_iterations, error ); 
         graph->SetTitle(g_title);
         
         graph->Draw(); 
