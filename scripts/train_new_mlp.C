@@ -100,7 +100,7 @@ int train_new_mlp(  const int n_events_train = 1e6,
         "z_out"
     };
 
-
+    
 
 
     //we want this mlp to eventually match our target mlp 
@@ -110,12 +110,38 @@ int train_new_mlp(  const int n_events_train = 1e6,
     for (int l=0; l<mlp->Get_n_layers()-1; l++) {
         for (double& weight : mlp->Get_layer(l)) weight = gRandom->Gaus(); 
     }
+
+    
+    printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (after)");
+    for (int l=0; l<mlp->Get_n_layers()-1; l++) {
+
+        RVec<double> diff = mlp->Get_layer(l) - mlp_target->Get_layer(l); 
+        printf("\nLayer %i => %i", l, l+1); 
+        int i_elem=0;
+        double error=0;  
+        for (int j=0; j<mlp->Get_layer_size(l+1); j++) { 
+
+            error += pow( diff.at(i_elem), 2 ); 
+            printf("\n  -  % .4e --- ", diff.at(i_elem++) );
+
+            for (int k=0; k<mlp->Get_layer_size(l); k++) {
+                error += pow( diff.at(i_elem), 2 ); 
+                printf("% .4e ", diff.at(i_elem++));
+            } 
+        }
+        printf( "   ---   rms of layer = %f\n ", sqrt(error/((double)diff.size())) ); 
+        
+    }
+    cout << endl; 
             
     //the extent to which 
-    double eta = 1.75e-1; 
+    double eta          = 0.1750; 
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum = 0.750; 
+    double momentum     = 0.7500; 
+
+    //a 'kick' technique, to increase randomness
+
 
     printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
     mlp->Print(); 
@@ -156,7 +182,7 @@ int train_new_mlp(  const int n_events_train = 1e6,
 
                         for (int i=0; i<mlp->Get_DoF_out(); i++) {                  // (i) - index of output layer
                     
-                            dW.at(l).at( j*(mlp->Get_layer_size(l)+1) + k ) += Z_err.at(i) * weight_gradient.at(i,l,j,k) * eta;   
+                            dW.at(l).at( j*(mlp->Get_layer_size(l)+1) + k ) += Z_err[i] * weight_gradient.get(i,l,j,k) * eta;   
                         }
                     }
                 }
@@ -188,15 +214,41 @@ int train_new_mlp(  const int n_events_train = 1e6,
         char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), Error = %.2e;Epoch;log(Error)", i, n_grad_iterations, error ); 
         graph->SetTitle(g_title);
         
-        graph->Draw(); 
+        graph ->Draw(); 
         canvas->Modified(); 
         canvas->Update(); 
     }   
 
+    /*
     printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
     mlp->Print(); 
     printf("~~~~~~~~~~~~~~~~~ Old mlp:"); 
     mlp_target->Print(); 
+    */
+
+    //error between target / training MLPs 
+
+    printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (after)");
+    for (int l=0; l<mlp->Get_n_layers()-1; l++) {
+
+        RVec<double> diff = mlp->Get_layer(l) - mlp_target->Get_layer(l); 
+        printf("\nLayer %i => %i", l, l+1); 
+        int i_elem=0;
+        double error=0;  
+        for (int j=0; j<mlp->Get_layer_size(l+1); j++) { 
+
+            error += pow( diff.at(i_elem), 2 ); 
+            printf("\n  -  % .4e --- ", diff.at(i_elem++) );
+
+            for (int k=0; k<mlp->Get_layer_size(l); k++) {
+                error += pow( diff.at(i_elem), 2 ); 
+                printf("% .4e ", diff.at(i_elem++));
+            } 
+        }
+        printf( "   ---   rms of layer = %f\n ", sqrt(error/((double)diff.size())) ); 
+        
+    }
+    cout << endl; 
 
     return 0; 
 }
