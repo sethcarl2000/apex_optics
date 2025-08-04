@@ -312,19 +312,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
     //the fraction of the 'existing' gradient which stays behind at the last step
     double momentum     = 0.850; 
-
-    
-    //the 'kick' which will happen each 'kick_period' generations
-    const int kick_period = 250; 
-
-    const double kick_mag = 0.015; 
-
-    auto kick = [kick_mag](RVec<RVec<double>>& dW) 
-    {
-        for (auto& layer : dW) for (auto& weight : layer) weight += gRandom->Gaus() * kick_mag; 
-        return; 
-    }; 
-
+ 
 
 
     printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
@@ -337,7 +325,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     TGraph* graph = nullptr;  
     
     char canv_title[200]; 
-    sprintf(canv_title, "Momentum: %.3f, Eta: %.3f, Kick (mag, period): (%.3f, %i)", momentum, eta, kick_mag, kick_period); 
+    sprintf(canv_title, "Momentum: %.3f, Eta: %.3f", momentum, eta); 
     auto canvas = new TCanvas("c", canv_title); 
 
         
@@ -386,11 +374,6 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
         for (size_t t=0; t<n_threads; t++) dW += dW_partial[t] * eta; 
 
-        //perform the 'kick' every so often
-        if (((i+1) % kick_period) == 0) { 
-            for (auto& layer : dW) for (auto& weight : layer) weight += gRandom->Gaus() * kick_mag * ((double)n_events_train); 
-            cout << "kick" << endl; 
-        }
 
         //update the weights
         for (int l=0; l<mlp->Get_n_layers()-1; l++) { mlp->Get_layer(l) += - dW[l] / ((double)n_events_train); }
