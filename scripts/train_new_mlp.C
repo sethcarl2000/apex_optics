@@ -18,6 +18,8 @@ double rv_mag2(const ROOT::RVec<double>& v) {
     return ret; 
 }
 
+//__________________________________________________________________________________________________________________
+//Process events from index 'start' to index 'end' in the 'data_vec' vector. 
 void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW, 
                             const MultiLayerPerceptron* mlp, 
                             const std::vector<TrainingData_t>& data_vec, 
@@ -49,7 +51,7 @@ void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW,
 
     }//for (size_t i=start; i<end; i++)
 }
-
+//__________________________________________________________________________________________________________________
 
 //will store the minimum, maximum, and mean of each branch
 struct BranchLimits_t {
@@ -66,14 +68,41 @@ struct BranchLimits_t {
     void Compute_limits() { min=*min_ptr; max=*max_ptr; mean=*mean_ptr; }
 }; 
 
+#define TOY_MLP_DATA true
 
-int train_new_mlp(  const int n_events_train = 1e6, 
-                    const int n_grad_iterations = 10)
+int train_new_mlp(  const int n_grad_iterations = 10,
+                    const char* path_infile = "",
+                    const char* path_outfile = "",
+                    const char* tree_name="tracks_fp" )
 {
     const char* const here = "train_new_mlp"; 
 
-    RVec<int> mlp_structure{3,3,3}; 
+    vector<string> branches_input   = {
+        "x_inp", 
+        "y_inp", 
+        "z_inp"
+    };
 
+    vector<string> branches_output  = {
+        "x_out",
+        "y_out",
+        "z_out"
+    }; 
+
+    //this is the structure of the hidden layers. the eventual network will append an input layer and output layer on either side
+    // of this set of hidden layers. 
+    //
+    // For example: for a network with the structure (4 inputs) => 6 => 6 => (3 outputs), this vector should be: 
+    //  RVec<int> mlp_structure{6,6}; 
+    //
+    RVec<int> mlp_structure{3}; 
+
+    //add the input / output layers to this network. 
+    mlp_structure.insert( mlp_structure.begin(), branches_input.size() ); 
+    mlp_structure.push_back( branches_output.size() ); 
+
+#if TOY_MLP_DATA
+    const int n_events_train = 1.5e5;                 
     //___________________________________________________________________________________________________________________________
     //first, we create a 'dummy' mlp, and use it to create data: 
     auto mlp_target = new MultiLayerPerceptron(mlp_structure); 
@@ -116,25 +145,20 @@ int train_new_mlp(  const int n_events_train = 1e6,
     df_output.Snapshot("training_data", "data/misc/mlp_train_data.root"); 
     cout << "done." << endl;
     //___________________________________________________________________________________________________________________________
-    
-    
-    //now, we will attempt to 'reconstruct' this mlp with a new one... 
-    vector<string> branches_input = {
-        "x_inp",
-        "y_inp",
-        "z_inp"
-    }; 
+#endif 
 
-    vector<string> branches_output = {
-        "x_out",
-        "y_out",
-        "z_out"
-    };
-
+    //to create this data, we want to run in sequential mode. 
     //create the dataframe
-    ROOT::DisableImplicitMT(); 
+    if (ROOT::IsImplicitMTEnabled()) {
+        ROOT::DisableImplicitMT(); 
+    }
+    
+#if TOY_MLP_DATA 
     ROOT::RDataFrame df("training_data", "data/misc/mlp_train_data.root"); 
-
+#else 
+    ROOT::RDataFrame df(tree_name, path_infile); 
+#endif 
+    
     //check for existence of branches: 
     vector<string> column_names = df.GetColumnNames(); 
     vector<string> missing_columns{};  
@@ -166,8 +190,9 @@ int train_new_mlp(  const int n_events_train = 1e6,
 
     
     vector<BranchLimits_t> lim_inputs, lim_outputs; 
-
-
+#if !TOY_MLP_DATA
+    const int n_events_train = *df.Count(); 
+#endif
     //now that we know all the columns exist, we can continue; 
     vector<TrainingData_t> training_data; training_data.reserve(n_events_train); 
 
@@ -259,7 +284,7 @@ int train_new_mlp(  const int n_events_train = 1e6,
         for (double& weight : mlp->Get_layer(l)) weight = gRandom->Gaus(); 
     }
 
-    
+
     printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (after)");
     for (int l=0; l<mlp->Get_n_layers()-1; l++) {
 
@@ -283,12 +308,23 @@ int train_new_mlp(  const int n_events_train = 1e6,
     cout << endl; 
             
     //the extent to which 
-    double eta          = 0.1750; 
+    double eta          = 0.200; 
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum     = 0.7500; 
+    double momentum     = 0.850; 
 
     
+    //the 'kick' which will happen each 'kick_period' generations
+    const int kick_period = 250; 
+
+    const double kick_mag = 0.015; 
+
+    auto kick = [kick_mag](RVec<RVec<double>>& dW) 
+    {
+        for (auto& layer : dW) for (auto& weight : layer) weight += gRandom->Gaus() * kick_mag; 
+        return; 
+    }; 
+
 
 
     printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
@@ -300,7 +336,8 @@ int train_new_mlp(  const int n_events_train = 1e6,
 
     TGraph* graph = nullptr;  
     
-    char canv_title[200]; sprintf(canv_title, "Momentum: %f, Eta: %f", momentum, eta); 
+    char canv_title[200]; 
+    sprintf(canv_title, "Momentum: %.3f, Eta: %.3f, Kick (mag, period): (%.3f, %i)", momentum, eta, kick_mag, kick_period); 
     auto canvas = new TCanvas("c", canv_title); 
 
         
@@ -349,6 +386,11 @@ int train_new_mlp(  const int n_events_train = 1e6,
 
         for (size_t t=0; t<n_threads; t++) dW += dW_partial[t] * eta; 
 
+        //perform the 'kick' every so often
+        if (((i+1) % kick_period) == 0) { 
+            for (auto& layer : dW) for (auto& weight : layer) weight += gRandom->Gaus() * kick_mag * ((double)n_events_train); 
+            cout << "kick" << endl; 
+        }
 
         //update the weights
         for (int l=0; l<mlp->Get_n_layers()-1; l++) { mlp->Get_layer(l) += - dW[l] / ((double)n_events_train); }
@@ -373,7 +415,7 @@ int train_new_mlp(  const int n_events_train = 1e6,
         } else    {
             graph->SetPointY(i, log(error)/log(10.)); 
         } 
-        char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.2e;Epoch;log_{10}(RMS)", i, n_grad_iterations, error ); 
+        char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.2e;Epoch;log_{10}(RMS)", i+1, n_grad_iterations, error ); 
         graph->SetTitle(g_title);
         
         graph ->Draw(); 
