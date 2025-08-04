@@ -2,6 +2,7 @@
 #include <iostream>
 #include <chrono> 
 #include <vector> 
+#include <thread>
 #include <ROOT/RResultPtr.hxx> 
 
 using namespace std; 
@@ -16,6 +17,39 @@ double rv_mag2(const ROOT::RVec<double>& v) {
     for (const double& xx : v * v) ret += xx; 
     return ret; 
 }
+
+void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW, 
+                            const MultiLayerPerceptron* mlp, 
+                            const std::vector<TrainingData_t>& data_vec, 
+                            size_t start, 
+                            size_t end  )
+{
+    for (size_t i=start; i<end; i++) { 
+        
+        const auto& data = data_vec.at(i); 
+        
+        RVec<double> Z_err = mlp->Eval(data.inputs) - data.outputs; 
+
+        //this is the gradient of each output coordinate (i), w/r/t each weight in the network. 
+        auto weight_gradient = mlp->Weight_gradient(data.inputs); 
+
+        //now, compute the gradient of the **loss function** w/r/t each weight: 
+        for (int l=0; l<mlp->Get_n_layers()-1; l++) {                   // (l) - index of network layer
+            
+            for (int j=0; j<mlp->Get_layer_size(l+1); j++) {        // (j) - index of current layer output
+                for (int k=0; k<mlp->Get_layer_size(l)+1; k++) {    // (k) - index of current layer input
+
+                    for (int i=0; i<mlp->Get_DoF_out(); i++) {                  // (i) - index of output layer
+                
+                        dW.at(l).at( j*(mlp->Get_layer_size(l)+1) + k ) += Z_err[i] * weight_gradient.get(i,l,j,k);   
+                    }
+                }
+            }
+        }
+
+    }//for (size_t i=start; i<end; i++)
+}
+
 
 //will store the minimum, maximum, and mean of each branch
 struct BranchLimits_t {
@@ -38,8 +72,7 @@ int train_new_mlp(  const int n_events_train = 1e6,
 {
     const char* const here = "train_new_mlp"; 
 
-    
-    RVec<int> mlp_structure{3,3}; 
+    RVec<int> mlp_structure{3,3,3}; 
 
     //___________________________________________________________________________________________________________________________
     //first, we create a 'dummy' mlp, and use it to create data: 
@@ -79,12 +112,12 @@ int train_new_mlp(  const int n_events_train = 1e6,
         .Define("y_out", [](const RVec<double>& Z){ return Z[1]; }, {"Z"})
         .Define("z_out", [](const RVec<double>& Z){ return Z[2]; }, {"Z"});
     
-    printf("making snapshot of %i training events...", n_events_train); cout << flush; 
+    printf("making snapshot of %i 'fake' training events...", n_events_train); cout << flush; 
     df_output.Snapshot("training_data", "data/misc/mlp_train_data.root"); 
-    cout << "done." << endl; 
-
-    
+    cout << "done." << endl;
     //___________________________________________________________________________________________________________________________
+    
+    
     //now, we will attempt to 'reconstruct' this mlp with a new one... 
     vector<string> branches_input = {
         "x_inp",
@@ -180,7 +213,6 @@ int train_new_mlp(  const int n_events_train = 1e6,
     cout << "done." << endl; 
 
 
-
     auto n_events_run = input_nodes.back() 
 
         .Define("data", [&training_data, &lim_inputs, &lim_outputs](RVec<double>& inputs, RVec<double>& outputs)
@@ -256,7 +288,7 @@ int train_new_mlp(  const int n_events_train = 1e6,
     //the fraction of the 'existing' gradient which stays behind at the last step
     double momentum     = 0.7500; 
 
-    //a 'kick' technique, to increase randomness
+    
 
 
     printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
@@ -271,40 +303,52 @@ int train_new_mlp(  const int n_events_train = 1e6,
     char canv_title[200]; sprintf(canv_title, "Momentum: %f, Eta: %f", momentum, eta); 
     auto canvas = new TCanvas("c", canv_title); 
 
+        
+    //number of threads 
+    const size_t n_threads             = thread::hardware_concurrency(); 
+    const size_t n_events_per_thread   = n_events_train / n_threads; 
+    const size_t remainder             = n_events_train % n_threads; 
+    
     RVec<RVec<double>> dW(mlp->Get_n_layers(), {}); 
     
-        
-    //for (int l=0; l<Get_n_layers()-1; l++) dW[l] = RVec<double>( (mlp->Get_layer_size(l)+1) * mlp->Get_layer_size(l+1) ); 
     //zero out the weight-update vector
-    for (int l=0; l<mlp->Get_n_layers()-1; l++) dW[l] = RVec<double>( (mlp->Get_layer_size(l)+1) * mlp->Get_layer_size(l+1), 0. ); 
-        
+    for (int l=0; l<mlp->Get_n_layers()-1; l++)   
+        dW[l] = RVec<double>( (mlp->Get_layer_size(l)+1) * mlp->Get_layer_size(l+1), 0. ); 
+    
+
+    printf("Running in parallel with %i threads...\n\n", (int)n_threads); 
+
     //gradient descent trials. We will try to 'match' the inputs of the  
     for (int i=0; i<n_grad_iterations; i++) {
 
         //loop over all training data 
-        for (const TrainingData_t& data : training_data) {
 
-            RVec<double> Z_err = mlp->Eval(data.inputs) - data.outputs; 
-
-            //this is the gradient of each output coordinate (i), w/r/t each weight in the network. 
-            auto weight_gradient = mlp->Weight_gradient(data.inputs); 
-            
-
-            //now, compute the gradient of the **loss function** w/r/t each weight: 
-            for (int l=0; l<mlp->Get_n_layers()-1; l++) {                   // (l) - index of network layer
-                
-                for (int j=0; j<mlp->Get_layer_size(l+1); j++) {        // (j) - index of current layer output
-                    for (int k=0; k<mlp->Get_layer_size(l)+1; k++) {    // (k) - index of current layer input
-
-                        for (int i=0; i<mlp->Get_DoF_out(); i++) {                  // (i) - index of output layer
-                    
-                            dW.at(l).at( j*(mlp->Get_layer_size(l)+1) + k ) += Z_err[i] * weight_gradient.get(i,l,j,k) * eta;   
-                        }
-                    }
-                }
+        //create a dW_partial vector for each thread
+        RVec<RVec<double>> dW_partial[n_threads]; for (int t=0; t<n_threads; t++) dW_partial[t] = RVec<RVec<double>>(mlp->Get_n_layers(), {}); 
+        for (size_t t=0; t<n_threads; t++) {
+            for (int l=0; l<mlp->Get_n_layers()-1; l++) { 
+                dW_partial[t][l] = RVec<double>( (mlp->Get_layer_size(l)+1) * mlp->Get_layer_size(l+1), 0. ); 
             }
-
         }
+
+        //create & launch each thread (thank you to claude for teaching me how to use std::thread!)
+        vector<thread> threads; threads.reserve(n_threads); 
+
+        size_t start = 0; 
+        for (size_t t=0; t<n_threads; t++) {
+            size_t end = start + n_events_per_thread + (t < remainder ? 1 : 0); 
+            
+            threads.emplace_back([&training_data, start, end, mlp, &dW_partial, t]{
+                Process_event_range(dW_partial[t], mlp, training_data, start, end);  
+            });
+            start = end; 
+        }
+
+        //synchronize all the threads once they're done
+        for (auto& thread : threads) thread.join();
+
+        for (size_t t=0; t<n_threads; t++) dW += dW_partial[t] * eta; 
+
 
         //update the weights
         for (int l=0; l<mlp->Get_n_layers()-1; l++) { mlp->Get_layer(l) += - dW[l] / ((double)n_events_train); }
