@@ -23,7 +23,10 @@ using namespace ROOT::VecOps;
 
 //__________________________________________________________________________________________________________________________________
 MultiLayerPerceptron::MultiLayerPerceptron(const ROOT::RVec<int>& _structure) 
-    : fN_layers(_structure.size()),
+    : fRd(std::random_device()),
+    fGen(fRd()),
+    fNormal_dist(std::normal_distribution<double>(0., 1.)),
+    fN_layers(_structure.size()),
     fLayer_size(_structure),
     fQuiet_nan{numeric_limits<double>::quiet_NaN()}
 {   
@@ -54,7 +57,18 @@ MultiLayerPerceptron::MultiLayerPerceptron(const ROOT::RVec<int>& _structure)
     }   
     
 }
-
+//__________________________________________________________________________________________________________________________________
+inline double MultiLayerPerceptron::Rand_gaus()
+{
+    return fNormal_dist(fGen); 
+}
+//__________________________________________________________________________________________________________________________________
+void MultiLayerPerceptron::Add_gauss_noise(double stddev) 
+{
+    //add random gaussian noise to all weights
+    for (auto& layer : fWeights) for (auto& weight : layer) weight += Rand_gaus() * stddev; 
+    return; 
+}
 //__________________________________________________________________________________________________________________________________
 bool MultiLayerPerceptron::Check_index(int l, int j, int k) const 
 {

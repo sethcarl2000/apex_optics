@@ -18,6 +18,7 @@
 #include <ROOT/RVec.hxx>
 #include "RMatrix.h"
 #include <limits> 
+#include <random> 
 
 class MultiLayerPerceptron : public TObject {
 public: 
@@ -29,7 +30,11 @@ public:
     // - performs checks on the validity of the input arguments. 
     double& Weight(int l, int j, int k); 
 
-    
+
+    //Add random gaussian noise to all weights with given stddev 
+    void Add_gauss_noise(double stddev); 
+
+
     //const methods which will be guranteed thread-safe for quick evaluation at runtime
 
     //Get number of layers
@@ -78,6 +83,12 @@ public:
     bool Check_index(int l, int j, int k) const; 
 
 private: 
+
+    std::random_device fRd; 
+    std::mt19937 fGen; 
+    std::normal_distribution<double> fNormal_dist; 
+
+    inline double Rand_gaus(); 
 
     //the nonlinear activation function 
     inline double Activation_fcn(double x) const; 
