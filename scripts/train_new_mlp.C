@@ -3,6 +3,7 @@
 #include <chrono> 
 #include <vector> 
 #include <thread>
+#include <fstream>
 #include <ROOT/RResultPtr.hxx> 
 
 using namespace std; 
@@ -16,6 +17,42 @@ double rv_mag2(const ROOT::RVec<double>& v) {
     double ret=0.; 
     for (const double& xx : v * v) ret += xx; 
     return ret; 
+}
+
+void Create_dbfile_from_mlp(MultiLayerPerceptron* mlp, const char* path_dbfile)
+{
+    fstream dbfile(path_dbfile, ios::out | ios::trunc);
+
+    if (!dbfile.is_open()) {
+        Error("Create_dbfile_from_mlp", "Unable to open file: %s", path_dbfile); 
+        return; 
+    }
+
+    const int n_layers = mlp->Get_n_layers(); 
+
+    dbfile << "n-layers " << mlp->Get_n_layers(); 
+    dbfile << "\nstructure "; for (int l=0; l<n_layers; l++) dbfile << mlp->Get_layer_size(l) << " "; 
+    
+    for (int l=0; l<n_layers-1; l++) {
+        
+        dbfile << "\nlayer-weights " << l; 
+
+        char buff[50]; 
+        
+        for (int j=0; j<mlp->Get_layer_size(l+1); j++) {
+
+            dbfile << "\n";  
+            
+            for (int k=0; k<mlp->Get_layer_size(l)+1; k++) {    
+                sprintf(buff, "%+.9e ", mlp->Get_weight(l, j, k));
+                dbfile << buff; 
+            }
+             
+        }
+        
+    }
+    
+    dbfile.close(); 
 }
 
 //__________________________________________________________________________________________________________________
@@ -70,6 +107,7 @@ struct BranchLimits_t {
 
 #define TOY_MLP_DATA true
 
+//____________________________________________________________________________________________________________________________________
 int train_new_mlp(  const int n_grad_iterations = 10,
                     const char* path_infile = "",
                     const char* path_outfile = "",
@@ -111,9 +149,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     const int DoF_out = mlp_target->Get_DoF_out(); 
 
     //initialize with random, gaussian weights
-    for (int l=0; l<mlp_target->Get_n_layers()-1; l++) {
-        for (double& weight : mlp_target->Get_layer(l)) weight = gRandom->Gaus(); 
-    }
+    mlp_target->Add_gauss_noise(1.0); 
 
     ROOT::EnableImplicitMT(); 
     ROOT::RDataFrame df_create(n_events_train);
@@ -280,12 +316,11 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     auto mlp = new MultiLayerPerceptron(mlp_structure); 
 
     //initialize with random, gaussian weights
-    for (int l=0; l<mlp->Get_n_layers()-1; l++) {
-        for (double& weight : mlp->Get_layer(l)) weight = gRandom->Gaus(); 
-    }
+#if TOY_MLP_DATA
+    for (int l=0; l<mlp->Get_n_layers()-1; l++) mlp->Get_layer(l) = mlp_target->Get_layer(l); 
+    mlp->Add_gauss_noise(3e-4); 
 
-
-    printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (after)");
+    printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (before)");
     for (int l=0; l<mlp->Get_n_layers()-1; l++) {
 
         RVec<double> diff = mlp->Get_layer(l) - mlp_target->Get_layer(l); 
@@ -306,12 +341,21 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         
     }
     cout << endl; 
+#else
+    mlp->Add_gauss_noise(1.0); 
+
+    const int DoF_in  = mlp->Get_DoF_in(); 
+    const int DoF_out = mlp->Get_DoF_out(); 
+#endif
+
+
+
             
     //the extent to which 
-    double eta          = 0.200; 
+    double eta          = 0.250; 
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum     = 0.850; 
+    double momentum     = 1.000 - 0.100; 
  
 
 
@@ -371,6 +415,9 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
         //synchronize all the threads once they're done
         for (auto& thread : threads) thread.join();
+        
+        //apply momentum
+        for (auto& layer : dW) layer *= momentum; 
 
         for (size_t t=0; t<n_threads; t++) dW += dW_partial[t] * eta; 
 
@@ -378,9 +425,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         //update the weights
         for (int l=0; l<mlp->Get_n_layers()-1; l++) { mlp->Get_layer(l) += - dW[l] / ((double)n_events_train); }
 
-        //apply momentum
-        for (auto& layer : dW) layer *= momentum; 
-
+        
         //compute error with new weights
         double error(0.); 
         for (const TrainingData_t& data : training_data) error += rv_mag2( data.outputs - mlp->Eval(data.inputs) ); 
@@ -406,15 +451,9 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         canvas->Update(); 
     }   
 
-    /*
-    printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
-    mlp->Print(); 
-    printf("~~~~~~~~~~~~~~~~~ Old mlp:"); 
-    mlp_target->Print(); 
-    */
 
     //error between target / training MLPs 
-
+#if TOY_MLP_DATA 
     printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (after)");
     for (int l=0; l<mlp->Get_n_layers()-1; l++) {
 
@@ -436,6 +475,45 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         
     }
     cout << endl; 
+#endif 
+
+
+    //now, create a new mlp, in which the inputs are (not!) normalized, as they have been for the training. 
+    auto mlp_out = new MultiLayerPerceptron(mlp_structure); 
+
+    //to begin with, copy all the weights just as they are in our training. 
+    for (int l=0; l<mlp->Get_n_layers()-1; l++) mlp_out->Get_layer(l) = mlp->Get_layer(l); 
+
+
+    //for the first and last layers, we need to un-do the normalization.
+    //the 'normalization' is when we made is so that all of the input/output branches take on values in the range [-1,+1].   
+    for (int j=0; j<mlp_out->Get_layer_size(1); j++) {
+        for (int k=1; k<mlp_out->Get_layer_size(0)+1; k++) {
+            
+            auto& limit = lim_inputs.at(k-1); 
+
+            mlp_out->Weight(0, j, 0) += - limit.mean * mlp->Weight(0, j, k) / (limit.max - limit.min); 
+
+            mlp_out->Weight(0, j, k) = mlp->Weight(0, j, k) / (limit.max - limit.min); 
+        }
+    }
+
+    //now, do the last output layer
+    int last = mlp_out->Get_n_layers()-1;
+
+    for (int j=0; j<mlp_out->Get_layer_size(last); j++) {
+
+        auto& limit = lim_outputs.at(j); 
+
+        mlp_out->Weight(last-1, j, 0) += limit.mean; 
+
+        for (int k=1; k<mlp_out->Get_layer_size(last-1)+1; k++) {
+            
+            mlp_out->Weight(last-1, j, k) = mlp->Weight(last-1, j, k) * (limit.max - limit.min); 
+        }
+    }
+ 
+    Create_dbfile_from_mlp(mlp_out, "data/csv/mlp_test.dat"); 
 
     return 0; 
 }
