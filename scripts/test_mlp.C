@@ -115,6 +115,8 @@ int test_mlp(   const char* path_infile="",
 
     auto df_output = nodes.back(); 
     
+    //the purpose of this struct is to 'book' the computation of the R^2 value for each branch beforehand, which makes it so that
+    // RDataFrame doesn't have to re-loop over all events each time we compute the R^2 value of another branch. 
     struct OutputFitR2_t {
         const char* name; 
         ROOT::RDF::RResultPtr<double> ptr_stddev_output, ptr_stddev_error; 
@@ -160,7 +162,7 @@ int test_mlp(   const char* path_infile="",
 
     //now, calculate and report the R2 for each element.
     printf("Branch R^2 values: \n");
-    for (auto& branch_R2 : outputs_R2) printf(" -- % .10f -- coord: %s\n", branch_R2.get_R2(), branch_R2.name ); 
+    for (auto& branch_R2 : outputs_R2) printf(" -- %-*s - % .10f  \n", 12, branch_R2.name, branch_R2.get_R2()); 
 
 
     return 0; 
