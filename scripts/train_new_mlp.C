@@ -19,6 +19,8 @@ double rv_mag2(const ROOT::RVec<double>& v) {
     return ret; 
 }
 
+//this changes some options for slurm mode, like reducing 'cout' output and saving the cancas to a pdf file. 
+#define SLURM_MODE true
 
 
 //__________________________________________________________________________________________________________________
@@ -29,7 +31,7 @@ void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW,
                             size_t start, 
                             size_t end  )
 {
-    for (size_t i=start; i<end; i++) { 
+  for (size_t i=start; i<end; i++) { 
         
         const auto& data = data_vec.at(i); 
         
@@ -76,9 +78,10 @@ int train_new_mlp(  const int n_grad_iterations = 10,
                     const char* path_infile = "",
                     const char* path_outfile = "",
                     RVec<int> mlp_structure={},
-                    const char* tree_name="tracks_fp" )
-{
-    const char* const here = "train_new_mlp"; 
+                    const char* path_graphic="",
+		    const char* tree_name="tracks_fp")
+{ 
+  const char* const here = "train_new_mlp"; 
 
 #if 1
     //we're going to deal with real data here
@@ -316,8 +319,13 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     auto canvas = new TCanvas("c", canv_title); 
 
         
-    //number of threads 
-    const size_t n_threads             = thread::hardware_concurrency(); 
+    //number of threads
+#if SLURM_MODE 
+    const size_t n_threads             = 20; 
+#else
+    const size_t n_threads             = thread::hardware_concurrency();
+#endif
+    
     const size_t n_events_per_thread   = n_events_train / n_threads; 
     const size_t remainder             = n_events_train % n_threads; 
     
@@ -378,12 +386,19 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
 
         //print information about this epoch to stdout
-        printf("\r -- epoch %i, error: % .4e (%+.4e)      (progress %3.1f)", 
-            i, 
-            error, 
-            error - last_error, 
-            100.*((double)i+1)/((double)n_grad_iterations) ); cout << flush; 
-        
+#if SLURM_MODE
+	if (i % update_period == 0) {
+#endif
+	  printf("\r -- epoch %i, error: % .4e (%+.4e)      (progress %3.1f)", 
+		 i, 
+		 error, 
+		 error - last_error, 
+		 100.*((double)i+1)/((double)n_grad_iterations) ); cout << flush; 
+#if SLURM_MODE
+	}
+#endif
+	  
+	
         //update the graph & redraw
         if (i % update_period == 0) { 
             if (i==0) {
@@ -412,6 +427,10 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     canvas->Modified(); 
     canvas->Update(); 
 
+#if SLURM_MODE
+    if (string(path_graphic)!="") canvas->SaveAs(path_graphic);
+#endif
+    
 #if 0 
     //error between target / training MLPs. this is if we know what the 'toy' mlp data used to generate this data is. 
     printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (after)");
