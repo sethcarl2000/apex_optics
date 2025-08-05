@@ -19,41 +19,7 @@ double rv_mag2(const ROOT::RVec<double>& v) {
     return ret; 
 }
 
-void Create_dbfile_from_mlp(MultiLayerPerceptron* mlp, const char* path_dbfile)
-{
-    fstream dbfile(path_dbfile, ios::out | ios::trunc);
 
-    if (!dbfile.is_open()) {
-        Error("Create_dbfile_from_mlp", "Unable to open file: %s", path_dbfile); 
-        return; 
-    }
-
-    const int n_layers = mlp->Get_n_layers(); 
-
-    dbfile << "n-layers " << mlp->Get_n_layers(); 
-    dbfile << "\nstructure "; for (int l=0; l<n_layers; l++) dbfile << mlp->Get_layer_size(l) << " "; 
-    
-    for (int l=0; l<n_layers-1; l++) {
-        
-        dbfile << "\nlayer-weights " << l; 
-
-        char buff[50]; 
-        
-        for (int j=0; j<mlp->Get_layer_size(l+1); j++) {
-
-            dbfile << "\n";  
-            
-            for (int k=0; k<mlp->Get_layer_size(l)+1; k++) {    
-                sprintf(buff, "%+.9e ", mlp->Get_weight(l, j, k));
-                dbfile << buff; 
-            }
-             
-        }
-        
-    }
-    
-    dbfile.close(); 
-}
 
 //__________________________________________________________________________________________________________________
 //Process events from index 'start' to index 'end' in the 'data_vec' vector. 
@@ -105,8 +71,6 @@ struct BranchLimits_t {
     void Compute_limits() { min=*min_ptr; max=*max_ptr; mean=*mean_ptr; }
 }; 
 
-#define TOY_MLP_DATA false
-
 //____________________________________________________________________________________________________________________________________
 int train_new_mlp(  const int n_grad_iterations = 10,
                     const char* path_infile = "",
@@ -115,7 +79,8 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 {
     const char* const here = "train_new_mlp"; 
 
-
+#if 0 
+    //we're going to deal with real data here
     //we need to define some output branches first. we will store them in a file called "data/misc/temp.root" 
     ROOT::EnableImplicitMT(); 
     ROOT::RDataFrame df_temp(tree_name, path_infile); 
@@ -131,10 +96,31 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         .Define("dydz_sv",  [](TVector3 v){ return v.y()/v.z(); }, {"momentum_sieve"})
         .Define("dpp_sv",   [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"}) 
 
-        .Snapshot(tree_name, "data/misc/temp.root", 
-            {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv", "x_fp", "y_fp", "dxdz_fp", "dydz_fp"}); 
-    //now, proceed as normal 
+        .Define("x_q1",     [](TVector3 v){ return v.x(); }, {"position_Q1"})
+        .Define("y_q1",     [](TVector3 v){ return v.y(); }, {"position_Q1"})
+        .Define("dxdz_q1",  [](TVector3 v){ return v.x()/v.z(); }, {"momentum_Q1"})
+        .Define("dydz_q1",  [](TVector3 v){ return v.y()/v.z(); }, {"momentum_Q1"})
+        .Define("dpp_q1",   [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_Q1"}) 
 
+        .Snapshot(tree_name, "data/misc/temp.root", 
+            {"x_sv", 
+             "y_sv", 
+             "dxdz_sv", 
+             "dydz_sv", 
+             "dpp_sv", 
+             
+             "x_q1",
+             "y_q1",
+             "dxdz_q1",
+             "dydz_q1",
+             "dpp_q1",
+
+             "x_fp", 
+             "y_fp", 
+             "dxdz_fp", 
+             "dydz_fp"}); 
+    //now, proceed as normal 
+#endif 
     vector<string> branches_input   = {
         "x_sv", 
         "y_sv", 
@@ -144,10 +130,11 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     };
 
     vector<string> branches_output  = {
-        "x_fp",
-        "y_fp",
-        "dxdz_fp",
-        "dydz_fp"
+        "x_q1",
+        "y_q1",
+        "dxdz_q1",
+        "dydz_q1", 
+        "dpp_q1"
     }; 
 
     //this is the structure of the hidden layers. the eventual network will append an input layer and output layer on either side
@@ -156,55 +143,12 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     // For example: for a network with the structure (4 inputs) => 6 => 6 => (3 outputs), this vector should be: 
     //  RVec<int> mlp_structure{6,6}; 
     //
-    RVec<int> mlp_structure{5}; 
+
+    RVec<int> mlp_structure{}; 
 
     //add the input / output layers to this network. 
     mlp_structure.insert( mlp_structure.begin(), branches_input.size() ); 
     mlp_structure.push_back( branches_output.size() ); 
-
-#if TOY_MLP_DATA
-    const int n_events_train = 1.5e5;                 
-    //___________________________________________________________________________________________________________________________
-    //first, we create a 'dummy' mlp, and use it to create data: 
-    auto mlp_target = new MultiLayerPerceptron(mlp_structure); 
-
-    const int DoF_in  = mlp_target->Get_DoF_in(); 
-    const int DoF_out = mlp_target->Get_DoF_out(); 
-
-    //initialize with random, gaussian weights
-    mlp_target->Add_gauss_noise(1.0); 
-
-    ROOT::EnableImplicitMT(); 
-    ROOT::RDataFrame df_create(n_events_train);
-
-    auto df_output = df_create
-
-        .Define("X", [DoF_in]()
-        {   
-            RVec<double> X; 
-            X.reserve(DoF_in); 
-            for (int i=0; i<DoF_in; i++) X.push_back( -1. + 2.*gRandom->Rndm() ); 
-            return X; 
-        }, {})
-
-        .Define("x_inp", [](const RVec<double>& X){ return X[0]; }, {"X"})
-        .Define("y_inp", [](const RVec<double>& X){ return X[1]; }, {"X"})
-        .Define("z_inp", [](const RVec<double>& X){ return X[2]; }, {"X"})
-
-        .Define("Z", [mlp_target](const RVec<double>& X)
-        {
-            return mlp_target->Eval(X); 
-        }, {"X"})
-
-        .Define("x_out", [](const RVec<double>& Z){ return Z[0]; }, {"Z"})
-        .Define("y_out", [](const RVec<double>& Z){ return Z[1]; }, {"Z"})
-        .Define("z_out", [](const RVec<double>& Z){ return Z[2]; }, {"Z"});
-    
-    printf("making snapshot of %i 'fake' training events...", n_events_train); cout << flush; 
-    df_output.Snapshot("training_data", "data/misc/mlp_train_data.root"); 
-    cout << "done." << endl;
-    //___________________________________________________________________________________________________________________________
-#endif 
 
     //to create this data, we want to run in sequential mode. 
     //create the dataframe
@@ -212,11 +156,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         ROOT::DisableImplicitMT(); 
     }
     
-#if TOY_MLP_DATA 
-    ROOT::RDataFrame df("training_data", "data/misc/mlp_train_data.root"); 
-#else 
-    ROOT::RDataFrame df(tree_name, "data/misc/temp.root"); 
-#endif 
+    ROOT::RDataFrame df(tree_name, path_infile); 
     
     //check for existence of branches: 
     vector<string> column_names = df.GetColumnNames(); 
@@ -248,10 +188,8 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     }
 
     
-    vector<BranchLimits_t> lim_inputs, lim_outputs; 
-#if !TOY_MLP_DATA
     const int n_events_train = *df.Count(); 
-#endif
+
     //now that we know all the columns exist, we can continue; 
     vector<TrainingData_t> training_data; training_data.reserve(n_events_train); 
 
@@ -278,6 +216,8 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
         input_nodes.push_back(new_node); 
     }
+        
+    vector<BranchLimits_t> lim_inputs, lim_outputs; 
 
     //get limits of input branches
     for (auto& str : branches_input) {
@@ -339,40 +279,10 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     auto mlp = new MultiLayerPerceptron(mlp_structure); 
 
     //initialize with random, gaussian weights
-#if TOY_MLP_DATA
-    for (int l=0; l<mlp->Get_n_layers()-1; l++) mlp->Get_layer(l) = mlp_target->Get_layer(l); 
-    mlp->Add_gauss_noise(3e-4); 
-
-    printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (before)");
-    for (int l=0; l<mlp->Get_n_layers()-1; l++) {
-
-        RVec<double> diff = mlp->Get_layer(l) - mlp_target->Get_layer(l); 
-        printf("\nLayer %i => %i", l, l+1); 
-        int i_elem=0;
-        double error=0;  
-        for (int j=0; j<mlp->Get_layer_size(l+1); j++) { 
-
-            error += pow( diff.at(i_elem), 2 ); 
-            printf("\n  -  % .4e --- ", diff.at(i_elem++) );
-
-            for (int k=0; k<mlp->Get_layer_size(l); k++) {
-                error += pow( diff.at(i_elem), 2 ); 
-                printf("% .4e ", diff.at(i_elem++));
-            } 
-        }
-        printf( "   ---   rms of layer = %f\n ", sqrt(error/((double)diff.size())) ); 
-        
-    }
-    cout << endl; 
-#else
     mlp->Add_gauss_noise(1.0); 
 
     const int DoF_in  = mlp->Get_DoF_in(); 
     const int DoF_out = mlp->Get_DoF_out(); 
-#endif
-
-
-
             
     //the extent to which 
     double eta          = 0.250; 
@@ -477,8 +387,8 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     }   
 
 
-    //error between target / training MLPs 
-#if TOY_MLP_DATA 
+#if 0 
+    //error between target / training MLPs. this is if we know what the 'toy' mlp data used to generate this data is. 
     printf("\n\n~~~~~~~~~~~~~~~~~ Differences: (after)");
     for (int l=0; l<mlp->Get_n_layers()-1; l++) {
 
@@ -501,7 +411,6 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     }
     cout << endl; 
 #endif 
-
 
     //now, create a new mlp, in which the inputs are (not!) normalized, as they have been for the training. 
     auto mlp_out = new MultiLayerPerceptron(mlp_structure); 
@@ -542,11 +451,9 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     for (auto& data : training_data) error += rv_mag2( data.outputs - mlp_out->Eval(data.inputs) ); 
     error = sqrt( error / ((double)n_events_train * DoF_out) ); 
     
-    printf("\n\n -- Final error: %f", error); 
+    printf("\n\n -- Final error: %f\n", error); 
 
-
-    Create_dbfile_from_mlp(mlp_out, path_outfile); 
-
+    ApexOptics::Create_dbfile_from_mlp(path_outfile, mlp_out); 
 
     return 0; 
 }
