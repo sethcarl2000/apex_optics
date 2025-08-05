@@ -75,11 +75,12 @@ struct BranchLimits_t {
 int train_new_mlp(  const int n_grad_iterations = 10,
                     const char* path_infile = "",
                     const char* path_outfile = "",
+                    RVec<int> mlp_structure={},
                     const char* tree_name="tracks_fp" )
 {
     const char* const here = "train_new_mlp"; 
 
-#if 0 
+#if 1
     //we're going to deal with real data here
     //we need to define some output branches first. we will store them in a file called "data/misc/temp.root" 
     ROOT::EnableImplicitMT(); 
@@ -119,6 +120,8 @@ int train_new_mlp(  const int n_grad_iterations = 10,
              "y_fp", 
              "dxdz_fp", 
              "dydz_fp"}); 
+
+    path_infile = "data/misc/temp.root"; 
     //now, proceed as normal 
 #endif 
     vector<string> branches_input   = {
@@ -130,11 +133,11 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     };
 
     vector<string> branches_output  = {
-        "x_q1",
-        "y_q1",
-        "dxdz_q1",
-        "dydz_q1", 
-        "dpp_q1"
+        "x_fp",
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp" 
+        //"dpp_q1"
     }; 
 
     //this is the structure of the hidden layers. the eventual network will append an input layer and output layer on either side
@@ -143,8 +146,6 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     // For example: for a network with the structure (4 inputs) => 6 => 6 => (3 outputs), this vector should be: 
     //  RVec<int> mlp_structure{6,6}; 
     //
-
-    RVec<int> mlp_structure{}; 
 
     //add the input / output layers to this network. 
     mlp_structure.insert( mlp_structure.begin(), branches_input.size() ); 
@@ -179,9 +180,9 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
     //some missing columns were found. 
     if (missing_columns.size()>0) {
-        fprintf(stderr, "Error in <%s>: Missing columns: ", here); 
+        fprintf(stderr, "Error in <%s>: From file '%s', missing columns: ", here, path_infile); 
         for (const string& col : missing_columns) {
-            fprintf(stderr, "'%s' ", col.data()); 
+            fprintf(stderr, "\n  '%s'", col.data()); 
         }
         cerr << "\n"; 
         return 1; 
@@ -284,22 +285,29 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     const int DoF_in  = mlp->Get_DoF_in(); 
     const int DoF_out = mlp->Get_DoF_out(); 
             
+    ///////////////////////////////////////////////////////////////////////////////////////
+    //
+    //  HYPERPARAMETERS - 
+    //
     //the extent to which 
-    double eta          = 0.250; 
+    double eta          = 0.800; 
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum     = 1.000 - 0.100; 
+    double momentum     = 1.000 - 0.640; 
     
     //the number of epochs between graph updates: 
     const int update_period = 10; 
-
+    //
+    //
+    ////////////////////////////////////////////////////////////////////////////////////////
 
     printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
     mlp->Print(); 
 
     double x_epoch[n_grad_iterations];
     double y_error[n_grad_iterations];
-    for (int i=0; i<n_grad_iterations; i++) { x_epoch[i]=i; y_error[i]=0.; }
+
+    for (int i=0; i<n_grad_iterations; i++) { x_epoch[i]= i + 1; y_error[i]=0.; }
 
     TGraph* graph = nullptr;  
     
@@ -321,7 +329,9 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     
 
     printf("Running in parallel with %i threads...\n\n", (int)n_threads); 
-
+    
+    double error=0.; 
+    double last_error=1e30; 
     //gradient descent trials. We will try to 'match' the inputs of the  
     for (int i=0; i<n_grad_iterations; i++) {
 
@@ -362,30 +372,45 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
         
         //compute error with new weights
-        double error(0.); 
+        error=0.; 
         for (const TrainingData_t& data : training_data) error += rv_mag2( data.outputs - mlp->Eval(data.inputs) ); 
         error = sqrt( error / ((double)n_events_train * DoF_out) ); 
 
+
         //print information about this epoch to stdout
-        printf("\r -- epoch %i, error: %+.4e", i, error); cout << flush;  
+        printf("\r -- epoch %i, error: % .4e (%+.4e)      (progress %3.1f)", 
+            i, 
+            error, 
+            error - last_error, 
+            100.*((double)i+1)/((double)n_grad_iterations) ); cout << flush; 
         
         //update the graph & redraw
-        if (i==0) { 
-            for (int i=0; i<n_grad_iterations; i++) y_error[i] = log(error)/log(10.);
-            graph = new TGraph(n_grad_iterations, x_epoch, y_error);
-        } else    {
-            graph->SetPointY(i, log(error)/log(10.)); 
-        } 
-        char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.2e;Epoch;log_{10}(RMS)", i+1, n_grad_iterations, error ); 
-        graph->SetTitle(g_title);
+        if (i % update_period == 0) { 
+            if (i==0) {
+                for (int i=0; i<n_grad_iterations; i++) y_error[i] = log(error)/log(10.);
+                graph = new TGraph(n_grad_iterations, x_epoch, y_error);
+            }    
         
-        if ((i+1) % update_period == 0) {
+            char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.2e;Epoch;log_{10}(RMS)", i+1, n_grad_iterations, error ); 
+            graph->SetTitle(g_title);
+            
             graph ->Draw(); 
             canvas->Modified(); 
             canvas->Update(); 
         }
-    }   
-
+        graph->SetPointY(i, log(error)/log(10.));
+        last_error = error; 
+    
+    }// for (int i=0; i<n_grad_iterations; i++) {
+    
+    graph->SetPointY(n_grad_iterations-1, log(error)/log(10.)); 
+        
+    char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.2e;Epoch;log_{10}(RMS)", n_grad_iterations, n_grad_iterations, error ); 
+    graph->SetTitle(g_title);
+    
+    graph ->Draw(); 
+    canvas->Modified(); 
+    canvas->Update(); 
 
 #if 0 
     //error between target / training MLPs. this is if we know what the 'toy' mlp data used to generate this data is. 
