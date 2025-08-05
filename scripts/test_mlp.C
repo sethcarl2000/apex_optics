@@ -21,11 +21,10 @@ int test_mlp(   const char* path_infile="",
     const size_t DoF_in  = branches_input.size(); 
 
     vector<string> branches_output  = {
-        "x_q1",
-        "y_q1",
-        "dxdz_q1",
-        "dydz_q1",
-        "dpp_q1"
+        "x_fp",
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp"
     }; 
     const size_t DoF_out = branches_output.size(); 
 
@@ -51,7 +50,7 @@ int test_mlp(   const char* path_infile="",
 
 
     auto df_input = df
-#if 0
+#if 1
         .Define("x_sv",     [](TVector3 v){ return v.x(); }, {"position_sieve"})
         .Define("y_sv",     [](TVector3 v){ return v.y(); }, {"position_sieve"})
         .Define("dxdz_sv",  [](TVector3 v){ return v.x()/v.z(); }, {"momentum_sieve"})
@@ -98,7 +97,7 @@ int test_mlp(   const char* path_infile="",
     ); 
 
     //now, acually measure the error of each output. 
-    int i_output=0;    
+    int i_output=0;
     for (const auto& str : branches_output) {
         
         char buff[100]; 
@@ -117,7 +116,7 @@ int test_mlp(   const char* path_infile="",
     
     //the purpose of this struct is to 'book' the computation of the R^2 value for each branch beforehand, which makes it so that
     // RDataFrame doesn't have to re-loop over all events each time we compute the R^2 value of another branch. 
-    struct OutputFitR2_t {
+    struct OutputFitR2_t { 
         const char* name; 
         ROOT::RDF::RResultPtr<double> ptr_stddev_output, ptr_stddev_error; 
         
@@ -135,7 +134,7 @@ int test_mlp(   const char* path_infile="",
         char buff[100]; 
         sprintf(buff, "err_%s", bname.data()); 
 
-        outputs_R2.push_back({ 
+        outputs_R2.push_back({
             .name              = bname.data(), 
             .ptr_stddev_output = df_output.StdDev(bname.data()),
             .ptr_stddev_error  = df_output.StdDev(buff)
@@ -143,10 +142,10 @@ int test_mlp(   const char* path_infile="",
     }
 
 
-    auto h_x_q1     = df_output.Histo1D<double>({"h_x",     ";x_{Q1};",     200, -1, -1}, "err_x_q1"); 
-    auto h_y_q1     = df_output.Histo1D<double>({"h_y",     ";y_{Q1};",     200, -1, -1}, "err_y_q1"); 
-    auto h_dxdz_q1  = df_output.Histo1D<double>({"h_dxdz",  ";dx/dz_{Q1};", 200, -1, -1}, "err_dxdz_q1"); 
-    auto h_dydz_q1  = df_output.Histo1D<double>({"h_dydz",  ";dy/dz_{Q1};", 200, -1, -1}, "err_dydz_q1"); 
+    auto h_x_q1     = df_output.Histo1D<double>({"h_x",     ";x_{Q1};",     200, -1, -1}, "err_x_fp"); 
+    auto h_y_q1     = df_output.Histo1D<double>({"h_y",     ";y_{Q1};",     200, -1, -1}, "err_y_fp"); 
+    auto h_dxdz_q1  = df_output.Histo1D<double>({"h_dxdz",  ";dx/dz_{Q1};", 200, -1, -1}, "err_dxdz_fp"); 
+    auto h_dydz_q1  = df_output.Histo1D<double>({"h_dydz",  ";dy/dz_{Q1};", 200, -1, -1}, "err_dydz_fp"); 
 
     auto c = new TCanvas("c", "Error of mlp", 1200, 800); 
 

@@ -16,11 +16,11 @@ double rv_mag2(const ROOT::RVec<double>& v) {
     return ret; 
 }
 
-int train_new_mlp(  const int n_events_train = 1e6, 
+int train_new_mlp_test(  const int n_events_train = 1e6, 
                     const int n_grad_iterations = 10)
 {
 
-    RVec<int> mlp_structure{3,3,3}; 
+    RVec<int> mlp_structure{3,3}; 
 
     //first, we create a 'dummy' mlp, and use it to create data: 
     auto mlp_target = new MultiLayerPerceptron(mlp_structure); 
