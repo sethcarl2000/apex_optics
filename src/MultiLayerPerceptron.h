@@ -30,11 +30,9 @@ public:
     // - performs checks on the validity of the input arguments. 
     double& Weight(int l, int j, int k); 
 
-
     //Add random gaussian noise to all weights with given stddev 
     void Add_gauss_noise(double stddev); 
-
-
+    
     //const methods which will be guranteed thread-safe for quick evaluation at runtime
 
     //Get number of layers

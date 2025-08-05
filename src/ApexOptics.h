@@ -44,7 +44,7 @@ namespace ApexOptics {
     int Create_dbfile_from_mlp(const char* path_dbfile, const MultiLayerPerceptron* mlp); 
 
     //parse an NPoly from file
-    int Parse_mlp_from_file(const char* path_dbfile, MultiLayerPerceptron *mlp); 
+    MultiLayerPerceptron* Parse_mlp_from_file(const char* path_dbfile); 
 
     //these functions are meant to provide information about the APEX target geometry
     inline double Get_sieve_angle(bool _is_RHRS) {
