@@ -13,6 +13,7 @@
 #include "TROOT.h"
 #include <ROOT/RDataFrame.hxx>  
 #include "NPoly.h"
+#include "MultiLayerPerceptron.h"
 #include "TVector3.h"
 #include <vector>
 #include <string>
@@ -39,6 +40,12 @@ namespace ApexOptics {
     int Parse_NPoly_from_file(const char* path_dbfile, const char* poly_name, NPoly *poly);
     
     
+    //Given a MultiLayerPerceptron, create a dbifle output, so that it can be read later. 
+    int Create_dbfile_from_mlp(const char* path_dbfile, const MultiLayerPerceptron* mlp); 
+
+    //parse an NPoly from file
+    int Parse_mlp_from_file(const char* path_dbfile, MultiLayerPerceptron *mlp); 
+
     //these functions are meant to provide information about the APEX target geometry
     inline double Get_sieve_angle(bool _is_RHRS) {
         return ( _is_RHRS ? -5.372 : 5.366 ) * 0.0174532925199; //pi/180

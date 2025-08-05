@@ -173,6 +173,44 @@ map<string, NPoly*> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
     return polymap; 
 }
 //__________________________________________________________________________________________________________________
+int ApexOptics::Create_dbfile_from_mlp(const char* path_dbfile, const MultiLayerPerceptron* mlp)
+{
+    fstream dbfile(path_dbfile, ios::out | ios::trunc);
+
+    const char* here = "ApexOptics::Create_dbfile_from_mlp"; 
+
+    if (!dbfile.is_open()) {
+        fprintf(stdout, "Error in <%s>: Unable to open file %s", here, path_dbfile); 
+        return 1; 
+    }
+
+    const int n_layers = mlp->Get_n_layers(); 
+
+    dbfile << "n-layers " << mlp->Get_n_layers(); 
+    dbfile << "\nstructure "; for (int l=0; l<n_layers; l++) dbfile << mlp->Get_layer_size(l) << " "; 
+    
+    for (int l=0; l<n_layers-1; l++) {
+        
+        dbfile << "\nlayer-weights " << l; 
+
+        char buff[50]; 
+        
+        for (int j=0; j<mlp->Get_layer_size(l+1); j++) {
+
+            dbfile << "\n";  
+            
+            for (int k=0; k<mlp->Get_layer_size(l)+1; k++) {    
+                sprintf(buff, "%+.9e ", mlp->Get_weight(l, j, k));
+                dbfile << buff; 
+            }        
+        }
+        
+    }
+    dbfile.close();
+    
+    return 0; 
+}
+//__________________________________________________________________________________________________________________
 int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
 {            
     const char* const here = "ApexOptics::Create_dbfile_from_polymap"; 
@@ -181,7 +219,7 @@ int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, ma
 
     if (!outfile.is_open()) {
         fprintf(stderr, "Error in <%s>: Unable to open output file: '%s'", here, path_outfile.data()); 
-        return 1; 
+        return -1; 
     }
 
     printf("--writing output file '%s'...", path_outfile.data()); cout << flush; 
@@ -223,6 +261,66 @@ int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, ma
     return 0; 
 }
 //__________________________________________________________________________________________________________________
+int ApexOptics::Parse_mlp_from_file(const char* path_dbfile, MultiLayerPerceptron *mlp)
+{
+    const char* const here = "ApexOptics::Parse_mlp_from_file"; 
+    
+    //Parse a MLP block-by-block. 
+    //the first line which must start "n-layers", is the number of layers 
+    ifstream dbfile(path_dbfile); 
+
+    if (!dbfile.is_open()) {
+        fprintf(stderr, "Error in <%s>: unable to open dbfile '%s'\n", here, path_dbfile); 
+        return -1; 
+    }
+    
+    istringstream iss; 
+    string line, token; 
+
+    getline(dbfile, line); iss = istringstream(line); 
+
+    size_t n_layers;
+    iss >> token >> n_layers; 
+    if (token != "n-layers") {
+        fprintf(stderr, "Error in <%s>: Missing 'n-layers [n]' header at top of dbfile '%s'\n", here, path_dbfile); 
+        return -1; 
+    }
+
+    getline(dbfile, line); iss = istringstream(line); 
+
+    iss >> token; 
+    if (token != "structure") {
+        fprintf(stderr, "Error in <%s>: Missing 'structure [n] [n] ...' header at top of dbfile '%s'\n", here, path_dbfile); 
+        return -1; 
+    }
+    RVec<int> structure; 
+    for (int i=0; i<n_layers; i++) { int layer_size; iss >> layer_size; structure.push_back(layer_size); }
+
+    if (structure.size() != n_layers) {
+        fprintf(stderr, "Error in <%s>: n-layers listed does not match structure in '%s'\n", here, path_dbfile); 
+        return -1;
+    }
+
+    mlp = new MultiLayerPerceptron(structure); 
+
+    //now, we're ready to parse the layers.
+    for (size_t l=0; l<n_layers-1; l++) {
+
+        getline(dbfile, line); //the header for this layer
+            
+        for (int j=0; j<structure[l+1]; j++) {
+
+            getline(dbfile, line); iss = istringstream(line); 
+            
+            for (int k=0; k<structure[l]+1; k++) iss >> mlp->Weight(l, j, k); 
+        }
+    }
+
+    mlp->Print(); 
+
+    return 0; 
+}
+
 //this will be a temporary funct., that I may absorb into NPoly.cxx. 
 int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_name, NPoly *poly) 
 {
