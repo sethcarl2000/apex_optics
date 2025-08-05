@@ -246,13 +246,13 @@ int train_new_mlp(  const int n_grad_iterations = 10,
                 double& val = inputs[i]; 
                 auto& limit = lim_inputs[i]; 
 
-                //val = 2.*( val - limit.mean )/( limit.max - limit.min ); 
+                //val = ( val - limit.mean )/( limit.max - limit.min ); 
             }
             for (int i=0; i<outputs.size(); i++) {
                 double& val = outputs[i]; 
                 auto& limit = lim_outputs[i]; 
 
-                //val = 2.*( val - limit.mean )/( limit.max - limit.min ); 
+                //val = ( val - limit.mean )/( limit.max - limit.min ); 
             }
 
             training_data.push_back({
@@ -411,6 +411,13 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     }
     cout << endl; 
 #endif 
+    
+    printf("\nCreating output file '%s'\n", path_outfile);
+
+    ApexOptics::Create_dbfile_from_mlp(path_outfile, mlp); 
+
+    return 0; 
+
 
     //now, create a new mlp, in which the inputs are (not!) normalized, as they have been for the training. 
     auto mlp_out = new MultiLayerPerceptron(mlp_structure); 
@@ -431,7 +438,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
             mlp_out->Weight(0, j, k) = mlp->Weight(0, j, k) / (limit.max - limit.min); 
         }
     }
-
+    
     //now, do the last output layer
     int last = mlp_out->Get_n_layers()-1;
 
@@ -439,20 +446,13 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
         auto& limit = lim_outputs.at(j); 
 
-        mlp_out->Weight(last-1, j, 0) += limit.mean; 
+        mlp_out->Weight(last-1, j, 0) = mlp->Weight(last-1, j, 0) * (limit.max - limit.min) + limit.mean; 
 
         for (int k=1; k<mlp_out->Get_layer_size(last-1)+1; k++) {
             
             mlp_out->Weight(last-1, j, k) = mlp->Weight(last-1, j, k) * (limit.max - limit.min); 
         }
     }
-
-    double error=0.; 
-    for (auto& data : training_data) error += rv_mag2( data.outputs - mlp_out->Eval(data.inputs) ); 
-    error = sqrt( error / ((double)n_events_train * DoF_out) ); 
-    
-    printf("\n\n -- Final error: %f\n", error); 
-
     ApexOptics::Create_dbfile_from_mlp(path_outfile, mlp_out); 
 
     return 0; 
