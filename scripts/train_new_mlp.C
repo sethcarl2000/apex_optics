@@ -105,7 +105,7 @@ struct BranchLimits_t {
     void Compute_limits() { min=*min_ptr; max=*max_ptr; mean=*mean_ptr; }
 }; 
 
-#define TOY_MLP_DATA true
+#define TOY_MLP_DATA false
 
 //____________________________________________________________________________________________________________________________________
 int train_new_mlp(  const int n_grad_iterations = 10,
@@ -115,16 +115,39 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 {
     const char* const here = "train_new_mlp"; 
 
+
+    //we need to define some output branches first. we will store them in a file called "data/misc/temp.root" 
+    ROOT::EnableImplicitMT(); 
+    ROOT::RDataFrame df_temp(tree_name, path_infile); 
+
+    double hrs_momentum = 1104.0;   
+
+    vector<string> output_branches; 
+
+    auto df_input = df_temp
+        .Define("x_sv",     [](TVector3 v){ return v.x(); }, {"position_sieve"})
+        .Define("y_sv",     [](TVector3 v){ return v.y(); }, {"position_sieve"})
+        .Define("dxdz_sv",  [](TVector3 v){ return v.x()/v.z(); }, {"momentum_sieve"})
+        .Define("dydz_sv",  [](TVector3 v){ return v.y()/v.z(); }, {"momentum_sieve"})
+        .Define("dpp_sv",   [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"}) 
+
+        .Snapshot(tree_name, "data/misc/temp.root", 
+            {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv", "x_fp", "y_fp", "dxdz_fp", "dydz_fp"}); 
+    //now, proceed as normal 
+
     vector<string> branches_input   = {
-        "x_inp", 
-        "y_inp", 
-        "z_inp"
+        "x_sv", 
+        "y_sv", 
+        "dxdz_sv",
+        "dydz_sv",
+        "dpp_sv"
     };
 
     vector<string> branches_output  = {
-        "x_out",
-        "y_out",
-        "z_out"
+        "x_fp",
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp"
     }; 
 
     //this is the structure of the hidden layers. the eventual network will append an input layer and output layer on either side
@@ -133,7 +156,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     // For example: for a network with the structure (4 inputs) => 6 => 6 => (3 outputs), this vector should be: 
     //  RVec<int> mlp_structure{6,6}; 
     //
-    RVec<int> mlp_structure{3}; 
+    RVec<int> mlp_structure{5}; 
 
     //add the input / output layers to this network. 
     mlp_structure.insert( mlp_structure.begin(), branches_input.size() ); 
@@ -192,7 +215,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 #if TOY_MLP_DATA 
     ROOT::RDataFrame df("training_data", "data/misc/mlp_train_data.root"); 
 #else 
-    ROOT::RDataFrame df(tree_name, path_infile); 
+    ROOT::RDataFrame df(tree_name, "data/misc/temp.root"); 
 #endif 
     
     //check for existence of branches: 
@@ -356,7 +379,9 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
     //the fraction of the 'existing' gradient which stays behind at the last step
     double momentum     = 1.000 - 0.100; 
- 
+    
+    //the number of epochs between graph updates: 
+    const int update_period = 10; 
 
 
     printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
@@ -429,9 +454,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         //compute error with new weights
         double error(0.); 
         for (const TrainingData_t& data : training_data) error += rv_mag2( data.outputs - mlp->Eval(data.inputs) ); 
-        error *= 1./((double)n_events_train * DoF_out); 
-        
-        error = sqrt(error);
+        error = sqrt( error / ((double)n_events_train * DoF_out) ); 
 
         //print information about this epoch to stdout
         printf("\r -- epoch %i, error: %+.4e", i, error); cout << flush;  
@@ -446,9 +469,11 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.2e;Epoch;log_{10}(RMS)", i+1, n_grad_iterations, error ); 
         graph->SetTitle(g_title);
         
-        graph ->Draw(); 
-        canvas->Modified(); 
-        canvas->Update(); 
+        if ((i+1) % update_period == 0) {
+            graph ->Draw(); 
+            canvas->Modified(); 
+            canvas->Update(); 
+        }
     }   
 
 
@@ -512,8 +537,16 @@ int train_new_mlp(  const int n_grad_iterations = 10,
             mlp_out->Weight(last-1, j, k) = mlp->Weight(last-1, j, k) * (limit.max - limit.min); 
         }
     }
- 
-    Create_dbfile_from_mlp(mlp_out, "data/csv/mlp_test.dat"); 
+
+    double error=0.; 
+    for (auto& data : training_data) error += rv_mag2( data.outputs - mlp_out->Eval(data.inputs) ); 
+    error = sqrt( error / ((double)n_events_train * DoF_out) ); 
+    
+    printf("\n\n -- Final error: %f", error); 
+
+
+    Create_dbfile_from_mlp(mlp_out, path_outfile); 
+
 
     return 0; 
 }
