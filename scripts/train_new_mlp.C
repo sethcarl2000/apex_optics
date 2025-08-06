@@ -204,7 +204,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
         auto new_node = input_nodes.back() 
 
-            .Redefine("inputs", [](RVec<double>& V, double x) { V.push_back(x); return V; }, {"inputs", str.data()}); 
+            .Redefine("inputs",  [](RVec<double>& V, double x) { V.push_back(x); return V; }, {"inputs", str.data()}); 
 
         input_nodes.push_back(new_node); 
     }
@@ -247,13 +247,13 @@ int train_new_mlp(  const int n_grad_iterations = 10,
                 double& val = inputs[i]; 
                 auto& limit = lim_inputs[i]; 
 
-                //val = ( val - limit.mean )/( limit.max - limit.min ); 
+                val = ( val - limit.mean )/( limit.max - limit.min ); 
             }
             for (int i=0; i<outputs.size(); i++) {
                 double& val = outputs[i]; 
                 auto& limit = lim_outputs[i]; 
 
-                //val = ( val - limit.mean )/( limit.max - limit.min ); 
+                val = ( val - limit.mean )/( limit.max - limit.min ); 
             }
 
             training_data.push_back({
@@ -290,13 +290,13 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     //  HYPERPARAMETERS - 
     //
     //the extent to which 
-    double eta          = 0.800; 
+    double eta          = 0.400; 
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum     = 1.000 - 0.640; 
+    double momentum     = 1.000 - 0.150; 
     
     //the number of epochs between graph updates: 
-    const int update_period = 10; 
+    const int update_period = 50; 
     //
     //
     ////////////////////////////////////////////////////////////////////////////////////////
@@ -439,10 +439,8 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     
     printf("\nCreating output file '%s'\n", path_outfile);
 
-    ApexOptics::Create_dbfile_from_mlp(path_outfile, mlp); 
-
-    return 0; 
-
+    //ApexOptics::Create_dbfile_from_mlp(path_outfile, mlp); 
+    //return 0; 
 
     //now, create a new mlp, in which the inputs are (not!) normalized, as they have been for the training. 
     auto mlp_out = new MultiLayerPerceptron(mlp_structure); 
@@ -471,7 +469,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
         auto& limit = lim_outputs.at(j); 
 
-        mlp_out->Weight(last-1, j, 0) = mlp->Weight(last-1, j, 0) * (limit.max - limit.min) + limit.mean; 
+        mlp_out->Weight(last-1, j, 0) = mlp->Weight(last-1, j, 0) * (limit.max - limit.min)  +  limit.mean; 
 
         for (int k=1; k<mlp_out->Get_layer_size(last-1)+1; k++) {
             
