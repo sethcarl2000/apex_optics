@@ -75,6 +75,7 @@ struct BranchLimits_t {
 int train_new_mlp(  const int n_grad_iterations = 10,
                     const char* path_infile = "",
                     const char* path_outfile = "",
+                    const char* path_dbfile_starting_mlp = "",
                     RVec<int> mlp_structure={},
                     const char* tree_name="tracks_fp" )
 {
@@ -277,10 +278,23 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     
 
     //we want this mlp to eventually match our target mlp 
-    auto mlp = new MultiLayerPerceptron(mlp_structure); 
-
-    //initialize with random, gaussian weights
-    mlp->Add_gauss_noise(1.0); 
+    MultiLayerPerceptron* mlp;
+    
+    //check if we were handed a 'starting' polynomial, or should we start fresh with random weights? 
+    if (string(path_dbfile_starting_mlp)!="") { 
+        mlp = ApexOptics::Parse_mlp_from_file(path_dbfile_starting_mlp); 
+        if (!mlp) {
+            Error(here, "MLP was not parsed successfully from file: '%s'", path_dbfile_starting_mlp); 
+            return -1; 
+        }
+    } else {
+        //if not, start with a 'new' mlp, with randomly-initialized weights. 
+        mlp = new MultiLayerPerceptron(mlp_structure); 
+        
+        //initialize with random, gaussian weights
+        mlp->Add_gauss_noise(1.0); 
+    }
+    
 
     const int DoF_in  = mlp->Get_DoF_in(); 
     const int DoF_out = mlp->Get_DoF_out(); 
@@ -296,7 +310,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     double momentum     = 1.000 - 0.150; 
     
     //the number of epochs between graph updates: 
-    const int update_period = 50; 
+    const int update_period = 20; 
     //
     //
     ////////////////////////////////////////////////////////////////////////////////////////
@@ -447,7 +461,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
     //to begin with, copy all the weights just as they are in our training. 
     for (int l=0; l<mlp->Get_n_layers()-1; l++) mlp_out->Get_layer(l) = mlp->Get_layer(l); 
-
+    
 
     //for the first and last layers, we need to un-do the normalization.
     //the 'normalization' is when we made is so that all of the input/output branches take on values in the range [-1,+1].   
