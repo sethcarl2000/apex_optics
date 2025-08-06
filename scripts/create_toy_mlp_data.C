@@ -22,11 +22,10 @@ int create_toy_mlp_data(    const int n_events_train=1e5,
     const size_t DoF_in = branches_input.size(); 
 
     vector<string> branches_output  = {
-        "x_q1",
-        "y_q1",
-        "dxdz_q1",
-        "dydz_q1", 
-        "dpp_q1"
+        "x_fp",
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp"
     }; 
     const size_t DoF_out = branches_output.size(); 
 
@@ -88,7 +87,7 @@ int create_toy_mlp_data(    const int n_events_train=1e5,
     nodes.back().Snapshot(tree_name, path_outfile, all_branches_to_write); 
     
     cout << "done." << endl; 
-    
+
     printf("Info in <%s>: Data written to '%s'\n", here, path_outfile); 
 
 
