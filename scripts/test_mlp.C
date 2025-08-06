@@ -43,6 +43,8 @@ int test_mlp(   const char* path_infile="",
         return -1; 
     }
 
+    mlp->Print(); 
+
     const double hrs_momentum = 1104.; 
 
     ROOT::EnableImplicitMT(); 
@@ -142,16 +144,16 @@ int test_mlp(   const char* path_infile="",
     }
 
 
-    auto h_x_q1     = df_output.Histo1D<double>({"h_x",     ";x_{Q1};",     200, -1, -1}, "err_x_fp"); 
-    auto h_y_q1     = df_output.Histo1D<double>({"h_y",     ";y_{Q1};",     200, -1, -1}, "err_y_fp"); 
-    auto h_dxdz_q1  = df_output.Histo1D<double>({"h_dxdz",  ";dx/dz_{Q1};", 200, -1, -1}, "err_dxdz_fp"); 
-    auto h_dydz_q1  = df_output.Histo1D<double>({"h_dydz",  ";dy/dz_{Q1};", 200, -1, -1}, "err_dydz_fp"); 
+    auto h_x_q1     = df_output.Histo1D<double>({"h_x",     ";x_{Q1} (m);",     200, -0.05, 0.05}, "err_x_fp"); 
+    auto h_y_q1     = df_output.Histo1D<double>({"h_y",     ";y_{Q1} (m);",     200, -0.05, 0.05}, "err_y_fp"); 
+    auto h_dxdz_q1  = df_output.Histo1D<double>({"h_dxdz",  ";dx/dz_{Q1} (rad);", 200, -0.05, 0.05}, "err_dxdz_fp"); 
+    auto h_dydz_q1  = df_output.Histo1D<double>({"h_dydz",  ";dy/dz_{Q1} (rad);", 200, -0.05, 0.05}, "err_dydz_fp"); 
 
     auto c = new TCanvas("c", "Error of mlp", 1200, 800); 
 
     c->Divide(2,2, 0.01,0.01); 
 
-    gStyle->SetOptStat(0);
+    //gStyle->SetOptStat(0);
     gStyle->SetPalette(0); 
 
     c->cd(1); h_x_q1   ->DrawCopy("col2"); 
