@@ -100,7 +100,7 @@ void add_branch_from_Track_t(   std::vector<ROOT::RDF::RNode>& df_nodes,
     return; 
 }
 
-#define EVENT_RANGE 30000
+#define EVENT_RANGE 10000
 
 //given a DB file to look in, and a list of output polynomial names, will return an NPolyArray object with all the relevant polys filled in
 NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names, const int DoF) 
@@ -125,7 +125,6 @@ NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> ou
 
     return NPolyArray(poly_vec); 
 }   
-
 
 //transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
 void SCS_to_HCS(Track_t& track, const bool is_RHRS) 
@@ -318,7 +317,7 @@ int newton_iteration_test(  const char* path_infile="",
     double vdc_smearing_um = 0.; 
 
     const double vertex_uncertainty_x = 1.00e-3;
-    const double vertex_uncertainty_y = 1.00e-3;  
+    const double vertex_uncertainty_y = 0.10e-3;  
 
  
     //'fan out' from the central found trajcetory, to adjacent trajectories. see which will be best. 
@@ -466,6 +465,16 @@ int newton_iteration_test(  const char* path_infile="",
 
         }, {"Xfp", "Xsv_first_guess"})  
 
+        .Define("position_vtx_with_error", [vertex_uncertainty_x, 
+                                            vertex_uncertainty_y](TVector3 vtx)
+        {
+            return TVector3( 
+                vtx.x() + gRandom->Gaus() * vertex_uncertainty_x,
+                vtx.y() + gRandom->Gaus() * vertex_uncertainty_y, 
+                vtx.z()
+            );
+        }, {"position_vtx"})
+
         .Define("Xsv_best",     [ is_RHRS,
                                   vertex_uncertainty_x,
                                   vertex_uncertainty_y ](const RVec<Track_t>& traj, TVector3 vtx)
@@ -473,8 +482,8 @@ int newton_iteration_test(  const char* path_infile="",
             const Track_t *Xsv_best = nullptr;
             double err2_best = 1e30; 
 
-            double vx = vtx.x() + gRandom->Gaus() * vertex_uncertainty_x; 
-            double vy = vtx.y() + gRandom->Gaus() * vertex_uncertainty_y; 
+            double vx = vtx.x();
+            double vy = vtx.y();
 
             //look for the best track
             for (const Track_t& track_scs : traj) {
@@ -500,7 +509,7 @@ int newton_iteration_test(  const char* path_infile="",
 
             return *Xsv_best; 
 
-        }, {"Xsv_trajectories", "position_vtx"})
+        }, {"Xsv_trajectories", "position_vtx_with_error"})
 
         .Define("n_trajectories", [](const RVec<Track_t>& traj){ return (int)traj.size(); }, {"Xsv_trajectories"})
 
@@ -533,8 +542,21 @@ int newton_iteration_test(  const char* path_infile="",
             Track_t Xhcs{Xsv};
             SCS_to_HCS(Xhcs, is_RHRS);
             return Xhcs;
-        }, {"Xsv_first_guess"});
+        }, {"Xsv_first_guess"})
 
+        //compute the error projection of the 'best' trajectory onto the y-z plane in HCS
+        .Define("z_hcs_projection_yz", [](const Track_t& Xhcs, TVector3 vtx_reco, TVector3 vtx)
+        {
+            return ( vtx.z() + (Xhcs.x - vtx_reco.x()) / Xhcs.dxdz )*1e3;  
+        }, {"Xhcs", "position_vtx_with_error", "position_vtx"})
+
+        //compute the error projection of the 'best' trajectory onto the x-z plane in HCS
+        .Define("z_hcs_projection_xz", [](const Track_t& Xhcs, TVector3 vtx_reco, TVector3 vtx)
+        {
+            return ( vtx.z() + (Xhcs.y - vtx_reco.y()) / Xhcs.dydz )*1e3;  
+        }, {"Xhcs", "position_vtx_with_error", "position_vtx"}); 
+
+        
 
     vector<ROOT::RDF::RNode> output_nodes{ df_proc };  
 
@@ -576,17 +598,24 @@ int newton_iteration_test(  const char* path_infile="",
     char buff_hxy_title[200];  
     sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
     
-    auto h_xy_sieve = df_output
+    auto h_xy_sieve         = df_output
         .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (best fit);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
 
-    auto h_xy_sieve_fg = df_output
+    auto h_xy_sieve_fg      = df_output
         .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (first guess);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "x_sv_fg", "y_sv_fg"); 
 
-    auto h_xy_hcs = df_output
+    auto h_xy_hcs           = df_output
         .Histo2D<double>({"h_xy_hcs", "Projection of sieve-coords onto z_HCS=0;x_hcs;y_hcs", 250, -25e-3,25e-3, 250, -25e-3,25e-3}, "x_hcs", "y_hcs"); 
 
-    auto h_n_trajectories = df_output
-        .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5}, "n_trajectories"); 
+    auto h_n_trajectories   = df_output
+        .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5},       "n_trajectories"); 
+
+
+    auto h_hcs_projection_yz = df_output 
+        .Histo1D<double>({"h_z_proj_yz", "Error of Projection of track onto z_{HCS} (y-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_yz"); 
+
+    auto h_hcs_projection_xz = df_output 
+        .Histo1D<double>({"h_z_proj_xz", "Error of Projection of track onto z_{HCS} (x-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_xz"); 
 
 
     auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_fp;mm", 200, -5, 5},      "err_x_sv"); 
@@ -602,8 +631,17 @@ int newton_iteration_test(  const char* path_infile="",
 
     
     gStyle->SetPalette(kSunset);
+
+    auto cc = new TCanvas("c4", b_c_title, 1200, 500);
+    cc->Divide(2,1, 0.01,0.01); 
+    
+    cc->cd(1); h_hcs_projection_yz->DrawCopy(); 
+    cc->cd(2); h_hcs_projection_xz->DrawCopy(); 
+
+    return 0; 
+
     //gStyle->SetOptStat(0); 
-    new TCanvas("c4", b_c_title); 
+    new TCanvas("c0", b_c_title); 
     
     TStopwatch timer; 
     
@@ -637,7 +675,6 @@ int newton_iteration_test(  const char* path_infile="",
 
 
     
-      
 
     return 0;
 }
