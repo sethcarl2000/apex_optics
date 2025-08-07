@@ -341,7 +341,6 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
 
     X_l[0] = X; 
     
-    
     int l=0; 
     //iterate through each layer, starting with the input layer
     for (const RVec<double>& weights : fWeights) {
@@ -468,7 +467,6 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
         //apply the activation function to each element of the output vector
         X_l[l+1] = Activation_fcn(output); 
         
-
         //now, start again with the next row (or exit if we're done)
         l++; 
     }
@@ -485,10 +483,7 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
         auto& weights = fWeights[l]; 
         for (int j=0; j<fLayer_size[l+1]; j++) {
             for (int k=0; k<fLayer_size[l]; k++) {
-                A_update_data.push_back( 
-                    //weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Activation_fcn_deriv( Y_l[l-1].at(k) )
-                    weights[ j*(fLayer_size[l]+1) + 1 + k ] * Y_l_deriv[l-1][k] 
-                );
+                A_update_data.push_back( weights[ j*(fLayer_size[l]+1) + (k+1) ] * Y_l_deriv[l-1][k] );
             }
         }
         RMatrix Al(fLayer_size[l+1], fLayer_size[l], A_update_data);
@@ -500,15 +495,12 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
     auto& weights = fWeights[0]; 
     for (int j=0; j<fLayer_size[1]; j++) {
         for (int k=0; k<fLayer_size[0]; k++) {
-            A_update_data.push_back( 
-                //weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Activation_fcn_deriv( Y_l[l-1].at(k) )
-                weights[ j*(fLayer_size[l]+1) + 1 + k ]
-            );
+            A_update_data.push_back( weights[ j*(fLayer_size[0]+1) + (k+1) ] );
         }
     }
     
     RMatrix Al(fLayer_size[1], fLayer_size[0], A_update_data); 
-    return A * Al;
+    return A * Al; 
 }
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
