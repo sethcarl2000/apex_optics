@@ -5,6 +5,7 @@
 #include <thread>
 #include <fstream>
 #include <sstream>
+#include <limits> 
 #include <ROOT/RResultPtr.hxx> 
 
 using namespace std; 
@@ -23,7 +24,7 @@ double rv_mag2(const ROOT::RVec<double>& v) {
 
 
 //__________________________________________________________________________________________________________________
-//Process events from index 'start' to index 'end' in the 'data_vec' vector. 
+//Compute the gradient w/r/t each weight for the mlp (with respect to the given range of elements). 
 void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW, 
                             const MultiLayerPerceptron* mlp, 
                             const std::vector<TrainingData_t>& data_vec, 
@@ -67,36 +68,31 @@ void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW,
 }
 //__________________________________________________________________________________________________________________
 
-/*double Evaluate_error_range(const MultiLayerPerceptron* mlp, 
-                            const std::vector<TrainingData_t>& data_vec, 
+//__________________________________________________________________________________________________________________
+// Compute the error w/r/t each element in the given range of the 'data_vec' for the current mlp.
+double Evaluate_error_range(const std::vector<TrainingData_t>& data_vec, 
+                            const MultiLayerPerceptron* mlp, 
                             size_t start, 
                             size_t end )
 {
-    for (size_t i=start; i<end; i++) { 
-        
-        const auto& data = data_vec.at(i); 
-        
-        RVec<double> Z_err = mlp->Eval(data.inputs) - data.outputs; 
+    const char* const here = "Evaluate_error_range"; 
 
-        //this is the gradient of each output coordinate (i), w/r/t each weight in the network. 
-        auto weight_gradient = mlp->Weight_gradient(data.inputs); 
+    //Check to make sure that the 'end' parameter given is not out-of-range. 
+    if (end > data_vec.size()) {
+        ostringstream oss; 
+        oss << "Error in <" << here << ">: Argument 'size_t end' is invalid (" << end << "), input 'data_vec' size is:" << data_vec.size(); 
+        throw std::logic_error(oss.str()); 
+        return std::numeric_limits<double>::quiet_NaN(); 
+    }
+    double error=0.; 
 
-        //now, compute the gradient of the **loss function** w/r/t each weight: 
-        for (int l=0; l<mlp->Get_n_layers()-1; l++) {                   // (l) - index of network layer
-            
-            for (int j=0; j<mlp->Get_layer_size(l+1); j++) {        // (j) - index of current layer output
-                for (int k=0; k<mlp->Get_layer_size(l)+1; k++) {    // (k) - index of current layer input
-
-                    for (int i=0; i<mlp->Get_DoF_out(); i++) {                  // (i) - index of output layer
-                
-                        dW.at(l).at( j*(mlp->Get_layer_size(l)+1) + k ) += Z_err[i] * weight_gradient.get(i,l,j,k);   
-                    }
-                }
-            }
-        }
-
+    for (size_t i=start; i<end; i++) {
+        auto& data = data_vec[i]; 
+        error += rv_mag2( data.outputs - mlp->Eval(data.inputs) ); 
     }//for (size_t i=start; i<end; i++)
-}*/
+
+    return error; 
+}
 
 //will store the minimum, maximum, and mean of each branch
 struct BranchLimits_t {
@@ -389,6 +385,48 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     const size_t n_events_per_thread   = n_events_train / n_threads; 
     const size_t remainder             = n_events_train % n_threads; 
     
+    //use all threads in parallel to evaluate the error of the passed mlp
+    //______________________________________________________________________________________________________________
+    auto Evaluate_error = [ &training_data, 
+                            n_threads,
+                            n_events_train,
+                            n_events_per_thread,
+                            remainder, 
+                            DoF_out](const MultiLayerPerceptron* mlp)
+    {   
+        RVec<double> error_threads(n_threads, 0.); 
+        
+        size_t start = 0; 
+        std::vector<thread> threads; threads.reserve(n_threads); 
+
+        //launch all threads to evaluate the error
+        for (size_t t=0; t<n_threads; t++) {
+            //establish event range to run over
+            size_t end = start + n_events_per_thread + (t < remainder ? 1 : 0);
+            
+            threads.emplace_back([&training_data, &error_threads, start, end, mlp, t]
+            {
+                error_threads[t] = Evaluate_error_range(training_data, mlp, start, end); 
+            }); 
+            start = end; 
+        }
+
+        //wait for the threads to finish
+        for (auto &thread : threads) thread.join(); 
+
+        //add the sum from all threads
+        double error=0.; 
+        for (auto &err : error_threads) error += err; 
+
+        //return the final error
+        return sqrt( error / ((double)n_events_train * DoF_out)); 
+    };
+    //______________________________________________________________________________________________________________
+
+    //the error for each generation. 
+    double error = Evaluate_error(mlp); 
+    double last_error = error; 
+
     RVec<RVec<double>> dW(mlp->Get_n_layers(), {}); 
     
     //zero out the weight-update vector
@@ -398,8 +436,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
     printf("Running in parallel with %i threads...\n\n", (int)n_threads); 
     
-    double error=0.; 
-    double last_error=1e30; 
+
     //gradient descent trials. We will try to 'match' the inputs of the  
     for (int i=0; i<n_grad_iterations; i++) {
 
@@ -426,6 +463,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
             start = end; 
         }
 
+
         //synchronize all the threads once they're done
         for (auto& thread : threads) thread.join();
         
@@ -438,12 +476,8 @@ int train_new_mlp(  const int n_grad_iterations = 10,
         //update the weights
         for (int l=0; l<mlp->Get_n_layers()-1; l++) { mlp->Get_layer(l) += - dW[l] / ((double)n_events_train); }
 
-        
         //compute error with new weights
-        error=0.; 
-        for (const TrainingData_t& data : training_data) error += rv_mag2( data.outputs - mlp->Eval(data.inputs) ); 
-        error = sqrt( error / ((double)n_events_train * DoF_out) ); 
-
+        error = Evaluate_error(mlp);
 
         //print information about this epoch to stdout
         printf("\r -- epoch %i, error: % .4e (%+.4e)      (progress %3.1f)", 
