@@ -4,6 +4,7 @@
 #include <vector> 
 #include <thread>
 #include <fstream>
+#include <sstream>
 #include <ROOT/RResultPtr.hxx> 
 
 using namespace std; 
@@ -29,6 +30,48 @@ void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW,
                             size_t start, 
                             size_t end  )
 {
+    const char* const here = "Process_event_range"; 
+
+    //Check to make sure that the 'end' parameter given is not out-of-range. 
+    if (end > data_vec.size()) {
+        ostringstream oss; 
+        oss << "Error in <" << here << ">: Argument 'size_t end' is invalid (" << end << "), input 'data_vec' size is:" << data_vec.size(); 
+        throw std::logic_error(oss.str()); 
+        return; 
+    }
+
+    for (size_t i=start; i<end; i++) { 
+        
+        const auto& data = data_vec[i]; 
+        
+        RVec<double> Z_err = mlp->Eval(data.inputs) - data.outputs; 
+
+        //this is the gradient of each output coordinate (i), w/r/t each weight in the network. 
+        auto weight_gradient = mlp->Weight_gradient(data.inputs); 
+
+        //now, compute the gradient of the **loss function** w/r/t each weight: 
+        for (int l=0; l<mlp->Get_n_layers()-1; l++) {                   // (l) - index of network layer
+            
+            for (int j=0; j<mlp->Get_layer_size(l+1); j++) {        // (j) - index of current layer output
+                for (int k=0; k<mlp->Get_layer_size(l)+1; k++) {    // (k) - index of current layer input
+
+                    for (int i=0; i<mlp->Get_DoF_out(); i++) {                  // (i) - index of output layer
+                
+                        dW[l][ j*(mlp->Get_layer_size(l)+1) + k ] += Z_err[i] * weight_gradient.get(i,l,j,k);   
+                    }
+                }
+            }
+        }
+
+    }//for (size_t i=start; i<end; i++)
+}
+//__________________________________________________________________________________________________________________
+
+/*double Evaluate_error_range(const MultiLayerPerceptron* mlp, 
+                            const std::vector<TrainingData_t>& data_vec, 
+                            size_t start, 
+                            size_t end )
+{
     for (size_t i=start; i<end; i++) { 
         
         const auto& data = data_vec.at(i); 
@@ -53,10 +96,7 @@ void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW,
         }
 
     }//for (size_t i=start; i<end; i++)
-}
-//__________________________________________________________________________________________________________________
-
-
+}*/
 
 //will store the minimum, maximum, and mean of each branch
 struct BranchLimits_t {
@@ -93,7 +133,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     //we're going to deal with real data here
     //we need to define some output branches first. we will store them in a file called "data/misc/temp.root" 
     ROOT::RDataFrame df_temp(tree_name, path_infile); 
-
+    
     double hrs_momentum = 1104.0;   
 
     vector<string> output_branches; 
