@@ -56,6 +56,8 @@ void Process_event_range(   ROOT::RVec<ROOT::RVec<double>>& dW,
 }
 //__________________________________________________________________________________________________________________
 
+
+
 //will store the minimum, maximum, and mean of each branch
 struct BranchLimits_t {
     BranchLimits_t(string _name, 
@@ -80,11 +82,16 @@ int train_new_mlp(  const int n_grad_iterations = 10,
                     const char* tree_name="tracks_fp" )
 {
     const char* const here = "train_new_mlp"; 
+    
+    //if there are more training events than this in the 'path_infile' root file, then only use this many. 
+    const int max_events_train = 15e3; 
+
+    //if we're training a pre-existing mlp, then we will NOT normalize the inputs (this was already done/undone in the first round of training!)
+    const bool use_pre_existing_mlp = (string(path_dbfile_starting_mlp)!=""); 
 
 #if 1
     //we're going to deal with real data here
     //we need to define some output branches first. we will store them in a file called "data/misc/temp.root" 
-    ROOT::EnableImplicitMT(); 
     ROOT::RDataFrame df_temp(tree_name, path_infile); 
 
     double hrs_momentum = 1104.0;   
@@ -126,19 +133,19 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     //now, proceed as normal 
 #endif 
     vector<string> branches_input   = {
-        "x_sv", 
-        "y_sv", 
-        "dxdz_sv",
-        "dydz_sv",
-        "dpp_sv"
+        "x_q1", 
+        "y_q1", 
+        "dxdz_q1",
+        "dydz_q1",
+        "dpp_q1"
     };
 
     vector<string> branches_output  = {
         "x_fp",
         "y_fp",
         "dxdz_fp",
-        "dydz_fp" 
-        //"dpp_q1"
+        "dydz_fp"//,
+//        "dpp_q1"
     }; 
 
     //this is the structure of the hidden layers. the eventual network will append an input layer and output layer on either side
@@ -154,9 +161,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
     //to create this data, we want to run in sequential mode. 
     //create the dataframe
-    if (ROOT::IsImplicitMTEnabled()) {
-        ROOT::DisableImplicitMT(); 
-    }
+    if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
     
     ROOT::RDataFrame df(tree_name, path_infile); 
     
@@ -190,12 +195,16 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     }
 
     
-    const int n_events_train = *df.Count(); 
+    //if more training events than this exist, cap them at 'max_events_train' 
+    const int n_events_train = min<int>( *df.Count(), max_events_train ); 
+
+    printf("Using %i training events\n", n_events_train);
 
     //now that we know all the columns exist, we can continue; 
     vector<TrainingData_t> training_data; training_data.reserve(n_events_train); 
 
     vector<ROOT::RDF::RNode> input_nodes{ df 
+        .Range(0, n_events_train)
         .Define("inputs",  [](){ return RVec<double>{}; }, {})
         .Define("outputs", [](){ return RVec<double>{}; }, {})
     }; 
@@ -241,20 +250,22 @@ int train_new_mlp(  const int n_grad_iterations = 10,
 
     auto n_events_run = input_nodes.back() 
 
-        .Define("data", [&training_data, &lim_inputs, &lim_outputs](RVec<double>& inputs, RVec<double>& outputs)
+        .Define("data", [&training_data, &lim_inputs, &lim_outputs, use_pre_existing_mlp](RVec<double>& inputs, RVec<double>& outputs)
         {   
             //normalize the inputs/outputs so that they all lie on the range x = [-1, +1]
-            for (int i=0; i<inputs.size(); i++) {
-                double& val = inputs[i]; 
-                auto& limit = lim_inputs[i]; 
+            if (!use_pre_existing_mlp) {
+                for (int i=0; i<inputs.size(); i++) {
+                    double& val = inputs[i]; 
+                    auto& limit = lim_inputs[i]; 
 
-                val = ( val - limit.mean )/( limit.max - limit.min ); 
-            }
-            for (int i=0; i<outputs.size(); i++) {
-                double& val = outputs[i]; 
-                auto& limit = lim_outputs[i]; 
+                    val = ( val - limit.mean )/( limit.max - limit.min ); 
+                }
+                for (int i=0; i<outputs.size(); i++) {
+                    double& val = outputs[i]; 
+                    auto& limit = lim_outputs[i]; 
 
-                val = ( val - limit.mean )/( limit.max - limit.min ); 
+                    val = ( val - limit.mean )/( limit.max - limit.min ); 
+                }
             }
 
             training_data.push_back({
@@ -300,23 +311,26 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     const int DoF_out = mlp->Get_DoF_out(); 
             
     ///////////////////////////////////////////////////////////////////////////////////////
-    //
+    //  
     //  HYPERPARAMETERS - 
-    //
+    //  
     //the extent to which 
-    double eta          = 0.400; 
+    double eta          = 2.0000;
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum     = 1.000 - 0.150; 
+    double momentum     = 1.0000 - 0.001;
     
     //the number of epochs between graph updates: 
-    const int update_period = 20; 
-    //
-    //
+    const int update_period = 50; 
+    //  
+    //  
+    //  
     ////////////////////////////////////////////////////////////////////////////////////////
-
-    printf("~~~~~~~~~~~~~~~~~ New mlp:"); 
-    mlp->Print(); 
+    printf("Hyperparameters: ~~~\n"); 
+    printf(" - Eta:               %f\n", eta);
+    printf(" - Momentum:          %f\n", momentum);
+    printf(" - (Drag-parameter):  %f\n\n", (1. - momentum)/eta); 
+    //mlp->Print(); 
 
     double x_epoch[n_grad_iterations];
     double y_error[n_grad_iterations];
@@ -326,7 +340,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     TGraph* graph = nullptr;  
     
     char canv_title[200]; 
-    sprintf(canv_title, "Momentum: %.3f, Eta: %.3f", momentum, eta); 
+    sprintf(canv_title, "Momentum: %.6f, Eta: %.6f", momentum, eta); 
     auto canvas = new TCanvas("c", canv_title); 
 
         
@@ -405,7 +419,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
                 graph = new TGraph(n_grad_iterations, x_epoch, y_error);
             }    
         
-            char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.2e;Epoch;log_{10}(RMS)", i+1, n_grad_iterations, error ); 
+            char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.4e;Epoch;log_{10}(RMS)", i+1, n_grad_iterations, error ); 
             graph->SetTitle(g_title);
             
             graph ->Draw(); 
@@ -453,15 +467,18 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     
     printf("\nCreating output file '%s'\n", path_outfile);
 
-    //ApexOptics::Create_dbfile_from_mlp(path_outfile, mlp); 
-    //return 0; 
+    //if we used a pre-existing mlp, then don't perform normalization. 
+    if (use_pre_existing_mlp) {
+        ApexOptics::Create_dbfile_from_mlp(path_outfile, mlp); 
+        return 0; 
+    }
 
     //now, create a new mlp, in which the inputs are (not!) normalized, as they have been for the training. 
     auto mlp_out = new MultiLayerPerceptron(mlp_structure); 
 
     //to begin with, copy all the weights just as they are in our training. 
     for (int l=0; l<mlp->Get_n_layers()-1; l++) mlp_out->Get_layer(l) = mlp->Get_layer(l); 
-    
+
 
     //for the first and last layers, we need to un-do the normalization.
     //the 'normalization' is when we made is so that all of the input/output branches take on values in the range [-1,+1].   
