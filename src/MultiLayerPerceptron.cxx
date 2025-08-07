@@ -17,6 +17,8 @@
 #include <iostream> 
 #include <stdio.h>
 #include <limits> 
+#include <sstream> 
+#include <stdexcept> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -90,8 +92,11 @@ bool MultiLayerPerceptron::Check_index(int l, int j, int k) const
 RVec<double>& MultiLayerPerceptron::Get_layer(int l) 
 {
     if (l < 0 || l >= Get_n_layers()-1 ) {
-        throw logic_error("Tried to acess layer out-of-range; can only be l=[0, Get_n_layers()-2]"); 
-        return fWeights[0];
+        ostringstream oss; 
+        oss << "in <MultiLayerPerceptron::Get_layer(int)>: Tried to get weights for layer " 
+            << l << ", valid range is l=[0," << Get_n_layers()-2 << "]"; 
+        throw logic_error(oss.str()); 
+        return *(new RVec<double>{});
     }
     return fWeights[l]; 
 }
@@ -99,8 +104,11 @@ RVec<double>& MultiLayerPerceptron::Get_layer(int l)
 int MultiLayerPerceptron::Get_layer_size(int l) const
 {
     if (l < 0 || l >= Get_n_layers() ) {
-        throw logic_error("Tried to acess layer out-of-range; can only be l=[0, Get_n_layers()-2]"); 
-        return fLayer_size[0];
+        ostringstream oss; 
+        oss << "in <MultiLayerPerceptron::Get_layer_size(int)>: Tried to get weights for layer " 
+            << l << ", valid range is l=[0," << Get_n_layers()-2 << "]"; 
+        throw logic_error(oss.str());
+        return -1;
     }
     return fLayer_size[l]; 
 }
@@ -491,7 +499,7 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
     }   
 
     RVec<double> A_update_data; A_update_data.reserve(fLayer_size[1] * fLayer_size[0]);
-        
+    
     auto& weights = fWeights[0]; 
     for (int j=0; j<fLayer_size[1]; j++) {
         for (int k=0; k<fLayer_size[0]; k++) {
@@ -503,6 +511,39 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
     return A * Al; 
 }
 //__________________________________________________________________________________________________________________________________
+MultiLayerPerceptron* MultiLayerPerceptron::Concantenate(MultiLayerPerceptron *mlp1, MultiLayerPerceptron *mlp2) 
+{
+    const char* const here = "MultiLayerPerceptron::Concantenate"; 
+    
+    //check to see if passed ptrs are null
+    if (!mlp1 || !mlp2) {
+        fprintf(stderr, "Error in <%s>: One or both of input MLP ptrs are null\n"); 
+        return nullptr;  
+    }
+
+    //check to see if mlp's are of compatable size
+    if (mlp1->Get_DoF_out() != mlp2->Get_DoF_in()) { 
+        fprintf(stderr, "Error in <%s>: Output DoF of first MLP (%i) does not match ouptut DoF of second MLP (%i)", 
+            mlp1->Get_DoF_out(), 
+            mlp2->Get_DoF_in()); 
+        return nullptr;  
+    }
+
+    //create the new mlp structure, by sticking both structures together. 
+    RVec<int> structure; 
+    //we need to remove the last element from the first mlp, as its redundant
+
+    for (int l=0; l<mlp1->Get_n_layers()-1; l++) structure.push_back(mlp1->Get_layer_size(l)); 
+    for (int l=1; l<mlp2->Get_n_layers()-1; l++) structure.push_back(mlp2->Get_layer_size(l)); 
+    
+    MultiLayerPerceptron *mlp_out = new MultiLayerPerceptron(structure); 
+
+    int l=0; 
+    for (int i=0; i<mlp1->Get_n_layers()-2; i++) { mlp_out->Get_layer(l) = mlp1->Get_layer(i); l++; }
+    for (int i=1; i<mlp2->Get_n_layers()-2; i++) { mlp_out->Get_layer(l) = mlp2->Get_layer(i); l++; }
+
+    return mlp_out; 
+}
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________

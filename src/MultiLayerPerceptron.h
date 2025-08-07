@@ -49,6 +49,9 @@ public:
     ROOT::RVec<double>& Get_layer(int l); 
     int Get_layer_size(int l) const; 
 
+    //return layer structure vector
+    ROOT::RVec<int> Get_structure() const { return fLayer_size; }
+
     //Evaluate the mlp for a given input value
     ROOT::RVec<double> Eval(const ROOT::RVec<double>& X) const; 
 
@@ -84,6 +87,9 @@ public:
     void Print() const; 
 
     bool Check_index(int l, int j, int k) const; 
+
+    //Concantenate to networks together, as in: X=>(MLP_new)=>Z = X=>(MLP_1 => MLP_2)=>Z
+    static MultiLayerPerceptron* Concantenate(MultiLayerPerceptron *mlp1, MultiLayerPerceptron *mlp2);  
 
 private: 
 
