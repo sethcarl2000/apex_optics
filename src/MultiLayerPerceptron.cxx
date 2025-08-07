@@ -420,6 +420,96 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
     return weight_gradient; 
 }
 //__________________________________________________________________________________________________________________________________
+RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const 
+{
+    const char* const here = "Jacobian"; 
+    if (X.size() != (int)Get_DoF_in()) {
+        Error(here, "Input is wrong DoF (%i), should be %i", (int)X.size(), Get_DoF_in()); 
+        return RMatrix(0,0); 
+    }
+
+    //first, get the 'Y' vectors for each layer
+    RVec<double> X_l[Get_n_layers()-1]; 
+    RVec<double> Y_l[Get_n_layers()-1]; 
+    RVec<double> Y_l_deriv[Get_n_layers()-1]; 
+
+    for (int l=0; l<Get_n_layers()-1; l++) { 
+        
+        //initialize the layer buffers
+        Y_l[l] = RVec<double>(fLayer_size[l+1], 0.); //this is the 'output' of each layer
+        X_l[l].reserve(fLayer_size[l]);              //this is the 'input' to each layer
+        Y_l_deriv[l].reserve(fLayer_size[l+1]);      //this is the output of each layer, with the deriv. of the A-funct. applied
+    }
+
+    X_l[0] = X; 
+    
+    int l=0; 
+    //iterate through each layer, starting with the input layer
+    for (const RVec<double>& weights : fWeights) {
+
+        RVec<double>& input  = X_l[l]; 
+        RVec<double>& output = Y_l[l]; 
+
+        int i_elem=0; 
+
+        //iterate over all rows (elements of the output vector)
+        for (int j=0; j<fLayer_size[l+1]; j++) {
+
+            //add the constant (which is the last element in each column of the 'weight matrix')
+            output[j] += weights[i_elem++];
+
+            //iterate through all the columns (input vector elements + a constant )
+            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k];  
+        }
+
+        Y_l_deriv[l] = Activation_fcn_deriv(output);
+
+        if (l >= Get_n_layers()-2) break; 
+        //apply the activation function to each element of the output vector
+        X_l[l+1] = Activation_fcn(output); 
+        
+
+        //now, start again with the next row (or exit if we're done)
+        l++; 
+    }
+
+    //this 'A' matrix will be what we use to back-propagate thru all the layers, starting with the last. 
+    RMatrix A = RMatrix::Square_identity(Get_DoF_out()); 
+
+    int i_elem=0; 
+    for (int l=Get_n_layers()-2; l>0; l--) {
+
+        //if we haven't reached the last layer yet, update the 'A' matrix 
+        RVec<double> A_update_data; A_update_data.reserve(fLayer_size[l+1] * fLayer_size[l]);
+        
+        auto& weights = fWeights[l]; 
+        for (int j=0; j<fLayer_size[l+1]; j++) {
+            for (int k=0; k<fLayer_size[l]; k++) {
+                A_update_data.push_back( 
+                    //weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Activation_fcn_deriv( Y_l[l-1].at(k) )
+                    weights[ j*(fLayer_size[l]+1) + 1 + k ] * Y_l_deriv[l-1][k] 
+                );
+            }
+        }
+        RMatrix Al(fLayer_size[l+1], fLayer_size[l], A_update_data);
+        A = A * Al;
+    }   
+
+    RVec<double> A_update_data; A_update_data.reserve(fLayer_size[1] * fLayer_size[0]);
+        
+    auto& weights = fWeights[0]; 
+    for (int j=0; j<fLayer_size[1]; j++) {
+        for (int k=0; k<fLayer_size[0]; k++) {
+            A_update_data.push_back( 
+                //weights.at( j*(fLayer_size[l]+1) + 1 + k ) * Activation_fcn_deriv( Y_l[l-1].at(k) )
+                weights[ j*(fLayer_size[l]+1) + 1 + k ]
+            );
+        }
+    }
+    
+    RMatrix Al(fLayer_size[1], fLayer_size[0], A_update_data); 
+    return A * Al;
+}
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________

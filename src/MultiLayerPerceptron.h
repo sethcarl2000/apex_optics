@@ -74,7 +74,11 @@ public:
         double& get(int i, int l, int j, int k); 
     };
 
+    //compute the gradient w/r/t each of the weights of the network. 
     MultiLayerPerceptron::WeightGradient_t Weight_gradient(const ROOT::RVec<double>& X) const; 
+
+    //compute the jacobian matrix relating the outputs/inputs. 
+    RMatrix Jacobian(const ROOT::RVec<double>& x) const; 
 
     //Print Network structure and all weights
     void Print() const; 
