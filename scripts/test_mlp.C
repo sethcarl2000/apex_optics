@@ -52,19 +52,6 @@ int test_mlp(   const char* path_infile="",
 
 
     auto df_input = df
-#if 1
-        .Define("x_sv",     [](TVector3 v){ return v.x(); }, {"position_sieve"})
-        .Define("y_sv",     [](TVector3 v){ return v.y(); }, {"position_sieve"})
-        .Define("dxdz_sv",  [](TVector3 v){ return v.x()/v.z(); }, {"momentum_sieve"})
-        .Define("dydz_sv",  [](TVector3 v){ return v.y()/v.z(); }, {"momentum_sieve"})
-        .Define("dpp_sv",   [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"}) 
-
-        .Define("x_q1",     [](TVector3 v){ return v.x(); }, {"position_Q1"})
-        .Define("y_q1",     [](TVector3 v){ return v.y(); }, {"position_Q1"})
-        .Define("dxdz_q1",  [](TVector3 v){ return v.x()/v.z(); }, {"momentum_Q1"})
-        .Define("dydz_q1",  [](TVector3 v){ return v.y()/v.z(); }, {"momentum_Q1"})
-        .Define("dpp_q1",   [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_Q1"})
-#endif 
     
         .Define("X_inp", [DoF_in ](){ RVec<double> v{}; v.reserve(DoF_in);  return v; }, {})
         .Define("Z_out", [DoF_out](){ RVec<double> v{}; v.reserve(DoF_out); return v; }, {}); 

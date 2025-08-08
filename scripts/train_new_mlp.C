@@ -125,49 +125,7 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     //if we're training a pre-existing mlp, then we will NOT normalize the inputs (this was already done/undone in the first round of training!)
     const bool use_pre_existing_mlp = (string(path_dbfile_starting_mlp)!=""); 
 
-#if 1
-    //we're going to deal with real data here
-    //we need to define some output branches first. we will store them in a file called "data/misc/temp.root" 
-    ROOT::RDataFrame df_temp(tree_name, path_infile); 
-    
-    double hrs_momentum = 1104.0;   
 
-    vector<string> output_branches; 
-
-    auto df_input = df_temp
-        .Define("x_sv",     [](TVector3 v){ return v.x(); }, {"position_sieve"})
-        .Define("y_sv",     [](TVector3 v){ return v.y(); }, {"position_sieve"})
-        .Define("dxdz_sv",  [](TVector3 v){ return v.x()/v.z(); }, {"momentum_sieve"})
-        .Define("dydz_sv",  [](TVector3 v){ return v.y()/v.z(); }, {"momentum_sieve"})
-        .Define("dpp_sv",   [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"}) 
-
-        .Define("x_q1",     [](TVector3 v){ return v.x(); }, {"position_Q1"})
-        .Define("y_q1",     [](TVector3 v){ return v.y(); }, {"position_Q1"})
-        .Define("dxdz_q1",  [](TVector3 v){ return v.x()/v.z(); }, {"momentum_Q1"})
-        .Define("dydz_q1",  [](TVector3 v){ return v.y()/v.z(); }, {"momentum_Q1"})
-        .Define("dpp_q1",   [hrs_momentum](TVector3 v){ return (v.Mag()-hrs_momentum)/hrs_momentum; }, {"momentum_Q1"}) 
-
-        .Snapshot(tree_name, "data/misc/temp.root", 
-            {"x_sv", 
-             "y_sv", 
-             "dxdz_sv", 
-             "dydz_sv", 
-             "dpp_sv", 
-             
-             "x_q1",
-             "y_q1",
-             "dxdz_q1",
-             "dydz_q1",
-             "dpp_q1",
-
-             "x_fp", 
-             "y_fp", 
-             "dxdz_fp", 
-             "dydz_fp"}); 
-
-    path_infile = "data/misc/temp.root"; 
-    //now, proceed as normal 
-#endif 
     vector<string> branches_input   = {
         "x_q1", 
         "y_q1", 
