@@ -110,12 +110,12 @@ struct BranchLimits_t {
 }; 
 
 //____________________________________________________________________________________________________________________________________
-int train_new_mlp(  const int n_grad_iterations = 10,
-                    const char* path_infile = "",
-                    const char* path_outfile = "",
-                    const char* path_dbfile_starting_mlp = "",
-                    RVec<int> mlp_structure={},
-                    const char* tree_name="tracks_fp" )
+int train_mlp(  const int n_grad_iterations = 10,
+                const char* path_infile = "",
+                const char* path_outfile = "",
+                const char* path_dbfile_starting_mlp = "",
+                RVec<int> mlp_structure={},
+                const char* tree_name="tracks_fp" )
 {
     const char* const here = "train_new_mlp"; 
     
@@ -125,13 +125,12 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     //if we're training a pre-existing mlp, then we will NOT normalize the inputs (this was already done/undone in the first round of training!)
     const bool use_pre_existing_mlp = (string(path_dbfile_starting_mlp)!=""); 
 
-
     vector<string> branches_input   = {
-        "x_q1", 
-        "y_q1", 
-        "dxdz_q1",
-        "dydz_q1",
-        "dpp_q1"
+        "x_sv", 
+        "y_sv", 
+        "dxdz_sv",
+        "dydz_sv",
+        "dpp_sv"
     };
 
     vector<string> branches_output  = {
@@ -309,10 +308,10 @@ int train_new_mlp(  const int n_grad_iterations = 10,
     //  HYPERPARAMETERS - 
     //  
     //the extent to which 
-    double eta          = 2.0000;
+    double eta          = 0.4000;
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum     = 1.0000 - 0.001;
+    double momentum     = 1.0000 - 0.050;
     
     //the number of epochs between graph updates: 
     const int update_period = 50; 
