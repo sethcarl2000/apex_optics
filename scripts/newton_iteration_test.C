@@ -152,6 +152,8 @@ void SCS_to_HCS(Track_t& track, const bool is_RHRS)
 
 
 
+//are we dealing with monte-carlo, or real data? 
+#define MONTE_CARLO_DATA true
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int newton_iteration_test(  const char* path_infile="",
@@ -331,7 +333,6 @@ int newton_iteration_test(  const char* path_infile="",
                                 DoF_sv, 
                                 &rv_mag ](const Track_t& Xfp, const Track_t& Xsv) 
     {
-        
         RVec<double> Xfp_rv{ Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz }; 
 
         auto Get_next_trajectory = [parr, trajectory_spacing, &rv_mag, &Xfp_rv](RVec<Track_t>* t_vec, RVec<double>& Xsv, double oreintation)
@@ -379,6 +380,7 @@ int newton_iteration_test(  const char* path_infile="",
         };
 
         //0bvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv q  AA1
+        // - bear
         RVec<double> Xsv_rv{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp };
 
         ///get 'forward' trajectories
@@ -426,22 +428,18 @@ int newton_iteration_test(  const char* path_infile="",
 #ifdef EVENT_RANGE
         .Range(EVENT_RANGE)
 #endif 
-        .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
-        .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
-        .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
-        .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"})
-        .Define("dpp_sv",    [hrs_momentum](TVector3 v){ return (v.z()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"})
-
         //define the Track_t structs that we will need to use for the newton iteration
         .Define("Xfp", [](double x, double y, double dxdz, double dydz)
         {
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=0. };  
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
 
+#if MONTE_CARLO_DATA
         .Define("Xsv", [](double x, double y, double dxdz, double dydz, double dpp)
         {
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=dpp };  
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
+#endif 
 
         .Define("Xsv_first_guess", [parr_forward, parr](Track_t& Xfp)
         {
@@ -468,11 +466,17 @@ int newton_iteration_test(  const char* path_infile="",
         .Define("position_vtx_with_error", [vertex_uncertainty_x, 
                                             vertex_uncertainty_y](TVector3 vtx)
         {
-            return TVector3( 
-                vtx.x() + gRandom->Gaus() * vertex_uncertainty_x,
-                vtx.y() + gRandom->Gaus() * vertex_uncertainty_y, 
-                vtx.z()
-            );
+            //if we're using monte-carlo data, then create a 'position_vtx_with_error' 
+            if (MONTE_CARLO_DATA) {
+                auto err = TVector3( 
+                    gRandom->Gaus() * vertex_uncertainty_x, 
+                    gRandom->Gaus() * vertex_uncertainty_y, 
+                    0.
+                ); 
+                vtx += err; 
+            }
+
+            return vtx; 
         }, {"position_vtx"})
 
         .Define("Xsv_best",     [ is_RHRS,
@@ -525,10 +529,12 @@ int newton_iteration_test(  const char* path_infile="",
         .Define("err_dxdz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dxdz-x)*1e3; }, {"Xfp_model", "dxdz_fp"})
         .Define("err_dydz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dydz-x)*1e3; }, {"Xfp_model", "dydz_fp"})
 
+#if MONTE_CARLO_DATA
         .Define("Xsv_error", [](Track_t Xsv_mod, Track_t Xsv)
         {   
             return (Xsv_mod - Xsv) * 1e3; 
         }, {"Xsv_best", "Xsv"})
+#endif 
 
         .Define("Xhcs", [is_RHRS](const Track_t& Xsv)
         {
@@ -577,13 +583,14 @@ int newton_iteration_test(  const char* path_infile="",
     }); 
 
     add_branch_from_Track_t( output_nodes, "Xsv_best", {
-        {"reco_x_sv",       &Track_t::x},
-        {"reco_y_sv",       &Track_t::y},
-        {"reco_dxdz_sv",    &Track_t::dxdz},
-        {"reco_dydz_sv",    &Track_t::dydz},
-        {"reco_dpp_sv",     &Track_t::dpp}
+        {"reco_x_sv",      &Track_t::x},
+        {"reco_y_sv",      &Track_t::y},
+        {"reco_dxdz_sv",   &Track_t::dxdz},
+        {"reco_dydz_sv",   &Track_t::dydz},
+        {"reco_dpp_sv",    &Track_t::dpp}
     }); 
 
+#if MONTE_CARLO_DATA
     add_branch_from_Track_t( output_nodes, "Xsv_error", {
         {"err_x_sv",       &Track_t::x},
         {"err_y_sv",       &Track_t::y},
@@ -591,6 +598,7 @@ int newton_iteration_test(  const char* path_infile="",
         {"err_dydz_sv",    &Track_t::dydz},
         {"err_dpp_sv",     &Track_t::dpp}
     }); 
+#endif 
 
     auto df_output = output_nodes.back(); 
 
@@ -617,50 +625,49 @@ int newton_iteration_test(  const char* path_infile="",
     auto h_hcs_projection_xz = df_output 
         .Histo1D<double>({"h_z_proj_xz", "Error of Projection of track onto z_{HCS} (x-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_xz"); 
 
-
+#if MONTE_CARLO_DATA
     auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_fp;mm", 200, -5, 5},      "err_x_sv"); 
     auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_fp;mm", 200, -5, 5},      "err_y_sv"); 
     auto h_dxdz = df_output.Histo1D<double>({"h_dxdz", "Error of dxdz_fp;mrad", 200, -5, 5}, "err_dxdz_sv"); 
     auto h_dydz = df_output.Histo1D<double>({"h_dydz", "Error of dydz_fp;mrad", 200, -5, 5}, "err_dydz_sv"); 
-    
+#endif 
 
     //this histogram will be of the actual sieve-coords
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords. db:'%s', data:'%s'", path_dbfile, path_infile); 
-
-
     
     gStyle->SetPalette(kSunset);
 
     auto cc = new TCanvas("c4", b_c_title, 1200, 500);
     cc->Divide(2,1, 0.01,0.01); 
     
+    TStopwatch timer; 
+
     cc->cd(1); h_hcs_projection_yz->DrawCopy(); 
     cc->cd(2); h_hcs_projection_xz->DrawCopy(); 
-
-    return 0; 
-
-    //gStyle->SetOptStat(0); 
-    new TCanvas("c0", b_c_title); 
     
-    TStopwatch timer; 
-    
-    h_xy_sieve->DrawCopy("col2"); 
-    
-    double realtime( timer.RealTime() ); 
+    //measure time it has taken to run over all events
+    double realtime = timer.RealTime(); 
     printf("done.\nprocessed %i events in %f seconds (%f ms/event) - %i thread(s)\n", 
         n_events, 
         realtime, 
         1e3 * realtime / ((double)n_events), 
         (ROOT::GetThreadPoolSize()==0 ? 1 : ROOT::GetThreadPoolSize()) 
     );
-    cout << endl;  
+
+    //gStyle->SetOptStat(0); 
+    new TCanvas("c0", b_c_title); 
+    
+    h_xy_sieve_fg->DrawCopy("col2"); 
+    
     
     
     new TCanvas("c2", b_c_title); 
-    h_xy_sieve_fg->DrawCopy("col2"); 
+    h_xy_sieve->DrawCopy("col2"); 
 
+    return 0; 
 
+#if MONTE_CARLO_DATA
     auto c = new TCanvas("c1", b_c_title, 1200, 800); 
     c->Divide(2,2, 0.005,0.005); 
     
@@ -672,7 +679,7 @@ int newton_iteration_test(  const char* path_infile="",
     h_dxdz->DrawCopy(); 
     c->cd(4); 
     h_dydz->DrawCopy(); 
-
+#endif 
 
     
 
