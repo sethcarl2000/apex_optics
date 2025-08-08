@@ -51,24 +51,8 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
     infile->Close(); 
     delete infile; 
 
-    ROOT::EnableImplicitMT(); 
-    Info(here, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
-
-    //Now, we are ready to process the tree using RDataFrame
-    ROOT::RDataFrame df(tree_name, path_infile); 
-
-
     const double hrs_momentum = 1104.0; 
 
-    //Define all of the branches we want to create models to map between
-    auto df_output = df
-
-        .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
-        .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
-        .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
-        .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"})
-        .Define("dpp_sv",    [hrs_momentum](TVector3 v){ return (v.z()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"});
-    
     //now, put these outputs into a vector (so we know to make a seperate polynomial for each of them). 
     vector<string> branches_sv = {
         "x_sv", 
@@ -87,10 +71,16 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
 
     cout << "Creating polynomials for fp => sv..." << endl; 
     
+    ROOT::EnableImplicitMT(); 
+    Info(here, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
+
+    //Now, we are ready to process the tree using RDataFrame
+    ROOT::RDataFrame df(tree_name, path_infile); 
+
     //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
     // of the 'branches_fp' vec 
     map<string,NPoly*> polymap = 
-        ApexOptics::Create_NPoly_fit( df_output, //the dataframe object with all of our branches defined 
+        ApexOptics::Create_NPoly_fit( df, //the dataframe object with all of our branches defined 
                                       poly_order, //the order of the NPoly to create 
                                       branches_sv, //the input branches 
                                       branches_fp ); //the output branch for this NPoly to target
@@ -118,7 +108,7 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
     ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap);     
     
     //draw the reults of all models
-    vector<ROOT::RDF::RNode> error_nodes{ df_output }; 
+    vector<ROOT::RDF::RNode> error_nodes{ df }; 
     for (auto it = polymap.begin(); it != polymap.end(); it++) {
 
         //get the polynomial and its name

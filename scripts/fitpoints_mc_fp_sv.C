@@ -69,19 +69,12 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     //get number of coefficients
     const int n_elems = poly->Get_nElems(); 
 
-    const double hrs_momentum = 1104.0; 
+    const double hrs_momentum = 1104.; 
 
     //this will be used for the least-squares calculation to find the best coefficients
     RMatrix A_init(n_elems, n_elems, 0.); 
 
     //Define all of the branches we want to create models to map between
-    auto df_output = df
-
-        .Define("x_sv",      [](TVector3 v){ return v.x(); },        {"position_sieve"})
-        .Define("y_sv",      [](TVector3 v){ return v.y(); },        {"position_sieve"})
-        .Define("dxdz_sv",   [](TVector3 v){ return v.x()/v.z(); },  {"momentum_sieve"})
-        .Define("dydz_sv",   [](TVector3 v){ return v.y()/v.z(); },  {"momentum_sieve"})
-        .Define("dpp_sv",    [hrs_momentum](TVector3 v){ return (v.z()-hrs_momentum)/hrs_momentum; }, {"momentum_sieve"});
     
     //now, put these outputs into a vector (so we know to make a seperate polynomial for each of them). 
     vector<string> branches_sv = {
@@ -103,8 +96,7 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     
     //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
     // of the 'branches_fp' vec 
-    map<string,NPoly*> polymap =       
-        ApexOptics::Create_NPoly_fit(df_output, poly_order, branches_fp, branches_sv);
+    map<string,NPoly*> polymap = ApexOptics::Create_NPoly_fit(df, poly_order, branches_fp, branches_sv);
     
     cout << "done." << endl;    
 
@@ -146,7 +138,7 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
         polymap["dpp_sv"]
     }); 
     
-    auto df_sieve_reco = df_output 
+    auto df_sieve_reco = df
         
         //Define the reconstructed sieve coordinates using our model
         .Define("reco_X_sv",    [parr](double x, double y, double dxdz, double dydz)
