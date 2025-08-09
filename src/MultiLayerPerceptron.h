@@ -69,6 +69,11 @@ public:
         //move assignment operator
         WeightGradient_t& operator=(WeightGradient_t&& val) noexcept; 
 
+        //subtraction operator
+        WeightGradient_t& operator-=(const WeightGradient_t& rhs); 
+        //scalar multiplication operator
+        inline WeightGradient_t& operator*=(double x) noexcept { data *= x; return *this; } 
+
 
         ROOT::RVec<ROOT::RVec<double>> data; 
         ROOT::RVec<int> layer_size; 
@@ -118,7 +123,6 @@ private:
 
     //This will contain all weights for each layer. 
     ROOT::RVec<ROOT::RVec<double>> fWeights; 
-    
 
 
     ClassDef(MultiLayerPerceptron,1); 

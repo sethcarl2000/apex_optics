@@ -80,8 +80,6 @@ bool MultiLayerPerceptron::Check_index(int l, int j, int k) const
         (k < 0 || k >= fLayer_size[l]+1)) {
         
         Error("Check_index", "Invalid index: [l,j,k]=>[%i, %i, %i], can only be l=>[0,%i].",  l,j,k,  Get_n_layers()-1);
-
-        Print(); 
         
         return false;
     }
@@ -187,6 +185,39 @@ MultiLayerPerceptron::WeightGradient_t& MultiLayerPerceptron::WeightGradient_t::
     }
     return *this;
 }//__________________________________________________________________________________________________________________________________
+MultiLayerPerceptron::WeightGradient_t& MultiLayerPerceptron::WeightGradient_t::operator-=(const MultiLayerPerceptron::WeightGradient_t& rhs)
+{
+    //check if there's the same number of layers between the operands 
+    const size_t n_layers = layer_size.size(); 
+    if (n_layers == rhs.layer_size.size()) {
+        
+        int l=0; 
+        for (; l<n_layers; l++) { 
+
+            //check if layer sizes match
+            if (layer_size[l] != rhs.layer_size[l]) break; 
+            
+            //if they do, subtract rhs from lhs.
+            int i=0;  
+            for (auto& weight : data[l]) weight -= rhs.data[l][i++]; 
+        }
+        //if we got to the last layer, it means all network layers were indeed the same size. 
+        // if not, continue to the exception-throwing below (one or more of the layers in 'rhs' and 'lhs' were different sizes). 
+        if (l==n_layers) return *this; 
+    }
+    
+    //network structures were not congruent, throw an exception reporting this. 
+    ostringstream oss; 
+    oss << "in <MLP::WeightGradient_t::operator-=>: Layer size of operands does not match."
+           "\n - LHS layer structure: ";
+    for (const int& size : layer_size) oss << size << " "; 
+    oss << "\n - RHS layer structure: ";
+    for (const int& size : rhs.layer_size) oss << size << " "; 
+    throw logic_error(oss.str()); 
+
+    //return a reference to an empty weight gradient object 
+    return *(new WeightGradient_t());  
+}//__________________________________________________________________________________________________________________________________
 inline double MultiLayerPerceptron::Activation_fcn(double x) const
 {
     //for right now, we're just going to use the cmath exp() function to make a sigmoid. 
@@ -222,11 +253,14 @@ RVec<double> MultiLayerPerceptron::Activation_fcn_deriv(const RVec<double>& X) c
 void MultiLayerPerceptron::Print() const
 {
     //
-    printf("MultiLayerPerceptron.\n  -- structure: "); 
+    printf("MultiLayerPerceptron.\n -- structure: "); 
     printf(" (inputs: %i) => ", fLayer_size[0]);
     for (int i=1; i<Get_n_layers()-1; i++) printf("%i => ", fLayer_size[i]); 
-    printf("(outputs: %i)\n", fLayer_size[Get_n_layers()-1]); 
+    printf("(outputs: %i)", fLayer_size[Get_n_layers()-1]); 
     
+    int n_inputs = 0; for (int l=0; l<Get_n_layers()-1; l++) n_inputs += (fLayer_size[l]+1) * (fLayer_size[l+1]); 
+    printf("; Total n. of weights: %i\n", n_inputs); 
+
     for (int l=0; l<Get_n_layers()-1; l++) {
 
         printf(" -- layer connection weights: l%i -> l%i\n", l, l+1);
@@ -234,8 +268,6 @@ void MultiLayerPerceptron::Print() const
         for (int j=0; j<fLayer_size[l+1]; j++) {
             printf("\n -  % .4e  --- ", Get_weight(l, j, 0) ); 
             for (int k=1; k<fLayer_size[l]+1; k++) printf("% .4e ", Get_weight(l, j, k) ); 
-            
-               
         }
         printf("\n\n");
     }
@@ -533,14 +565,14 @@ MultiLayerPerceptron* MultiLayerPerceptron::Concantenate(MultiLayerPerceptron *m
     RVec<int> structure; 
     //we need to remove the last element from the first mlp, as its redundant
 
-    for (int l=0; l<mlp1->Get_n_layers()-1; l++) structure.push_back(mlp1->Get_layer_size(l)); 
-    for (int l=1; l<mlp2->Get_n_layers()-1; l++) structure.push_back(mlp2->Get_layer_size(l)); 
+    for (int l=0; l<mlp1->Get_n_layers(); l++) structure.push_back(mlp1->Get_layer_size(l)); 
+    for (int l=1; l<mlp2->Get_n_layers(); l++) structure.push_back(mlp2->Get_layer_size(l)); 
     
     MultiLayerPerceptron *mlp_out = new MultiLayerPerceptron(structure); 
-
+    
     int l=0; 
-    for (int i=0; i<mlp1->Get_n_layers()-2; i++) { mlp_out->Get_layer(l) = mlp1->Get_layer(i); l++; }
-    for (int i=1; i<mlp2->Get_n_layers()-2; i++) { mlp_out->Get_layer(l) = mlp2->Get_layer(i); l++; }
+    for (int i=0; i<mlp1->Get_n_layers()-1; i++) { mlp_out->Get_layer(l++) = mlp1->Get_layer(i); }
+    for (int i=0; i<mlp2->Get_n_layers()-1; i++) { mlp_out->Get_layer(l++) = mlp2->Get_layer(i); }
 
     return mlp_out; 
 }
