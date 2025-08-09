@@ -111,6 +111,13 @@ int MultiLayerPerceptron::Get_layer_size(int l) const
     return fLayer_size[l]; 
 }
 //__________________________________________________________________________________________________________________________________
+int Get_n_weights() const 
+{
+    int n_weights =0; 
+    for (int l=0; l<Get_n_layers()-1; l++) n_weights += (fLayer_size[l]+1) * (fLayer_size[l+1]); 
+    return n_weights;  
+}
+//__________________________________________________________________________________________________________________________________
 double& MultiLayerPerceptron::Weight(int l, int j, int k) 
 {      
     if (!Check_index(l,j,k)) return (fQuiet_nan=numeric_limits<double>::quiet_NaN()); 
@@ -258,7 +265,6 @@ void MultiLayerPerceptron::Print() const
     for (int i=1; i<Get_n_layers()-1; i++) printf("%i => ", fLayer_size[i]); 
     printf("(outputs: %i)", fLayer_size[Get_n_layers()-1]); 
     
-    int n_inputs = 0; for (int l=0; l<Get_n_layers()-1; l++) n_inputs += (fLayer_size[l]+1) * (fLayer_size[l+1]); 
     printf("; Total n. of weights: %i\n", n_inputs); 
 
     for (int l=0; l<Get_n_layers()-1; l++) {

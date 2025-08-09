@@ -39,6 +39,10 @@ public:
     //Get number of layers
     inline int Get_n_layers()   const { return fN_layers; }
 
+    //Get the total number of parameters in the model
+    int Get_n_weights() const; 
+    
+
     //Get number of input nodes
     inline int Get_DoF_in()     const { return fLayer_size[0]; }
     inline int Get_DoF_out()    const { return fLayer_size[fN_layers-1]; }
