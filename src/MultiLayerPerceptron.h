@@ -26,6 +26,9 @@ public:
     MultiLayerPerceptron(const ROOT::RVec<int>& _structure={}); 
     ~MultiLayerPerceptron() {}; 
 
+    //copy constructor 
+    MultiLayerPerceptron(const MultiLayerPerceptron& cpy); 
+
     //get access to underlying weight by reference (so it can be altered). 
     // - performs checks on the validity of the input arguments. 
     double& Weight(int l, int j, int k); 
@@ -51,6 +54,7 @@ public:
     double Get_weight(int l, int j, int k) const; 
 
     ROOT::RVec<double>& Get_layer(int l); 
+    ROOT::RVec<double>  Get_layer(int l) const; 
     int Get_layer_size(int l) const; 
 
     //return layer structure vector

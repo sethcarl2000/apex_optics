@@ -60,6 +60,18 @@ MultiLayerPerceptron::MultiLayerPerceptron(const ROOT::RVec<int>& _structure)
     
 }
 //__________________________________________________________________________________________________________________________________
+MultiLayerPerceptron::MultiLayerPerceptron(const MultiLayerPerceptron& cpy)
+: fRd(std::random_device()),
+    fGen(fRd()),
+    fNormal_dist(std::normal_distribution<double>(0., 1.)),
+    fN_layers(cpy.Get_n_layers()),
+    fLayer_size{},
+    fQuiet_nan{numeric_limits<double>::quiet_NaN()}
+{
+    for (int l=0; l<Get_n_layers(); l++) fLayer_size.push_back(cpy.Get_layer_size(l));
+    for (int l=0; l<Get_n_layers()-1; l++) fWeights.push_back(cpy.Get_layer(l)); 
+}
+//__________________________________________________________________________________________________________________________________
 inline double MultiLayerPerceptron::Rand_gaus()
 {
     return fNormal_dist(fGen); 
@@ -99,6 +111,18 @@ RVec<double>& MultiLayerPerceptron::Get_layer(int l)
     return fWeights[l]; 
 }
 //__________________________________________________________________________________________________________________________________
+RVec<double> MultiLayerPerceptron::Get_layer(int l) const
+{
+    if (l < 0 || l >= Get_n_layers()-1 ) {
+        ostringstream oss; 
+        oss << "in <MultiLayerPerceptron::Get_layer(int)>: Tried to get weights for layer " 
+            << l << ", valid range is l=[0," << Get_n_layers()-2 << "]"; 
+        throw logic_error(oss.str()); 
+        return *(new RVec<double>{});
+    }
+    return fWeights[l]; 
+}
+//__________________________________________________________________________________________________________________________________
 int MultiLayerPerceptron::Get_layer_size(int l) const
 {
     if (l < 0 || l >= Get_n_layers() ) {
@@ -111,7 +135,7 @@ int MultiLayerPerceptron::Get_layer_size(int l) const
     return fLayer_size[l]; 
 }
 //__________________________________________________________________________________________________________________________________
-int Get_n_weights() const 
+int MultiLayerPerceptron::Get_n_weights() const 
 {
     int n_weights =0; 
     for (int l=0; l<Get_n_layers()-1; l++) n_weights += (fLayer_size[l]+1) * (fLayer_size[l+1]); 
@@ -265,7 +289,7 @@ void MultiLayerPerceptron::Print() const
     for (int i=1; i<Get_n_layers()-1; i++) printf("%i => ", fLayer_size[i]); 
     printf("(outputs: %i)", fLayer_size[Get_n_layers()-1]); 
     
-    printf("; Total n. of weights: %i\n", n_inputs); 
+    printf("; Total n. of weights: %i\n", Get_n_weights()); 
 
     for (int l=0; l<Get_n_layers()-1; l++) {
 
