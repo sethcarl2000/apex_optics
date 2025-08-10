@@ -120,10 +120,15 @@ int train_mlp(  const int n_grad_iterations = 10,
     const char* const here = "train_new_mlp"; 
     
     //if there are more training events than this in the 'path_infile' root file, then only use this many. 
-    const int max_events_train = 15e3; 
+    const int max_events_train = 12e3; 
 
     //if we're training a pre-existing mlp, then we will NOT normalize the inputs (this was already done/undone in the first round of training!)
     const bool use_pre_existing_mlp = (string(path_dbfile_starting_mlp)!=""); 
+
+    //put in a number here which is orders of magnitude larger than the maximum reasonable error you expect. 
+    //if the error of any particular iteration exceeds this, then quit. 
+    const double max_error = 1e3; 
+
 
     vector<string> branches_input   = {
         "x_sv", 
@@ -137,8 +142,7 @@ int train_mlp(  const int n_grad_iterations = 10,
         "x_fp",
         "y_fp",
         "dxdz_fp",
-        "dydz_fp"//,
-//        "dpp_q1"
+        "dydz_fp"
     }; 
 
     //this is the structure of the hidden layers. the eventual network will append an input layer and output layer on either side
@@ -308,10 +312,10 @@ int train_mlp(  const int n_grad_iterations = 10,
     //  HYPERPARAMETERS - 
     //  
     //the extent to which 
-    double eta          = 0.4000;
+    double eta          = 0.3000;
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum     = 1.0000 - 0.050;
+    double momentum     = 1.0000 - 0.00003;
     
     //the number of epochs between graph updates: 
     const int update_period = 50; 
@@ -320,9 +324,9 @@ int train_mlp(  const int n_grad_iterations = 10,
     //  
     ////////////////////////////////////////////////////////////////////////////////////////
     printf("Hyperparameters: ~~~\n"); 
-    printf(" - Eta:               %f\n", eta);
-    printf(" - Momentum:          %f\n", momentum);
-    printf(" - (Drag-parameter):  %f\n\n", (1. - momentum)/eta); 
+    printf(" - Eta:               %.9f\n", eta);
+    printf(" - Momentum:          %.9f\n", momentum);
+    printf(" - (Drag-parameter):  %.3e\n\n", (1. - momentum)/eta); 
     //mlp->Print(); 
 
     double x_epoch[n_grad_iterations];
@@ -443,6 +447,11 @@ int train_mlp(  const int n_grad_iterations = 10,
             error - last_error, 
             100.*((double)i+1)/((double)n_grad_iterations) ); cout << flush; 
         
+        if (error > max_error) {
+            printf("\nMaximum error exceeded (%.4e > %.4e). iteration loop terminated.\n", error, max_error); 
+            return 1; 
+        }
+
         //update the graph & redraw
         if (i % update_period == 0) { 
             if (i==0) {
@@ -464,7 +473,7 @@ int train_mlp(  const int n_grad_iterations = 10,
     
     graph->SetPointY(n_grad_iterations-1, log(error)/log(10.)); 
         
-    char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.2e;Epoch;log_{10}(RMS)", n_grad_iterations, n_grad_iterations, error ); 
+    char g_title[200]; sprintf(g_title, "Epoch (%4i/%i), RMS = %.4e;Epoch;log_{10}(RMS)", n_grad_iterations, n_grad_iterations, error ); 
     graph->SetTitle(g_title);
     
     graph ->Draw(); 
