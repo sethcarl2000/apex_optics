@@ -481,8 +481,7 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
                 );
             }
         }
-
-        RMatrix A_l(fLayer_size[l+1], fLayer_size[l], A_update_data); 
+        RMatrix A_l(fLayer_size[l+1], fLayer_size[l], std::move(A_update_data)); 
 
         A = A * A_l; 
     }   
