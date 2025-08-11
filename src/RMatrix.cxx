@@ -14,6 +14,7 @@
 #include <iostream>
 #include <limits> 
 #include <cmath>
+#include <utility> 
 #include "RMatrix.h"
 
 using namespace std;
@@ -45,6 +46,23 @@ RMatrix::RMatrix(unsigned int nr, unsigned int nc, const vecd &array)
     fElems = vector<double>(f_n_elems, 0.); 
   } else { 
     fElems = array;
+  }
+}
+//_______________________________________________________________________________
+RMatrix::RMatrix(unsigned int nr, unsigned int nc, vecd &&array) noexcept
+  : fnCols(nc),
+    fnRows(nr),
+    f_isSquare(nr==nc), 
+    f_reportSingular(true),
+    f_n_elems(nc*nr)
+{
+  if (f_n_elems != array.size()) {
+    fprintf(stderr, "Warning in <RMatrix::RMatrix(const vecd &)>: "  
+	  "Array size does not match given matrix dims! Initialzed as all zeros.\n");
+    fElems = vector<double>(f_n_elems, 0.);
+    array.clear();  
+  } else { 
+    fElems = std::move(array);
   }
 }
 //_______________________________________________________________________________

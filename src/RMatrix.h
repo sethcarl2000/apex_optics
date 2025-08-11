@@ -27,7 +27,11 @@ public:
   
   RMatrix(unsigned int nr=1, unsigned int nc=1, double init=0.); 
 
+  //constructor which copies the passed array
   RMatrix(unsigned int nr, unsigned int nc, const ROOT::RVec<double> &array);
+  
+  //constructor which 'moves' the passed array
+  RMatrix(unsigned int nr, unsigned int nc, ROOT::RVec<double>&& array) noexcept;
   
   RMatrix(unsigned int nr, unsigned int nc, const ROOT::RVec<double> *array);
 
