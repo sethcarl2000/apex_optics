@@ -19,6 +19,7 @@
 #include <limits> 
 #include <sstream> 
 #include <stdexcept> 
+#include <utility> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -499,26 +500,34 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
 
     //first, get the 'Y' vectors for each layer
     RVec<double> X_l[Get_n_layers()-1]; 
-    RVec<double> Y_l[Get_n_layers()-1]; 
-    RVec<double> Y_l_deriv[Get_n_layers()-1]; 
-
-    for (int l=0; l<Get_n_layers()-1; l++) { 
+    
+    X_l[0] = X; 
+    for (int l=1; l<Get_n_layers()-1; l++) { 
         
         //initialize the layer buffers
-        Y_l[l] = RVec<double>(fLayer_size[l+1], 0.); //this is the 'output' of each layer
-        X_l[l].reserve(fLayer_size[l]);              //this is the 'input' to each layer
-        Y_l_deriv[l].reserve(fLayer_size[l+1]);      //this is the output of each layer, with the deriv. of the A-funct. applied
+        X_l[l].reserve(fLayer_size[l]); //
     }
 
-    X_l[0] = X; 
+    RVec<double> J_data; J_data.reserve(fLayer_size[1] * fLayer_size[0]);  
     
+    //initialize the 'first' layer. we will recursivley perform the matrix multiplication as we go. 
+    for (int j=0; j<fLayer_size[1]; j++) {
+        for (int k=0; k<fLayer_size[0]; k++) {
+            J_data.push_back( fWeights[0][ j*(fLayer_size[0]+1) + (k+1) ] ); 
+        }
+    }
+    RMatrix J(fLayer_size[1], fLayer_size[0], std::move(J_data)); 
+
     int l=0; 
     //iterate through each layer, starting with the input layer
-    for (const RVec<double>& weights : fWeights) {
+    for (int l=0; l<Get_n_layers()-2; l++) {
+
+        const auto& weights = fWeights[l]; 
+        const auto& weights_next = fWeights[l+1]; 
 
         RVec<double>& input  = X_l[l]; 
-        RVec<double>& output = Y_l[l]; 
-
+        RVec<double>  output(fLayer_size[l+1], 0.); 
+        RVec<double>  output_deriv; output_deriv.reserve(fLayer_size[l+1]); 
         int i_elem=0; 
 
         //iterate over all rows (elements of the output vector)
@@ -529,48 +538,26 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
 
             //iterate through all the columns (input vector elements + a constant )
             for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k];  
+            
+            output_deriv.push_back( Activation_fcn_deriv(output[j]) ); 
         }
 
-        Y_l_deriv[l] = Activation_fcn_deriv(output);
+        X_l[l+1] = Activation_fcn( output ); 
 
-        if (l >= Get_n_layers()-2) break; 
-        //apply the activation function to each element of the output vector
-        X_l[l+1] = Activation_fcn(output); 
-        
-        //now, start again with the next row (or exit if we're done)
-        l++; 
-    }
+        RVec<double> J_next_data; J_next_data.reserve( fLayer_size[l+2] * fLayer_size[l+1] ); 
 
-    //this 'A' matrix will be what we use to back-propagate thru all the layers, starting with the last. 
-    RMatrix A = RMatrix::Square_identity(Get_DoF_out()); 
-
-    int i_elem=0; 
-    for (int l=Get_n_layers()-2; l>0; l--) {
-
-        //if we haven't reached the last layer yet, update the 'A' matrix 
-        RVec<double> A_update_data; A_update_data.reserve(fLayer_size[l+1] * fLayer_size[l]);
-        
-        auto& weights = fWeights[l]; 
-        for (int j=0; j<fLayer_size[l+1]; j++) {
-            for (int k=0; k<fLayer_size[l]; k++) {
-                A_update_data.push_back( weights[ j*(fLayer_size[l]+1) + (k+1) ] * Y_l_deriv[l-1][k] );
+        //initialize the 'first' layer. we will recursivley perform the matrix multiplication as we go. 
+        for (int j=0; j<fLayer_size[l+2]; j++) {
+            for (int k=0; k<fLayer_size[l+1]; k++) {
+                J_next_data.push_back( weights_next[ j*(fLayer_size[l+2]+1) + (k+1) ] * output_deriv[k] ); 
             }
         }
-        RMatrix Al(fLayer_size[l+1], fLayer_size[l], A_update_data);
-        A = A * Al;
-    }   
+        RMatrix J_next(fLayer_size[l+2], fLayer_size[l+1], std::move(J_next_data)); 
 
-    RVec<double> A_update_data; A_update_data.reserve(fLayer_size[1] * fLayer_size[0]);
-    
-    auto& weights = fWeights[0]; 
-    for (int j=0; j<fLayer_size[1]; j++) {
-        for (int k=0; k<fLayer_size[0]; k++) {
-            A_update_data.push_back( weights[ j*(fLayer_size[0]+1) + (k+1) ] );
-        }
+        J = J_next * J;  
     }
-    
-    RMatrix Al(fLayer_size[1], fLayer_size[0], A_update_data); 
-    return A * Al; 
+
+    return J; 
 }
 //__________________________________________________________________________________________________________________________________
 MultiLayerPerceptron* MultiLayerPerceptron::Concantenate(MultiLayerPerceptron *mlp1, MultiLayerPerceptron *mlp2) 
