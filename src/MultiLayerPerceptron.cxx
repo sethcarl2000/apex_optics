@@ -211,9 +211,9 @@ MultiLayerPerceptron::WeightGradient_t& MultiLayerPerceptron::WeightGradient_t::
 {
     //move assignment operator
     if (this != &val) { //check to make sure we aren't trying to copy data to ourself
-        data        = move(val.data); 
-        layer_size  = move(val.layer_size);
-        DoF_out = val.DoF_out; 
+        data        = std::move(val.data); 
+        layer_size  = std::move(val.layer_size); 
+        DoF_out     = val.DoF_out; 
     }
     return *this;
 }//__________________________________________________________________________________________________________________________________
@@ -249,6 +249,49 @@ MultiLayerPerceptron::WeightGradient_t& MultiLayerPerceptron::WeightGradient_t::
 
     //return a reference to an empty weight gradient object 
     return *(new WeightGradient_t());  
+}//__________________________________________________________________________________________________________________________________
+
+//__________________________________________________________________________________________________________________________________
+double& MultiLayerPerceptron::HessianTensor_t::at(int i, int j, int k) 
+{
+    //Check layer index
+    if ((i < 0 || i >= DoF_out) ||
+        (j < 0 || j >= DoF_in)  || 
+        (k < 0 || k >= DoF_in) ) {
+        ostringstream oss; 
+        oss << "in <MLP::HessianTensor_t::at()>: Invalid element index set given "
+            "(" << i << ", " << j << ", " << k << "). max. range is [0," << DoF_out-1 << "] for i, [0,"<< DoF_in-1 << "] for j,k."; 
+        throw logic_error(oss.str()); 
+        return *(new double(numeric_limits<double>::quiet_NaN()));
+    }
+
+    return data[ i*(DoF_out * DoF_in) + j*(DoF_in) + k ]; 
+}
+//__________________________________________________________________________________________________________________________________
+inline double& MultiLayerPerceptron::HessianTensor_t::get(int i, int j, int k) 
+{
+    return data[ i*(DoF_out * DoF_in) + j*(DoF_in) + k ];
+}
+//__________________________________________________________________________________________________________________________________
+MultiLayerPerceptron::HessianTensor_t::HessianTensor_t(MultiLayerPerceptron::HessianTensor_t&& val) noexcept
+{
+    data = std::move(val.data);
+    DoF_out = val.DoF_out; 
+    DoF_in  = val.DoF_in; 
+    //move constructor
+    return; 
+}
+
+//__________________________________________________________________________________________________________________________________
+MultiLayerPerceptron::HessianTensor_t& MultiLayerPerceptron::HessianTensor_t::operator=(MultiLayerPerceptron::HessianTensor_t&& val) noexcept
+{
+    //move assignment operator
+    if (this != &val) { //check to make sure we aren't trying to copy data to ourself
+        data        = std::move(val.data); 
+        DoF_out = val.DoF_out; 
+        DoF_in  = val.DoF_in; 
+    }
+    return *this;
 }//__________________________________________________________________________________________________________________________________
 inline double MultiLayerPerceptron::Activation_fcn(double x) const
 {

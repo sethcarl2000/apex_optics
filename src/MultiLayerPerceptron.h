@@ -94,7 +94,30 @@ public:
     MultiLayerPerceptron::WeightGradient_t Weight_gradient(const ROOT::RVec<double>& X) const; 
 
     //compute the jacobian matrix relating the outputs/inputs. 
-    RMatrix Jacobian(const ROOT::RVec<double>& x) const; 
+    RMatrix Jacobian(const ROOT::RVec<double>& X) const; 
+    
+    struct HessianTensor_t {
+        //default constructor
+        HessianTensor_t() noexcept 
+            : data{}, DoF_out(0), DoF_in(0) {}; 
+        //copy constructor
+        HessianTensor_t(const HessianTensor_t &cpy) noexcept
+            : data(cpy.data), DoF_out(cpy.DoF_out), DoF_in(cpy.DoF_in) {}; 
+        //move constructor
+        HessianTensor_t(HessianTensor_t&& val) noexcept; 
+        
+        //move assignment operator
+        HessianTensor_t& operator=(HessianTensor_t&& val) noexcept; 
+
+        ROOT::RVec<double> data; 
+        int DoF_out;
+        int DoF_in;  
+        double&  at(int i, int j, int k); 
+        inline double& get(int i, int j, int k);
+    }; 
+            
+    //Compute the hessian w/r/t each of the inputs.     
+    //ROOT::RVec<double> Hessian_tensor(const ROOT::RVec<double>& X) const; 
 
     //Print Network structure and all weights
     void Print() const; 
