@@ -117,7 +117,7 @@ public:
     }; 
             
     //Compute the hessian w/r/t each of the inputs.     
-    //ROOT::RVec<double> Hessian_tensor(const ROOT::RVec<double>& X) const; 
+    HessianTensor_t Hessian_tensor(const ROOT::RVec<double>& X) const; 
 
     //Print Network structure and all weights
     void Print() const; 
@@ -138,6 +138,7 @@ private:
     //the nonlinear activation function 
     inline double Activation_fcn(double x) const; 
     inline double Activation_fcn_deriv(double x) const; 
+    inline double Activation_fcn_deriv2(double x) const; 
 
     inline ROOT::RVec<double> Activation_fcn(const ROOT::RVec<double>& X) const; 
     inline ROOT::RVec<double> Activation_fcn_deriv(const ROOT::RVec<double>& X) const; 

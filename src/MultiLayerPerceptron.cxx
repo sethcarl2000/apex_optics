@@ -306,6 +306,10 @@ inline double MultiLayerPerceptron::Activation_fcn_deriv(double x) const
     double S = Activation_fcn(x); 
     return ( 0.5 - S ) * ( 0.5 + S );  
 }
+inline double MultiLayerPerceptron::Activation_fcn_deriv2(double x) const
+{
+    return -2. * pow( sinh(x), -3 ) * pow( cosh(x/2.), 4 ); 
+}
 
 
 //__________________________________________________________________________________________________________________________________
@@ -322,6 +326,7 @@ RVec<double> MultiLayerPerceptron::Activation_fcn_deriv(const RVec<double>& X) c
     auto Y = Activation_fcn(X); 
     return ( 0.5 + Y ) * ( 0.5 - Y ); 
 }
+
 
 
 //__________________________________________________________________________________________________________________________________
@@ -600,6 +605,135 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
     }
 
     return J; 
+}
+//__________________________________________________________________________________________________________________________________
+MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const RVec<double>& X) const 
+{
+    //check if the input vector is the right size 
+    const char* const here = "Hessian_tensor"; 
+    if (X.size() != (int)Get_DoF_in()) {
+        Error(here, "Input is wrong DoF (%i), should be %i", (int)X.size(), Get_DoF_in()); 
+        return MultiLayerPerceptron::HessianTensor_t(); 
+    }
+
+    if (Get_n_layers() < 3) {
+        Error(here, "Hessian tensor cannot be computed for an MLP of 2 layers or less."); 
+        return MultiLayerPerceptron::HessianTensor_t(); 
+    }
+
+    //initialize the Hessian tensor
+    HessianTensor_t H; 
+    H.DoF_out = Get_DoF_out(); 
+    H.DoF_in  = Get_DoF_in(); 
+    H.data    = RVec<double>( H.DoF_out * pow( H.DoF_in, 2 ), 0. ); 
+    
+    //compute the hessian tensor w/r/t the input coordinates
+    RVec<RMatrix> B; B.reserve(Get_n_layers()-2);
+    RVec<double> X_l   [Get_n_layers()-2]; 
+    RVec<double> Y_l_d [Get_n_layers()-2]; 
+    RVec<double> Y_l_dd[Get_n_layers()-2]; 
+    
+    for (int l=0; l<Get_n_layers()-2; l++) {
+        X_l[l].reserve(fLayer_size[l]); 
+        Y_l_d[l].reserve(fLayer_size[l+1]); 
+        Y_l_dd[l].reserve(fLayer_size[l+1]); 
+    }
+
+    X_l[0] = X; 
+
+    //initialize the first b-matrix
+    RVec<double> B_0_data; B_0_data.reserve(fLayer_size[1] * fLayer_size[0]); 
+    for (int j=0; j<fLayer_size[1]; j++) 
+        for (int k=0; k<fLayer_size[0]; k++) B_0_data.push_back( fWeights[0][ j*(fLayer_size[0]+1) + (k+1) ] ); 
+
+    B.emplace_back(fLayer_size[1], fLayer_size[0], std::move(B_0_data) ); 
+
+    for (int l=0; l<Get_n_layers()-2; l++) {
+
+        const auto& weights      = fWeights[l];
+        const auto& weights_next = fWeights[l+1]; 
+
+        auto& input = X_l[l]; 
+        RVec<double> output(fLayer_size[l+1], 0.);
+        
+        auto& output_deriv1 = Y_l_d[l]; 
+        auto& output_deriv2 = Y_l_dd[l]; 
+
+        //iterate over all rows (elements of the output vector)
+        int i_elem=0; 
+        for (int j=0; j<fLayer_size[l+1]; j++) {
+
+            //add the constant (which is the last element in each column of the 'weight matrix')
+            output.at(j) += weights[i_elem++];
+
+            //iterate through all the columns (input vector elements + a constant )
+            for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k];  
+            
+            //compute the derivatives w/r/t y
+            output_deriv1.push_back( Activation_fcn_deriv( output[j] )); 
+            output_deriv2.push_back( Activation_fcn_deriv2( output[j] )); 
+        }
+
+        if (l>=Get_n_layers()-3) break; 
+
+        //if we're going to continue this loop, then continue: 
+        X_l[l+1] = Activation_fcn(output); 
+
+        RVec<double> A_data; A_data.reserve(fLayer_size[l+1] * fLayer_size[l]); 
+        for (int j=0; j<fLayer_size[l+1]; j++) 
+            for (int k=0; k<fLayer_size[l]; k++) 
+                A_data.push_back( weights_next[ j*(fLayer_size[l]+1) + (k+1) ] * output_deriv1[k] ); 
+        
+        RMatrix A(fLayer_size[l+1], fLayer_size[l], std::move(A_data)); 
+
+        auto& Bl = B.back(); 
+
+        B.push_back( std::move(A * Bl) ); 
+    }
+
+    //create the 'G' matrix
+    int last = Get_n_layers()-1; 
+    RVec<double> G_data; G_data.reserve(fLayer_size[last] * fLayer_size[last-1]); 
+    for (int j=0; j<fLayer_size[last]; j++) 
+        for (int k=0; k<fLayer_size[last-1]; k++) 
+            G_data.push_back( fWeights.back()[ j*(fLayer_size[last-1]+1) + (k+1) ] ); 
+    
+    RMatrix G(fLayer_size[last], fLayer_size[last-1], std::move(G_data));
+
+    //now, actually compute the hessian matrix. 
+    for (int l=Get_n_layers()-3; l>=0; l--) {
+
+        for (int i=0; i<Get_DoF_out(); i++) {
+            for (int j=0; j<Get_DoF_in(); j++) {
+                for (int k=j; k<Get_DoF_in(); k++) { 
+                    
+                    double val = 0.; 
+                    for (int m=0; m<fLayer_size[l+1]; m++) val += G.get(i,m) * Y_l_dd[l][m] * B[l].get(m,j) * B[l].get(m,k); 
+                    H.at(i, j, k) += val;  
+                }
+            }
+        }
+        //stop here if we've reached the first layer. 
+        if (l==0) break; 
+
+        //update the 'G' matrix
+        RVec<double> A_data; A_data.reserve(fLayer_size[l+1] * fLayer_size[l]); 
+        for (int j=0; j<fLayer_size[l+1]; j++) 
+            for (int k=0; k<fLayer_size[l]; k++) 
+                A_data.push_back( Y_l_d[l][j] * fWeights[l][ j*(fLayer_size[l]+1) + (k+1) ] ); 
+        
+        RMatrix A(fLayer_size[l+1], fLayer_size[l], std::move(A_data)); 
+
+        G = G * A; 
+    }
+    
+    //we only computed the upper-diagonal of the Hessain in the j-k indices. therefore, let's fill the rest. 
+    //we did this to same time, as it is symmetric w/r/t k <-> j swapping. 
+    for (int i=0; i<Get_DoF_out(); i++) 
+        for (int j=1; j<Get_DoF_in(); j++) 
+            for (int k=0; k<j; k++) H.get(i, j, k) = H.get(i, k, j); 
+
+    return H; 
 }
 //__________________________________________________________________________________________________________________________________
 MultiLayerPerceptron* MultiLayerPerceptron::Concantenate(MultiLayerPerceptron *mlp1, MultiLayerPerceptron *mlp2) 
