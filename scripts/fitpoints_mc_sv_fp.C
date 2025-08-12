@@ -133,24 +133,22 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
 
     auto df_error = error_nodes.at(error_nodes.size()-1); 
 
+    auto h_x    = df_error.Histo1D({"h_x",    "Error of x_fp;mm", 200, -5, 5}, "error_x_fp"); 
+    auto h_y    = df_error.Histo1D({"h_y",    "Error of y_fp;mm", 200, -5, 5}, "error_y_fp"); 
+    auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_fp;mrad", 200, -5, 5}, "error_dxdz_fp"); 
+    auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_fp;mrad", 200, -5, 5}, "error_dydz_fp"); 
+    
+
     char b_c_title[120]; 
     sprintf(b_c_title, "Errors of different coords: %s", path_outfile.data()); 
     auto c = new TCanvas("c", b_c_title, 1200, 800); 
 
     c->Divide(2,2, 0.005,0.005); 
     
-    c->cd(1); 
-    auto h_x    = df_error.Histo1D({"h_x",    "Error of x_fp;mm", 200, -10, 10}, "error_x_fp"); 
-    h_x->DrawCopy(); 
-    c->cd(2); 
-    auto h_y    = df_error.Histo1D({"h_y",    "Error of y_fp;mm", 200, -10, 10}, "error_y_fp"); 
-    h_y->DrawCopy(); 
-    c->cd(3); 
-    auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_fp;mrad", 200, -2, 2}, "error_dxdz_fp"); 
-    h_dxdz->DrawCopy(); 
-    c->cd(4); 
-    auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_fp;mrad", 200, -2, 2}, "error_dydz_fp"); 
-    h_dydz->DrawCopy(); 
+    c->cd(1); h_x->DrawCopy(); 
+    c->cd(2); h_y->DrawCopy(); 
+    c->cd(3); h_dxdz->DrawCopy(); 
+    c->cd(4); h_dydz->DrawCopy(); 
 
 
     //delete our poly models
