@@ -195,10 +195,10 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
 
     auto df_error = error_nodes.back(); 
 
-    auto h_x    = df_error.Histo1D({"h_x", "Error of x_sv;mm", 200, -10, 10}, "error_x_sv"); 
-    auto h_y    = df_error.Histo1D({"h_y", "Error of y_sv;mm", 200, -10, 10}, "error_y_sv"); 
-    auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_sv;mrad", 200, -2, 2}, "error_dxdz_sv"); 
-    auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_sv;mrad", 200, -2, 2}, "error_dydz_sv"); 
+    auto h_x    = df_error.Histo1D({"h_x", "Error of x_sv;mm",         200, -5, 5}, "error_x_sv"); 
+    auto h_y    = df_error.Histo1D({"h_y", "Error of y_sv;mm",         200, -5, 5}, "error_y_sv"); 
+    auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_sv;mrad", 200, -5, 5}, "error_dxdz_sv"); 
+    auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_sv;mrad", 200, -5, 5}, "error_dydz_sv"); 
     
     auto h_xy_sieve = df_error.Histo2D<double>({"h_xy_sieve", "Reconstructed sieve-coords;x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
     
@@ -209,14 +209,10 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
 
     c->Divide(2,2, 0.005,0.005); 
     
-    c->cd(1); 
-    h_x->DrawCopy(); 
-    c->cd(2); 
-    h_y->DrawCopy(); 
-    c->cd(3); 
-    h_dxdz->DrawCopy(); 
-    c->cd(4); 
-    h_dydz->DrawCopy(); 
+    c->cd(1); h_x->DrawCopy(); 
+    c->cd(2); h_y->DrawCopy(); 
+    c->cd(3); h_dxdz->DrawCopy(); 
+    c->cd(4); h_dydz->DrawCopy(); 
 
 
     new TCanvas("c2", b_c_title); 
