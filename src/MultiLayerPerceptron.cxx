@@ -631,7 +631,7 @@ MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const
     
     //compute the hessian tensor w/r/t the input coordinates
     RVec<RMatrix> B; B.reserve(Get_n_layers()-2);
-    RVec<double> X_l   [Get_n_layers()-2]; 
+    RVec<double> X_l[Get_n_layers()-2]; 
     RVec<double> Y_l_d [Get_n_layers()-2]; 
     RVec<double> Y_l_dd[Get_n_layers()-2]; 
     
@@ -648,12 +648,11 @@ MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const
     for (int j=0; j<fLayer_size[1]; j++) 
         for (int k=0; k<fLayer_size[0]; k++) B_0_data.push_back( fWeights[0][ j*(fLayer_size[0]+1) + (k+1) ] ); 
 
-    B.emplace_back(fLayer_size[1], fLayer_size[0], std::move(B_0_data) ); 
+    B.emplace_back(fLayer_size[1], fLayer_size[0], std::move(B_0_data)); 
 
     for (int l=0; l<Get_n_layers()-2; l++) {
 
-        const auto& weights      = fWeights[l];
-        const auto& weights_next = fWeights[l+1]; 
+        const auto& weights = fWeights[l];
 
         auto& input = X_l[l]; 
         RVec<double> output(fLayer_size[l+1], 0.);
@@ -666,7 +665,7 @@ MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const
         for (int j=0; j<fLayer_size[l+1]; j++) {
 
             //add the constant (which is the last element in each column of the 'weight matrix')
-            output.at(j) += weights[i_elem++];
+            output[j] += weights[i_elem++];
 
             //iterate through all the columns (input vector elements + a constant )
             for (int k=0; k<fLayer_size[l]; k++) output[j] += weights[i_elem++] * input[k];  
@@ -681,14 +680,14 @@ MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const
         //if we're going to continue this loop, then continue: 
         X_l[l+1] = Activation_fcn(output); 
 
+        const auto& weights_next = fWeights[l+1]; 
+
         RVec<double> A_data; A_data.reserve(fLayer_size[l+2] * fLayer_size[l+1]); 
         for (int j=0; j<fLayer_size[l+2]; j++) 
             for (int k=0; k<fLayer_size[l+1]; k++) 
                 A_data.push_back( weights_next[ j*(fLayer_size[l+1]+1) + (k+1) ] * output_deriv1[k] ); 
         
         RMatrix A(fLayer_size[l+2], fLayer_size[l+1], std::move(A_data)); 
-
-        //printf("A size: %ix%i, B size: %ix%i\n", A.GetNRows(), A.GetNCols(), B.back().GetNRows(), B.back().GetNCols()); 
 
         auto& Bl = B.back(); 
 
@@ -700,7 +699,7 @@ MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const
     RVec<double> G_data; G_data.reserve(fLayer_size[last] * fLayer_size[last-1]); 
     for (int j=0; j<fLayer_size[last]; j++) 
         for (int k=0; k<fLayer_size[last-1]; k++) 
-            G_data.push_back( fWeights.back()[ j*(fLayer_size[last-1]+1) + (k+1) ] ); 
+            G_data.push_back( fWeights[last-1][ j*(fLayer_size[last-1]+1) + (k+1) ] ); 
     
     RMatrix G(fLayer_size[last], fLayer_size[last-1], std::move(G_data));
 
@@ -711,9 +710,8 @@ MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const
             for (int j=0; j<Get_DoF_in(); j++) {
                 for (int k=j; k<Get_DoF_in(); k++) { 
                     
-                    double val = 0.; 
-                    for (int m=0; m<fLayer_size[l+1]; m++) val += G.get(i,m) * Y_l_dd[l][m] * B[l].get(m,j) * B[l].get(m,k); 
-                    H.at(i, j, k) += val;  
+                    double& elem = H.get(i,j,k); 
+                    for (int m=0; m<fLayer_size[l+1]; m++) elem += G.get(i,m) * Y_l_dd[l][m] * B[l].get(m,j) * B[l].get(m,k);  
                 }
             }
         }
