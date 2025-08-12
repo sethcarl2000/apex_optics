@@ -546,10 +546,10 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
     }
 
     //first, get the 'Y' vectors for each layer
-    RVec<double> X_l[Get_n_layers()-1]; 
+    RVec<double> X_l[Get_n_layers()-2]; 
     
     X_l[0] = X; 
-    for (int l=1; l<Get_n_layers()-1; l++) { 
+    for (int l=1; l<Get_n_layers()-2; l++) { 
         
         //initialize the layer buffers
         X_l[l].reserve(fLayer_size[l]); //
@@ -589,22 +589,24 @@ RMatrix MultiLayerPerceptron::Jacobian(const RVec<double>& X) const
             output_deriv.push_back( Activation_fcn_deriv(output[j]) ); 
         }
 
-        X_l[l+1] = Activation_fcn( output ); 
-
         RVec<double> J_next_data; J_next_data.reserve( fLayer_size[l+2] * fLayer_size[l+1] ); 
 
         //initialize the 'first' layer. we will recursivley perform the matrix multiplication as we go. 
         for (int j=0; j<fLayer_size[l+2]; j++) {
             for (int k=0; k<fLayer_size[l+1]; k++) {
-                J_next_data.push_back( weights_next[ j*(fLayer_size[l+2]+1) + (k+1) ] * output_deriv[k] ); 
+                J_next_data.push_back( weights_next[ j*(fLayer_size[l+1]+1) + (k+1) ] * output_deriv[k] ); 
             }
         }
         RMatrix J_next(fLayer_size[l+2], fLayer_size[l+1], std::move(J_next_data)); 
 
         J = J_next * J;  
+
+        if (l>=Get_n_layers()-3) break; 
+
+        X_l[l+1] = Activation_fcn( output ); 
     }
 
-    return J; 
+    return J;  
 }
 //__________________________________________________________________________________________________________________________________
 MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const RVec<double>& X) const 
@@ -798,7 +800,7 @@ int MultiLayerPerceptron::Iterate_to_root_gd(   RVec<double>& X,
         RVec<double> ddX(Get_DoF_in(), 0.); 
 
         double error=0.; for (double& x : dZ) error += x*x; 
-        printf(" - it %3i error: % .4e\n", i_it, sqrt(error)); 
+        printf(" - it %3i error: % 6.4f\n", i_it, 1e3*sqrt(error)); 
 
         RMatrix J = std::move(Jacobian(X)); 
 
@@ -816,7 +818,8 @@ int MultiLayerPerceptron::Iterate_to_root_gd(   RVec<double>& X,
 //_________________________________________________________________________________________________________________________________
 int MultiLayerPerceptron::Iterate_to_root(  RVec<double>& X, 
                                             const RVec<double>& Z, 
-                                            const int n_iterations ) const 
+                                            const int n_iterations, 
+                                            const double eta ) const 
 {           
     if ( (int)X.size() != Get_DoF_in() || (int)Z.size() != Get_DoF_out() ) {
         ostringstream oss; 
@@ -864,7 +867,7 @@ int MultiLayerPerceptron::Iterate_to_root(  RVec<double>& X,
         if (dX.size() != Get_DoF_in())   return i_it; 
         for (double& x : dX) if (x != x) return i_it; 
         
-        X += -dX; 
+        X += - eta * dX; 
     } 
 
     return n_iterations; 
