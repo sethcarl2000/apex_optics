@@ -119,7 +119,15 @@ public:
     //Compute the hessian w/r/t each of the inputs.     
     HessianTensor_t Hessian_tensor(const ROOT::RVec<double>& X) const; 
 
-    int Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, const int n_iterations) const; 
+    int Iterate_to_root_gd( ROOT::RVec<double>& X, 
+                            const ROOT::RVec<double>& Z, 
+                            const int n_iterations, 
+                            const double eta=1e-6, 
+                            const double momentum=0. ) const; 
+
+    int Iterate_to_root( ROOT::RVec<double>& X, 
+                         const ROOT::RVec<double>& Z, 
+                         const int n_iterations ) const; 
 
     //Print Network structure and all weights
     void Print() const; 

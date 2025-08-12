@@ -774,6 +774,46 @@ MultiLayerPerceptron* MultiLayerPerceptron::Concantenate(MultiLayerPerceptron *m
     return mlp_out; 
 }
 //__________________________________________________________________________________________________________________________________
+int MultiLayerPerceptron::Iterate_to_root_gd(   RVec<double>& X, 
+                                                const RVec<double>& Z, 
+                                                const int n_iterations, 
+                                                const double eta, 
+                                                const double momentum ) const 
+{
+    if ( (int)X.size() != Get_DoF_in() || (int)Z.size() != Get_DoF_out() ) {
+        ostringstream oss; 
+        oss << "in <MultiLayerPerceptron::Iterate_to_root>: input/output vector sizes (" << X.size() << "/" << Z.size() << "). "
+        "MLP input/output size is (" << Get_DoF_in() << "/" << Get_DoF_out() << ").";
+        //throw std::logic_error(oss.str());   
+        return -1; 
+    }
+
+    printf(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+
+    RVec<double> dX(Get_DoF_in(), 0.); 
+
+    for (int i_it=0; i_it<n_iterations; i_it++) {
+
+        RVec<double> dZ{ Eval(X) - Z }; 
+        RVec<double> ddX(Get_DoF_in(), 0.); 
+
+        double error=0.; for (double& x : dZ) error += x*x; 
+        printf(" - it %3i error: % .4e\n", i_it, sqrt(error)); 
+
+        RMatrix J = std::move(Jacobian(X)); 
+
+        RVec<double> dX(Get_DoF_in(), 0.);
+
+
+        for (int j=0; j<Get_DoF_in(); j++)
+            for (int i=0; i<Get_DoF_out(); i++) ddX[j] += dZ[i] * J.get(i, j); 
+        
+        dX = momentum * dX + eta * ddX; 
+        X += - dX; 
+    }
+    return n_iterations; 
+}
+//_________________________________________________________________________________________________________________________________
 int MultiLayerPerceptron::Iterate_to_root(  RVec<double>& X, 
                                             const RVec<double>& Z, 
                                             const int n_iterations ) const 
