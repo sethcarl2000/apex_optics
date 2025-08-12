@@ -1,4 +1,6 @@
 #include "TROOT.h"
+#include <cstdio> 
+
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -7,7 +9,7 @@ struct Track_t {
     double x,y,dxdz,dydz,dpp; 
 
     //implicit conversion from this type to RVec<double> 
-    operator RVec<double>() const { return RVec<double>{x,y,dxdz,dydz,dpp}; }  
+    explicit operator RVec<double>() const { return {x,y,dxdz,dydz,dpp}; }  
     
     Track_t operator-(const Track_t& rhs) const {   
         return Track_t{
@@ -247,47 +249,27 @@ int newton_iteration_test(  const char* path_infile="",
 
     //now that we have created the polys, we can create the NPolyArray object
     
-    //this file has elements for all the polynomials which map from the SIEVE to the Q1
-    const char* path_db_sv_q1 = "data/csv/db_prod_sv_q1_fp_L_2-2-ord.dat"; 
-
-    //this file has elements for all the polynomials which map from the Q1 to the FP 
-    const char* path_db_q1_fp = "data/csv/db_prod_sv_q1_fp_L_2-3-ord.dat"; 
-    
     //This is the poly-array which gives us a 'starting point' to use
-    const char* path_db_fp_sv = "data/csv/db_center_fp_sv_L_3ord.dat"; 
+    //const char* path_db_fp_sv = "data/csv/db_center_fp_sv_L_3ord.dat"; 
+    const char* path_db_fp_sv = "data/csv/poly_center_fp_sv_L_3ord.dat"; 
     NPolyArray poly_array_fp_sv = Parse_NPolyArray_from_file(path_db_fp_sv, branches_sv, DoF_fp); 
     
-    NPolyArray* parr_forward = &poly_array_fp_sv; 
-
-    //this is the poly-array which maps directly from the sieve to the focal plane. 
-    const char* path_db_sv_fp = "data/csv/db_prod_sv_fp_L_3ord.dat"; 
-    NPolyArray poly_array_sv_fp = Parse_NPolyArray_from_file(path_db_sv_fp, branches_fp, DoF_sv);
-    
-
-    NPolyArray poly_array_sv_q1 = Parse_NPolyArray_from_file(path_db_sv_q1, branches_q1, DoF_sv);
-    NPolyArray poly_array_q1_fp = Parse_NPolyArray_from_file(path_db_q1_fp, branches_fp, DoF_sv);
-
-    
-    //if we 'nest' the models, we use the model which is the sv=>q1 model fed into the q1=>fp model. like: fp(q1(sv)). 
-    cout << " -- Nesting arrays..." << flush;  
-
-    //NPolyArray arr_model = NPolyArray::Nest( poly_array_q1_fp, poly_array_sv_q1 );
-    NPolyArray arr_model = poly_array_sv_fp; 
+    NPolyArray* parr_forward = &poly_array_fp_sv;   
+   
+    //if we use this model, we just use the model that maps directly from the SIEVE to the FOCAL PLANE
+    NPolyArray poly_array_sv_fp = Parse_NPolyArray_from_file(path_dbfile, branches_fp, DoF_sv);
+    NPolyArray *parr = &poly_array_sv_fp; 
 
     //count how many elements there are in this monstrosity
     cout << "done.\n"; 
     int n_elems_total(0); 
-    for (int i=0; i<arr_model.Get_DoF_out(); i++) {
-        int n_elems = arr_model.Get_poly(i)->Get_nElems(); 
-        printf(" > poly %i - n_elems, maxPower: %5i, %i\n", i, n_elems, arr_model.Get_poly(i)->Get_maxPower());
+    for (int i=0; i<parr->Get_DoF_out(); i++) {
+        int n_elems = parr->Get_poly(i)->Get_nElems(); 
+        printf(" > poly %i - n_elems, maxPower: %5i, %i\n", i, n_elems, parr->Get_poly(i)->Get_maxPower());
         n_elems_total += n_elems;  
     }
 
     printf(" -- total number of elements: %i\n", n_elems_total); cout << flush; 
-
-
-    //if we use this model, we just use the model that maps directly from the SIEVE to the FOCAL PLANE
-    NPolyArray *parr = &arr_model; 
 
 
     //check that each poly has at least some elements (otherwise, there has been some sort of file-open error)
@@ -300,20 +282,10 @@ int newton_iteration_test(  const char* path_infile="",
 
     cout << " -- NPolyArray size: " << parr->Get_DoF_in() << " x " << parr->Get_DoF_out() << endl; 
 
-
-    const int n_iterations = 7; 
-
-    auto rv_dot = [](const RVec<double>& u, const RVec<double>& v) {
-        double ret(0.); for (const double& x : u * v) ret += x; return ret; 
-    };
-    
+   
     auto rv_mag = [](const RVec<double>& u) { 
         double ret(0.); for (const double& x : u * u) ret += x; return sqrt(ret); 
     };
-
-    auto rv_unit = [&rv_mag](const RVec<double>& u) {
-        return u / rv_mag(u); 
-    }; 
 
     //number of microns to compute vdc-smearing by
     double vdc_smearing_um = 0.; 
@@ -391,7 +363,7 @@ int newton_iteration_test(  const char* path_infile="",
         } 
 
         ///get 'backward' trajectories
-        Xsv_rv = Track_t{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp }; 
+        Xsv_rv = RVec<double>{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp }; 
         RVec<Track_t> back_traj; back_traj.reserve(n_trajectories); 
         
         i_traj=0;
@@ -441,11 +413,34 @@ int newton_iteration_test(  const char* path_infile="",
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
 #endif 
 
-        .Define("Xsv_first_guess", [parr_forward, parr](Track_t& Xfp)
+        .Define("Xsv_fwd_model", [parr_forward](Track_t& Xfp)
         {
-            auto Xsv = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});  
-            
-            parr->Iterate_to_root(Xsv, {Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}, 8);
+            auto Xsv = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});
+            return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3], .dpp=Xsv[4] };  
+        }, {"Xfp"})
+
+        .Define("Xfp_fwd_model_error", [parr](const Track_t& Xsv, const Track_t& Xfp_actual)
+        {
+            RVec<double> Xfp = parr->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp}) 
+                                - RVec<double>{Xfp_actual.x, Xfp_actual.y, Xfp_actual.dxdz, Xfp_actual.dydz};
+
+            return Track_t{ .x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3] }; 
+
+        }, {"Xsv_fwd_model", "Xfp"})
+
+        .Define("Xsv_first_guess", [parr](const Track_t& Xfp, const Track_t& Xsv_fwd_model)
+        {
+            RVec<double> Xfp_v{Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}; 
+            auto Xsv = (RVec<double>)Xsv_fwd_model; 
+
+            parr->Iterate_to_root(Xsv, Xfp_v, 8);
+
+            /*printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); 
+            for (int i=0; i<8; i++) {
+                double error=0.; for (const double& x : Xfp_v - parr->Eval(Xsv)) error += x*x; 
+                printf("it %4i error: %.4e\n", i, sqrt(error)); 
+                parr->Iterate_to_root(Xsv, Xfp_v, 1);
+            }*/
             
             return Track_t{
                 .x      = Xsv[0],
@@ -455,7 +450,7 @@ int newton_iteration_test(  const char* path_infile="",
                 .dpp    = Xsv[4]
             }; 
 
-        }, {"Xfp"})
+        }, {"Xfp", "Xsv_fwd_model"})
 
         .Define("Xsv_trajectories",     [&Find_trajectories](const Track_t& Xfp, const Track_t& Xsv)
         {
@@ -600,12 +595,21 @@ int newton_iteration_test(  const char* path_infile="",
     }); 
 #endif 
 
+    add_branch_from_Track_t( output_nodes, "Xfp_fwd_model_error", {
+        {"err_fwd_x_fp",      &Track_t::x},
+        {"err_fwd_y_fp",      &Track_t::y},
+        {"err_fwd_dxdz_fp",   &Track_t::dxdz},
+        {"err_fwd_dydz_fp",   &Track_t::dydz}
+    });
+
+
     auto df_output = output_nodes.back(); 
 
     //book the histograms we need. 
     char buff_hxy_title[200];  
     sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
     
+    //histograms to measure sieve-coordinate errors
     auto h_xy_sieve         = df_output
         .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (best fit);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
 
@@ -618,6 +622,12 @@ int newton_iteration_test(  const char* path_infile="",
     auto h_n_trajectories   = df_output
         .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5},       "n_trajectories"); 
 
+    //histograms to measure the error of the forward-model's error (when projected back onto fp-coordinates)
+    auto h_err_fwd_xfp      = df_output.Histo1D<double>({"h_errfwd_xfp",    ";x_{fp};",    250, -45e-3, 45e-3}, "err_fwd_x_fp"); 
+    auto h_err_fwd_yfp      = df_output.Histo1D<double>({"h_errfwd_yfp",    ";y_{fp};",    250, -45e-3, 45e-3}, "err_fwd_y_fp"); 
+    auto h_err_fwd_dxdzfp   = df_output.Histo1D<double>({"h_errfwd_dxdzfp", ";dxdz_{fp};", 250, -45e-3, 45e-3}, "err_fwd_dxdz_fp"); 
+    auto h_err_fwd_dydzfp   = df_output.Histo1D<double>({"h_errfwd_dydzfp", ";dydz_{fp};", 250, -45e-3, 45e-3}, "err_fwd_dydz_fp"); 
+    
 
     auto h_hcs_projection_yz = df_output 
         .Histo1D<double>({"h_z_proj_yz", "Error of Projection of track onto z_{HCS} (y-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_yz"); 
@@ -626,10 +636,10 @@ int newton_iteration_test(  const char* path_infile="",
         .Histo1D<double>({"h_z_proj_xz", "Error of Projection of track onto z_{HCS} (x-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_xz"); 
 
 #if MONTE_CARLO_DATA
-    auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_fp;mm", 200, -5, 5},      "err_x_sv"); 
-    auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_fp;mm", 200, -5, 5},      "err_y_sv"); 
-    auto h_dxdz = df_output.Histo1D<double>({"h_dxdz", "Error of dxdz_fp;mrad", 200, -5, 5}, "err_dxdz_sv"); 
-    auto h_dydz = df_output.Histo1D<double>({"h_dydz", "Error of dydz_fp;mrad", 200, -5, 5}, "err_dydz_sv"); 
+    auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_{sv};mm",      200, -5, 5}, "err_x_sv"); 
+    auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_{sv};mm",      200, -5, 5}, "err_y_sv"); 
+    auto h_dxdz = df_output.Histo1D<double>({"h_dxdz", "Error of dx/dz_{sv};mrad", 200, -5, 5}, "err_dxdz_sv"); 
+    auto h_dydz = df_output.Histo1D<double>({"h_dydz", "Error of dy/dz_{sv};mrad", 200, -5, 5}, "err_dydz_sv"); 
 #endif 
 
     //this histogram will be of the actual sieve-coords
@@ -638,11 +648,21 @@ int newton_iteration_test(  const char* path_infile="",
     
     gStyle->SetPalette(kSunset);
 
+    
+    auto cfe = new TCanvas("c_fwd_error", b_c_title, 1200, 800); 
+    cfe->Divide(2,2, 0.005,0.005); 
+    TStopwatch timer; 
+
+    cfe->cd(1); h_err_fwd_xfp   ->DrawCopy(); 
+    cfe->cd(2); h_err_fwd_yfp   ->DrawCopy(); 
+    cfe->cd(3); h_err_fwd_dxdzfp->DrawCopy(); 
+    cfe->cd(4); h_err_fwd_dydzfp->DrawCopy(); 
+
+
     auto cc = new TCanvas("c4", b_c_title, 1200, 500);
     cc->Divide(2,1, 0.01,0.01); 
     
-    TStopwatch timer; 
-
+    
     cc->cd(1); h_hcs_projection_yz->DrawCopy(); 
     cc->cd(2); h_hcs_projection_xz->DrawCopy(); 
     
@@ -664,8 +684,6 @@ int newton_iteration_test(  const char* path_infile="",
     
     new TCanvas("c2", b_c_title); 
     h_xy_sieve->DrawCopy("col2"); 
-
-    return 0; 
 
 #if MONTE_CARLO_DATA
     auto c = new TCanvas("c1", b_c_title, 1200, 800); 
