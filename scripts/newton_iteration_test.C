@@ -419,6 +419,15 @@ int newton_iteration_test(  const char* path_infile="",
             return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3], .dpp=Xsv[4] };  
         }, {"Xfp"})
 
+        .Define("Xfp_fwd_model", [parr](const Track_t& Xsv, const Track_t& Xfp_actual)
+        {
+            RVec<double> Xfp = parr->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp});
+
+            return Track_t{ .x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3] }; 
+
+        }, {"Xsv_fwd_model", "Xfp"})
+
+
         .Define("Xfp_fwd_model_error", [parr](const Track_t& Xsv, const Track_t& Xfp_actual)
         {
             RVec<double> Xfp = parr->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp}) 
@@ -435,13 +444,6 @@ int newton_iteration_test(  const char* path_infile="",
 
             parr->Iterate_to_root(Xsv, Xfp_v, 8);
 
-            /*printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); 
-            for (int i=0; i<8; i++) {
-                double error=0.; for (const double& x : Xfp_v - parr->Eval(Xsv)) error += x*x; 
-                printf("it %4i error: %.4e\n", i, sqrt(error)); 
-                parr->Iterate_to_root(Xsv, Xfp_v, 1);
-            }*/
-            
             return Track_t{
                 .x      = Xsv[0],
                 .y      = Xsv[1],
@@ -602,6 +604,13 @@ int newton_iteration_test(  const char* path_infile="",
         {"err_fwd_dydz_fp",   &Track_t::dydz}
     });
 
+    add_branch_from_Track_t( output_nodes, "Xfp_fwd_model", {
+        {"fwd_x_fp",      &Track_t::x},
+        {"fwd_y_fp",      &Track_t::y},
+        {"fwd_dxdz_fp",   &Track_t::dxdz},
+        {"fwd_dydz_fp",   &Track_t::dydz}
+    });
+
 
     auto df_output = output_nodes.back(); 
 
@@ -623,10 +632,10 @@ int newton_iteration_test(  const char* path_infile="",
         .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5},       "n_trajectories"); 
 
     //histograms to measure the error of the forward-model's error (when projected back onto fp-coordinates)
-    auto h_err_fwd_xfp      = df_output.Histo1D<double>({"h_errfwd_xfp",    ";x_{fp};",    250, -45e-3, 45e-3}, "err_fwd_x_fp"); 
-    auto h_err_fwd_yfp      = df_output.Histo1D<double>({"h_errfwd_yfp",    ";y_{fp};",    250, -45e-3, 45e-3}, "err_fwd_y_fp"); 
-    auto h_err_fwd_dxdzfp   = df_output.Histo1D<double>({"h_errfwd_dxdzfp", ";dxdz_{fp};", 250, -45e-3, 45e-3}, "err_fwd_dxdz_fp"); 
-    auto h_err_fwd_dydzfp   = df_output.Histo1D<double>({"h_errfwd_dydzfp", ";dydz_{fp};", 250, -45e-3, 45e-3}, "err_fwd_dydz_fp"); 
+    auto h_err_fwd_xfp      = df_output.Histo2D<double>({"h_errfwd_xfp",    ";x_{fp};x_{fp} fwd-model",    200, -1, -1, 200, -1, -1},    "x_fp",    "fwd_x_fp"); 
+    auto h_err_fwd_yfp      = df_output.Histo2D<double>({"h_errfwd_yfp",    ";y_{fp};y_{fp} fwd-model",    200, -1, -1, 200, -1, -1},    "y_fp",    "fwd_y_fp"); 
+    auto h_err_fwd_dxdzfp   = df_output.Histo2D<double>({"h_errfwd_dxdzfp", ";dxdz_{fp};dxdz_{fp} fwd-model", 200, -1, -1, 200, -1, -1}, "dxdz_fp", "fwd_dxdz_fp"); 
+    auto h_err_fwd_dydzfp   = df_output.Histo2D<double>({"h_errfwd_dydzfp", ";dydz_{fp};dydz_{fp} fwd-model", 200, -1, -1, 200, -1, -1}, "dydz_fp", "fwd_dydz_fp"); 
     
 
     auto h_hcs_projection_yz = df_output 
@@ -653,10 +662,10 @@ int newton_iteration_test(  const char* path_infile="",
     cfe->Divide(2,2, 0.005,0.005); 
     TStopwatch timer; 
 
-    cfe->cd(1); h_err_fwd_xfp   ->DrawCopy(); 
-    cfe->cd(2); h_err_fwd_yfp   ->DrawCopy(); 
-    cfe->cd(3); h_err_fwd_dxdzfp->DrawCopy(); 
-    cfe->cd(4); h_err_fwd_dydzfp->DrawCopy(); 
+    cfe->cd(1); h_err_fwd_xfp   ->DrawCopy("col"); 
+    cfe->cd(2); h_err_fwd_yfp   ->DrawCopy("col"); 
+    cfe->cd(3); h_err_fwd_dxdzfp->DrawCopy("col"); 
+    cfe->cd(4); h_err_fwd_dydzfp->DrawCopy("col"); 
 
 
     auto cc = new TCanvas("c4", b_c_title, 1200, 500);
