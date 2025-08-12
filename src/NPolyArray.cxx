@@ -201,16 +201,15 @@ int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>&
         return -1; 
     }
 
-    int i_it=0; 
-    for (; i_it<n_iterations; i_it++) {
+    for (int i_it=0; i_it<n_iterations; i_it++) {
 
         //Get the difference between the model's evaluation of Xfp, and the actual value. 
         RVec<double> dZ{ Eval(X) - Z }; 
 
-        RMatrix       dGi_dXj     = Jacobian(X); 
+        RMatrix       dGi_dXj     = std::move(Jacobian(X)); 
 
         //Get the hessian matrix, store its elements in a vector
-        RVec<RMatrix> dGi_dXj_dXk = HessianTensor(X); 
+        RVec<RMatrix> dGi_dXj_dXk = std::move(HessianTensor(X)); 
 
         //Compute the 'F' vector and the 'J' matrix
         RMatrix J(Get_DoF_in(), Get_DoF_in(), 0.); J.Set_report_singular(false); 
@@ -235,13 +234,13 @@ int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>&
         auto dX = J.Solve( F ); 
 
         //check for NaN in 'adjustment' vector
-        for (double& x : dX) if (x != x) return i_it; 
         if (dX.size() != Get_DoF_in())   return i_it; 
-
+        for (double& x : dX) if (x != x) return i_it; 
+        
         X += -dX; 
     }
     
-    return i_it; 
+    return n_iterations; 
 }
 
 //______________________________________________________________________________________________
