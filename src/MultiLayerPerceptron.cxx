@@ -268,7 +268,7 @@ double& MultiLayerPerceptron::HessianTensor_t::at(int i, int j, int k)
     return data[ i*(DoF_out * DoF_in) + j*(DoF_in) + k ]; 
 }
 //__________________________________________________________________________________________________________________________________
-inline double& MultiLayerPerceptron::HessianTensor_t::get(int i, int j, int k) 
+double& MultiLayerPerceptron::HessianTensor_t::get(int i, int j, int k) 
 {
     return data[ i*(DoF_out * DoF_in) + j*(DoF_in) + k ];
 }
@@ -679,12 +679,14 @@ MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const
         //if we're going to continue this loop, then continue: 
         X_l[l+1] = Activation_fcn(output); 
 
-        RVec<double> A_data; A_data.reserve(fLayer_size[l+1] * fLayer_size[l]); 
-        for (int j=0; j<fLayer_size[l+1]; j++) 
-            for (int k=0; k<fLayer_size[l]; k++) 
-                A_data.push_back( weights_next[ j*(fLayer_size[l]+1) + (k+1) ] * output_deriv1[k] ); 
+        RVec<double> A_data; A_data.reserve(fLayer_size[l+2] * fLayer_size[l+1]); 
+        for (int j=0; j<fLayer_size[l+2]; j++) 
+            for (int k=0; k<fLayer_size[l+1]; k++) 
+                A_data.push_back( weights_next[ j*(fLayer_size[l+1]+1) + (k+1) ] * output_deriv1[k] ); 
         
-        RMatrix A(fLayer_size[l+1], fLayer_size[l], std::move(A_data)); 
+        RMatrix A(fLayer_size[l+2], fLayer_size[l+1], std::move(A_data)); 
+
+        //printf("A size: %ix%i, B size: %ix%i\n", A.GetNRows(), A.GetNCols(), B.back().GetNRows(), B.back().GetNCols()); 
 
         auto& Bl = B.back(); 
 
@@ -723,6 +725,8 @@ MultiLayerPerceptron::HessianTensor_t MultiLayerPerceptron::Hessian_tensor(const
                 A_data.push_back( Y_l_d[l][j] * fWeights[l][ j*(fLayer_size[l]+1) + (k+1) ] ); 
         
         RMatrix A(fLayer_size[l+1], fLayer_size[l], std::move(A_data)); 
+
+        //printf("G size: %ix%i, A size: %ix%i\n", G.GetNRows(), G.GetNCols(), A.GetNRows(), A.GetNCols()); 
 
         G = G * A; 
     }
@@ -770,6 +774,61 @@ MultiLayerPerceptron* MultiLayerPerceptron::Concantenate(MultiLayerPerceptron *m
     return mlp_out; 
 }
 //__________________________________________________________________________________________________________________________________
+int MultiLayerPerceptron::Iterate_to_root(  RVec<double>& X, 
+                                            const RVec<double>& Z, 
+                                            const int n_iterations ) const 
+{           
+    if ( (int)X.size() != Get_DoF_in() || (int)Z.size() != Get_DoF_out() ) {
+        ostringstream oss; 
+        oss << "in <MultiLayerPerceptron::Iterate_to_root>: input/output vector sizes (" << X.size() << "/" << Z.size() << "). "
+        "MLP input/output size is (" << Get_DoF_in() << "/" << Get_DoF_out() << ").";
+        //throw std::logic_error(oss.str());   
+        return -1; 
+    }
+
+    printf(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+
+    for (int i_it=0; i_it<n_iterations; i_it++) {
+
+        //Get the difference between the model's evaluation of Xfp, and the actual value. 
+        RVec<double> dZ{ Eval(X) - Z }; 
+            
+        double error=0.; for (double& x : dZ) error += x*x; 
+        printf(" - it %3i error: % .4e\n", i_it, sqrt(error)); 
+
+        RMatrix dGi_dXj = std::move(Jacobian(X)); 
+        //Get the hessian matrix, store its elements in a vector
+        MultiLayerPerceptron::HessianTensor_t dGi_dXj_dXk = std::move(Hessian_tensor(X)); 
+    
+        //Compute the 'F' vector and the 'J' matrix
+        RMatrix J(Get_DoF_in(), Get_DoF_in(), 0.); J.Set_report_singular(false); 
+        RVec<double> F(Get_DoF_in(), 0.); 
+    
+        for (int i=0; i<Get_DoF_out(); i++) {
+
+            for (int j=0; j<Get_DoF_in(); j++) {
+            
+                F[j] += dZ[i] * dGi_dXj.get(i,j);
+
+                for (int k=j; k<Get_DoF_in(); k++) 
+                    J.get(j,k) += (dGi_dXj.get(i,j) * dGi_dXj.get(i,k))   +   (dZ[i] * dGi_dXj_dXk.get(i,j,k)); 
+            }
+        }
+        
+        //Since 'J' is symmetric, we only filled the elements on or above the main diagonal. lets fill the rest:        
+        for (int j=1; j<Get_DoF_out(); j++) for (int k=0; k<j; k++) J.get(j,k) = J.get(k,j); 
+
+        auto dX = J.Solve( F ); 
+
+        //check for NaN in 'adjustment' vector
+        if (dX.size() != Get_DoF_in())   return i_it; 
+        for (double& x : dX) if (x != x) return i_it; 
+        
+        X += -dX; 
+    } 
+
+    return n_iterations; 
+};
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
 ClassImp(MultiLayerPerceptron); 

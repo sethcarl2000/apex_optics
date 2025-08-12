@@ -113,11 +113,13 @@ public:
         int DoF_out;
         int DoF_in;  
         double&  at(int i, int j, int k); 
-        inline double& get(int i, int j, int k);
+        double& get(int i, int j, int k);
     }; 
             
     //Compute the hessian w/r/t each of the inputs.     
     HessianTensor_t Hessian_tensor(const ROOT::RVec<double>& X) const; 
+
+    int Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, const int n_iterations) const; 
 
     //Print Network structure and all weights
     void Print() const; 
