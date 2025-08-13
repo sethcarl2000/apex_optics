@@ -122,12 +122,15 @@ public:
     int Iterate_to_root_gd( ROOT::RVec<double>& X, 
                             const ROOT::RVec<double>& Z, 
                             const int n_iterations, 
-                            const double eta=1e-6, 
+                            const double threshold=5e-3,  
+                            const double eta=1e-6,
                             const double momentum=0. ) const; 
 
     int Iterate_to_root( ROOT::RVec<double>& X, 
                          const ROOT::RVec<double>& Z, 
-                         const int n_iterations ) const; 
+                         const int n_iterations,
+                         const double threshold=-1., 
+                         const double eta=1. ) const; 
 
     //Print Network structure and all weights
     void Print() const; 

@@ -781,7 +781,8 @@ MultiLayerPerceptron* MultiLayerPerceptron::Concantenate(MultiLayerPerceptron *m
 //__________________________________________________________________________________________________________________________________
 int MultiLayerPerceptron::Iterate_to_root_gd(   RVec<double>& X, 
                                                 const RVec<double>& Z, 
-                                                const int n_iterations, 
+                                                const int n_iterations,
+                                                const double threshold,  
                                                 const double eta, 
                                                 const double momentum ) const 
 {
@@ -793,35 +794,43 @@ int MultiLayerPerceptron::Iterate_to_root_gd(   RVec<double>& X,
         return -1; 
     }
 
-    printf(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+    //printf(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
     RVec<double> dX(Get_DoF_in(), 0.); 
+    RVec<double> dZ{ Eval(X) - Z }; 
+    
+    double error=0.; for (const double& x : dZ) error += x*x; 
+    error = sqrt(error); 
+    
+    int i_it=0; 
+    while ( error > threshold && n_iterations > i_it++ ) {
 
-    for (int i_it=0; i_it<n_iterations; i_it++) {
-
-        RVec<double> dZ{ Eval(X) - Z }; 
         RVec<double> ddX(Get_DoF_in(), 0.); 
-
-        double error=0.; for (double& x : dZ) error += x*x; 
-        printf(" - it %3i error: % 6.4f\n", i_it, 1e3*sqrt(error)); 
 
         RMatrix J = std::move(Jacobian(X)); 
 
         RVec<double> dX(Get_DoF_in(), 0.);
-
 
         for (int j=0; j<Get_DoF_in(); j++)
             for (int i=0; i<Get_DoF_out(); i++) ddX[j] += dZ[i] * J.get(i, j); 
         
         dX = momentum * dX + eta * ddX; 
         X += - dX; 
+
+        dZ = Eval(X) - Z; 
+
+        error=0.; for (double& x : dZ) error += x*x; 
+        error = sqrt(error); 
+        //printf(" - it %5i error: % 6.4f\n", i_it, 1e3*error); 
     }
-    return n_iterations; 
+
+    return i_it; 
 }
 //_________________________________________________________________________________________________________________________________
 int MultiLayerPerceptron::Iterate_to_root(  RVec<double>& X, 
                                             const RVec<double>& Z, 
                                             const int n_iterations, 
+                                            const double threshold, 
                                             const double eta ) const 
 {           
     if ( (int)X.size() != Get_DoF_in() || (int)Z.size() != Get_DoF_out() ) {
@@ -832,15 +841,15 @@ int MultiLayerPerceptron::Iterate_to_root(  RVec<double>& X,
         return -1; 
     }
 
-    printf(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+    printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); 
 
-    for (int i_it=0; i_it<n_iterations; i_it++) {
-
-        //Get the difference between the model's evaluation of Xfp, and the actual value. 
-        RVec<double> dZ{ Eval(X) - Z }; 
-            
-        double error=0.; for (double& x : dZ) error += x*x; 
-        printf(" - it %3i error: % .4e\n", i_it, sqrt(error)); 
+    RVec<double> dZ{ Eval(X) - Z }; 
+    
+    double error=0.; for (const double& x : dZ) error += x*x; 
+    error = sqrt(error); 
+    
+    int i_it=0; 
+    while ( error > threshold && n_iterations > i_it++ ) {
 
         RMatrix dGi_dXj = std::move(Jacobian(X)); 
         //Get the hessian matrix, store its elements in a vector
@@ -870,11 +879,29 @@ int MultiLayerPerceptron::Iterate_to_root(  RVec<double>& X,
         if (dX.size() != Get_DoF_in())   return i_it; 
         for (double& x : dX) if (x != x) return i_it; 
         
-        X += - eta * dX; 
+        X += - dX; 
+
+        dZ = Eval(X) - Z; 
+        
+        error=0.; for (const double& x : dZ) error += x*x; 
+        error = sqrt(error); 
+        printf(" it %4i error % .4e\n", i_it, error); 
     } 
 
-    return n_iterations; 
+    return i_it; 
 };
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________________________
 ClassImp(MultiLayerPerceptron); 
