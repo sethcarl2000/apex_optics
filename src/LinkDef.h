@@ -10,5 +10,6 @@
 #pragma link C++ class NPolyArray+; 
 #pragma link C++ class MultiLayerPerceptron+; 
 #pragma link C++ struct MultiLayerPerceptron::WeightGradient_t+; 
+#pragma link C++ struct MultiLayerPerceptron::HessianTensor_t+; 
 
 #endif 
