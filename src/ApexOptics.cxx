@@ -402,6 +402,28 @@ int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_
     return poly->Get_nElems() - start_nElems;
 }    
 //__________________________________________________________________________________________________________________
+NPolyArray ApexOptics::Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names, const int DoF) 
+{
+    const char* const here = "ApexOptics::Parse_NPolyArray_from_file";
+
+    //parse all relevant polys from file
+    vector<NPoly> poly_vec; 
+
+    for (const string& str : output_names) {
+
+        NPoly poly(DoF); 
+
+        ApexOptics::Parse_NPoly_from_file(path_dbfile, str.data(), &poly); 
+
+        if (poly.Get_nElems()==0) {
+            fprintf(stderr, "Error in <%s>: Poly '%s' did not find have elements in file '%s'.\n", here, str.data(), path_dbfile);  
+        }
+
+        poly_vec.push_back(poly); 
+    }
+
+    return NPolyArray(poly_vec); 
+}  
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________

@@ -13,6 +13,7 @@
 #include "TROOT.h"
 #include <ROOT/RDataFrame.hxx>  
 #include "NPoly.h"
+#include "NPolyArray.h"
 #include "MultiLayerPerceptron.h"
 #include "TVector3.h"
 #include <vector>
@@ -39,7 +40,8 @@ namespace ApexOptics {
     // return code < 0 means that something has failed in the opening of the dbfile. 
     int Parse_NPoly_from_file(const char* path_dbfile, const char* poly_name, NPoly *poly);
     
-    
+    NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, std::vector<std::string> output_names, const int DoF); 
+
     //Given a MultiLayerPerceptron, create a dbifle output, so that it can be read later. 
     int Create_dbfile_from_mlp(const char* path_dbfile, const MultiLayerPerceptron* mlp); 
 
