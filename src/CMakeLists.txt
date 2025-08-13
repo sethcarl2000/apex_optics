@@ -47,3 +47,17 @@ root_generate_dictionary(G__ApexOptics ${headers} LINKDEF LinkDef.h)
 add_library(ApexOptics SHARED ${headers} ${sources} G__ApexOptics.cxx)
 target_include_directories(ApexOptics PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(ApexOptics PUBLIC ROOT::Core)
+
+#---------------------------------------------------------
+#   Add application executable
+add_executable(pick_sieveholes pick_sieveholes.cxx G__ApexOptics.cxx ${headers} ${sources})
+
+target_include_directories(pick_sieveholes PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${ROOT_INCLUDE_DIRS}"
+)
+
+target_link_libraries(pick_sieveholes PRIVATE
+    ${ROOT_LIBRARIES}
+    ApexOptics
+)
