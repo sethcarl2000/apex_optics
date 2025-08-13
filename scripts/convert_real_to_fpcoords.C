@@ -39,7 +39,14 @@ int convert_real_to_fpcoords(const bool is_RHRS, const char* path_infile, const 
     }
 
     nodes.back()
+
+        //perform the conversion from 'transport' coordinates (tra) to 'focal-plane' coordinates (fp)
+        .Redefine("dxdz_fp", [](double x_tra, double dxdz_tra){
+            return dxdz_tra - x_tra/6.; 
+        }, {"x_fp", "dxdz_fp"})
+
         .Define("position_vtx", [](TVector3 vtx){ return vtx; }, {"react_vertex"})
+
         .Snapshot("tracks_fp", path_outfile, {
             "x_fp",
             "y_fp",
