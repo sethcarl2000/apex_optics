@@ -102,7 +102,6 @@ void add_branch_from_Track_t(   std::vector<ROOT::RDF::RNode>& df_nodes,
     return; 
 }
 
-#define EVENT_RANGE 10000
 
 //given a DB file to look in, and a list of output polynomial names, will return an NPolyArray object with all the relevant polys filled in
 NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names, const int DoF) 
@@ -156,6 +155,7 @@ void SCS_to_HCS(Track_t& track, const bool is_RHRS)
 
 //are we dealing with monte-carlo, or real data? 
 #define MONTE_CARLO_DATA true
+#define EVENT_RANGE 10000
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int newton_iteration_test(  const char* path_infile="",
@@ -251,7 +251,8 @@ int newton_iteration_test(  const char* path_infile="",
     
     //This is the poly-array which gives us a 'starting point' to use
     //const char* path_db_fp_sv = "data/csv/db_center_fp_sv_L_3ord.dat"; 
-    const char* path_db_fp_sv = "data/csv/poly_center_fp_sv_L_3ord.dat"; 
+    //const char* path_db_fp_sv = "data/csv/poly_center_fp_sv_L_3ord.dat"; 
+    const char* path_db_fp_sv = "data/csv/poly_prod_fp_sv_L_3ord.dat";
     NPolyArray poly_array_fp_sv = Parse_NPolyArray_from_file(path_db_fp_sv, branches_sv, DoF_fp); 
     
     NPolyArray* parr_forward = &poly_array_fp_sv;   
@@ -296,7 +297,7 @@ int newton_iteration_test(  const char* path_infile="",
  
     //'fan out' from the central found trajcetory, to adjacent trajectories. see which will be best. 
     const int n_trajectories=50; 
-    const double trajectory_spacing=0.250e-3; 
+    const double trajectory_spacing=0.100e-3; 
 
     auto Find_trajectories = [  n_trajectories,     
                                 trajectory_spacing, 
@@ -527,7 +528,7 @@ int newton_iteration_test(  const char* path_infile="",
         .Define("err_dydz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dydz-x)*1e3; }, {"Xfp_model", "dydz_fp"})
 
 #if MONTE_CARLO_DATA
-        .Define("Xsv_error", [](Track_t Xsv_mod, Track_t Xsv)
+        .Define("Xsv_error", [](const Track_t& Xsv_mod, const Track_t& Xsv)
         {   
             return (Xsv_mod - Xsv) * 1e3; 
         }, {"Xsv_best", "Xsv"})
@@ -645,8 +646,8 @@ int newton_iteration_test(  const char* path_infile="",
         .Histo1D<double>({"h_z_proj_xz", "Error of Projection of track onto z_{HCS} (x-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_xz"); 
 
 #if MONTE_CARLO_DATA
-    auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_{sv};mm",      200, -5, 5}, "err_x_sv"); 
-    auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_{sv};mm",      200, -5, 5}, "err_y_sv"); 
+    auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_{sv};mm",       200, -5, 5}, "err_x_sv"); 
+    auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_{sv};mm",       200, -5, 5}, "err_y_sv"); 
     auto h_dxdz = df_output.Histo1D<double>({"h_dxdz", "Error of dx/dz_{sv};mrad", 200, -5, 5}, "err_dxdz_sv"); 
     auto h_dydz = df_output.Histo1D<double>({"h_dydz", "Error of dy/dz_{sv};mrad", 200, -5, 5}, "err_dydz_sv"); 
 #endif 
