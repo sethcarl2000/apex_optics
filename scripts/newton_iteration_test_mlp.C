@@ -1,6 +1,6 @@
 #include "TROOT.h"
-#include <stdio.h>
 #include <cstdio> 
+
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -9,7 +9,7 @@ struct Track_t {
     double x,y,dxdz,dydz,dpp; 
 
     //implicit conversion from this type to RVec<double> 
-    operator RVec<double>() const { return RVec<double>{x,y,dxdz,dydz,dpp}; }  
+    explicit operator RVec<double>() const { return {x,y,dxdz,dydz,dpp}; }  
     
     Track_t operator-(const Track_t& rhs) const {   
         return Track_t{
@@ -31,6 +31,7 @@ struct Track_t {
         }; 
     }; 
 
+
     Track_t operator*(double mult) const {   
         return Track_t{
             .x      = x     * mult,
@@ -42,8 +43,6 @@ struct Track_t {
     };
 
 };
-
-
 
 class TrajectoryCollection : public TObject {
 public: 
@@ -72,7 +71,7 @@ public:
 
 private:    
     int fN_elems; 
-    RVec<Track_t> fTrajectories;  
+    RVec<Track_t> fTrajectories; 
 
     double dx; 
 };
@@ -103,7 +102,6 @@ void add_branch_from_Track_t(   std::vector<ROOT::RDF::RNode>& df_nodes,
     return; 
 }
 
-#define EVENT_RANGE 3
 
 //given a DB file to look in, and a list of output polynomial names, will return an NPolyArray object with all the relevant polys filled in
 NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> output_names, const int DoF) 
@@ -127,7 +125,7 @@ NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> ou
     }
 
     return NPolyArray(poly_vec); 
-}
+}   
 
 //transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
 void SCS_to_HCS(Track_t& track, const bool is_RHRS) 
@@ -157,13 +155,13 @@ void SCS_to_HCS(Track_t& track, const bool is_RHRS)
 
 //are we dealing with monte-carlo, or real data? 
 #define MONTE_CARLO_DATA true
-
+#define EVENT_RANGE 25
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int newton_iteration_test_mlp(  const char* path_infile="",
                                 const char* path_dbfile="data/csv/db_prod_sv_fp_L_3ord.dat",  
                                 const char* tree_name="tracks_fp" ) 
 {
-    const char* const here = "fitpoints_mc_sv_fp"; 
+    const char* const here = "newton_iteration_test_mlp"; 
 
     auto infile = new TFile(path_infile, "READ");
 
@@ -248,12 +246,16 @@ int newton_iteration_test_mlp(  const char* path_infile="",
     const int DoF_sv = 5; 
     const int DoF_fp = 4; 
 
-    //This is the poly-array which gives us a 'starting point' to use
-    const char* path_db_fp_sv = "data/csv/db_center_fp_sv_L_3ord.dat"; 
-    NPolyArray parr_forward = Parse_NPolyArray_from_file(path_db_fp_sv, branches_sv, DoF_fp); 
+    //now that we have created the polys, we can create the NPolyArray object
     
-    NPolyArray* parr_fwd_ptr = &parr_forward; 
-
+    //This is the poly-array which gives us a 'starting point' to use
+    //const char* path_db_fp_sv = "data/csv/db_center_fp_sv_L_3ord.dat"; 
+    const char* path_db_fp_sv = "data/csv/poly_prod_fp_sv_L_3ord.dat"; 
+    NPolyArray poly_array_fp_sv = Parse_NPolyArray_from_file(path_db_fp_sv, branches_sv, DoF_fp); 
+    
+    NPolyArray* parr_forward = &poly_array_fp_sv;   
+   
+    //if we use this model, we just use the model that maps directly from the SIEVE to the FOCAL PLANE
     MultiLayerPerceptron *mlp = ApexOptics::Parse_mlp_from_file(path_dbfile); 
     
     if (!mlp) {
@@ -261,23 +263,12 @@ int newton_iteration_test_mlp(  const char* path_infile="",
         return -1; 
     }
 
-    printf(" -- total number of parameters: %i\n", mlp->Get_n_weights()); cout << flush; 
-    
-
-
-    const int n_iterations = 7; 
-
-    auto rv_dot = [](const RVec<double>& u, const RVec<double>& v) {
-        double ret(0.); for (const double& x : u * v) ret += x; return ret; 
-    };
-    
+    //count how many elements there are in this monstrosity
+    cout << "Parsed mlp with " << mlp->Get_n_weights() << " parameters."; 
+   
     auto rv_mag = [](const RVec<double>& u) { 
-        double ret(0.); for (const double& x : u * u) ret += x; return sqrt(ret); 
+        double ret(0.); for (const double& x : u) ret += x*x; return sqrt(ret); 
     };
-
-    auto rv_unit = [&rv_mag](const RVec<double>& u) {
-        return u / rv_mag(u); 
-    }; 
 
     //number of microns to compute vdc-smearing by
     double vdc_smearing_um = 0.; 
@@ -285,92 +276,24 @@ int newton_iteration_test_mlp(  const char* path_infile="",
     const double vertex_uncertainty_x = 1.00e-3;
     const double vertex_uncertainty_y = 0.10e-3;  
 
-    //______________________________________________________________________________________________
-    //what we're effectivley doing here is using newton's method for iterating towrads the root of a nonlinear system.
-    // the system we're trying to solve is the following least-square problem: 
-    //  - the 'chi-square' in this case is the square error between the model's value for Xfp, and the actual value.
-    //    this is given by the d_Xfp vector above. 
-    //  - Therefore, the 'F' vector is our evaluation of the gradient of this function, which will be zero at the 
-    //    minimum error value (if it isn't a local, false minima.)
-    //  - to use newton's method, we need to compute the Jacobian of our 'F' funciton. this is what 'J' will be. 
-    //
-    auto Iterate_to_root = [&mlp](  ROOT::RVec<double>& X, 
-                                    const ROOT::RVec<double>& Z, 
-                                    const int n_iterations  )
-    {           
-        const int DoF_in  = mlp->Get_DoF_in(); 
-        const int DoF_out = mlp->Get_DoF_out(); 
-        if ( (int)X.size() != DoF_in || (int)Z.size() != DoF_out ) {
-            ostringstream oss; 
-            oss << "in <Iterate_to_root>: input/output vector sizes (" << X.size() << "/" << Z.size() << "). "
-            "MLP input/output size is (" << DoF_in << "/" << DoF_out << ").";
-            //throw std::logic_error(oss.str());   
-            return -1; 
-        }
-
-        printf(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
-
-        for (int i_it=0; i_it<n_iterations; i_it++) {
-
-            //Get the difference between the model's evaluation of Xfp, and the actual value. 
-            RVec<double> dZ{ mlp->Eval(X) - Z }; 
-                
-            double error=0.; for (double& x : dZ) error += x*x; 
-            printf(" - it %3i error: % .4e\n", i_it, sqrt(error)); 
-
-            RMatrix dGi_dXj = std::move(mlp->Jacobian(X)); 
-            //Get the hessian matrix, store its elements in a vector
-            MultiLayerPerceptron::HessianTensor_t dGi_dXj_dXk = std::move(mlp->Hessian_tensor(X)); 
-        
-            //Compute the 'F' vector and the 'J' matrix
-            RMatrix J(DoF_in, DoF_in, 0.); J.Set_report_singular(false); 
-            RVec<double> F(DoF_in, 0.); 
-        
-            for (int i=0; i<DoF_out; i++) {
-
-                for (int j=0; j<DoF_in; j++) {
-                
-                    F[j] += dZ[i] * dGi_dXj.get(i,j);
-
-                    for (int k=j; k<DoF_in; k++) {
-                        J.get(j,k) += (dGi_dXj.get(i,j)) * (dGi_dXj.get(i,k))   +   (dZ[i] * dGi_dXj_dXk.get(i,j,k)); 
-                    }
-                }
-            }
-            
-            //Since 'J' is symmetric, we only filled the elements on or above the main diagonal. lets fill the rest:        
-            for (int j=1; j<DoF_out; j++) for (int k=0; k<j; k++) J.get(j,k) = J.get(k,j); 
-
-            auto dX = J.Solve( F ); 
-
-            //check for NaN in 'adjustment' vector
-            for (double& x : dX) if (x != x) return i_it; 
-            if (dX.size() != DoF_in)         return i_it; 
-
-            X += -dX; 
-        } 
-
-        return n_iterations; 
-    };
-
  
     //'fan out' from the central found trajcetory, to adjacent trajectories. see which will be best. 
-    const int n_trajectories=5; 
-    const double trajectory_spacing=0.500e-3; 
+    const int n_trajectories=3; 
+    const double trajectory_spacing=0.250e-3; 
+    const double error_threshold = 1.0e-12; 
 
     auto Find_trajectories = [  n_trajectories,     
-                                trajectory_spacing,
-                                mlp,
+                                trajectory_spacing, 
+                                mlp, 
                                 DoF_fp, 
                                 DoF_sv, 
                                 &rv_mag ](const Track_t& Xfp, const Track_t& Xsv) 
     {
         RVec<double> Xfp_rv{ Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz }; 
 
-        auto Get_next_trajectory = [trajectory_spacing, mlp, &rv_mag, &Xfp_rv]
-            (RVec<Track_t>& t_vec, RVec<double>& Xsv, double oreintation)
+        auto Get_next_trajectory = [mlp, trajectory_spacing, &rv_mag, &Xfp_rv](RVec<Track_t>* t_vec, RVec<double>& Xsv, double oreintation)
         {
-            RVec<double> J_arr( mlp->Jacobian(Xsv).Data() ); 
+            RVec<double> J_arr = std::move(mlp->Jacobian(Xsv).Data()); 
             int i_elem=0; 
 
             //this jacobian is 4x5, as we're mapping from R^5 => R^4. we're gonna 'peel off' the last column, and
@@ -383,7 +306,6 @@ int newton_iteration_test_mlp(  const char* path_infile="",
             
                 J0.push_back( J_arr[i_elem++] ); 
             }
-
             RMatrix Ji(DoF_fp, DoF_fp, std::move(Ji_arr)); Ji.Set_report_singular(false); 
 
             auto dX = Ji.Solve( J0 ); 
@@ -400,9 +322,9 @@ int newton_iteration_test_mlp(  const char* path_infile="",
             Xsv += dX;
 
             //now, we perform a few iterations to 'fix' it
-            //mlp->Iterate_to_root( Xsv, Xfp_rv, 3 ); 
+            mlp->Iterate_to_root( Xsv, Xfp_rv, 3 ); 
 
-            t_vec.push_back({
+            t_vec->push_back({
                 .x      = Xsv[0], 
                 .y      = Xsv[1],
                 .dxdz   = Xsv[2],
@@ -420,16 +342,16 @@ int newton_iteration_test_mlp(  const char* path_infile="",
         RVec<Track_t> traj; traj.reserve(n_trajectories);  
         int i_traj=0; 
         while ( ++i_traj < n_trajectories ) {
-            if (Get_next_trajectory(traj, Xsv_rv, 1. ) != 1) break; 
+            if (Get_next_trajectory(&traj, Xsv_rv, 1. ) != 1) break; 
         } 
 
         ///get 'backward' trajectories
-        Xsv_rv = Track_t{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp }; 
+        Xsv_rv = RVec<double>{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp }; 
         RVec<Track_t> back_traj; back_traj.reserve(n_trajectories); 
         
         i_traj=0;
         while ( ++i_traj < n_trajectories ) {
-            if (Get_next_trajectory(back_traj, Xsv_rv, -1.) != 1) break; 
+            if (Get_next_trajectory(&back_traj, Xsv_rv, -1.) != 1) break; 
         }
 
         RVec<Track_t> trajectories; 
@@ -446,11 +368,6 @@ int newton_iteration_test_mlp(  const char* path_infile="",
 
         return trajectories; 
     };
-
-
-    
-
-
 
 
 #ifdef EVENT_RANGE
@@ -479,23 +396,47 @@ int newton_iteration_test_mlp(  const char* path_infile="",
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
 #endif 
 
-        .Define("Xsv_first_guess", [parr_fwd_ptr, &Iterate_to_root, &rv_mag, mlp](Track_t& Xfp, Track_t& Xsv_actual)
+        .Define("Xsv_fwd_model", [parr_forward](Track_t& Xfp)
         {
-            RVec<double> Xfp_v{Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz};
-            auto Xsv = parr_fwd_ptr->Eval(Xfp_v);  
-            
-            RVec<double> Xsv_act{
-                Xsv_actual.x,
-                Xsv_actual.y,
-                Xsv_actual.dxdz,
-                Xsv_actual.dydz,
-                Xsv_actual.dpp
-            };
-            
-            mlp->Iterate_to_root( Xsv, {Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}, 300, 1e-5, 0.1 );
-            
-            printf("model error (mm): %f\n", rv_mag( Xfp_v - mlp->Eval(Xsv) )*1e3 ); 
+            auto Xsv = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});
+            return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3], .dpp=Xsv[4] };  
+        }, {"Xfp"})
 
+        .Define("Xfp_fwd_model", [mlp](const Track_t& Xsv, const Track_t& Xfp_actual)
+        {
+            RVec<double> Xfp = mlp->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp});
+
+            return Track_t{ .x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3] }; 
+
+        }, {"Xsv_fwd_model", "Xfp"})
+
+
+        .Define("Xfp_fwd_model_error", [mlp](const Track_t& Xsv, const Track_t& Xfp_actual)
+        {
+            RVec<double> Xfp = mlp->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp}) 
+                                - RVec<double>{Xfp_actual.x, Xfp_actual.y, Xfp_actual.dxdz, Xfp_actual.dydz};
+
+            return Track_t{ .x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3] }; 
+
+        }, {"Xsv_fwd_model", "Xfp"})
+
+        .Define("Xsv_first_guess", [mlp, error_threshold, &rv_mag](const Track_t& Xfp, const Track_t& Xsv_fwd_model)
+        {
+            RVec<double> Xfp_v{Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}; 
+            auto Xsv = (RVec<double>)Xsv_fwd_model; 
+            //RVec<double> Xsv{0,0,0,0,0}; 
+
+            double error_start = rv_mag( Xfp_v - mlp->Eval(Xsv) ); 
+
+            //int n_iterations_grad   = mlp->Iterate_to_root_gd(Xsv, Xfp_v, 0, 1e-3, 1e-3, 0.); 
+
+            int n_iterations_newton = mlp->Iterate_to_root(Xsv, Xfp_v, 250, error_threshold, 0.25);
+
+            printf("\niterations done (grad/newton): 0/%3i, starting error % .4e, ending error % .4e", 
+            //        n_iterations_grad,
+                    n_iterations_newton, 
+                    error_start, 
+                    rv_mag(Xfp_v - mlp->Eval(Xsv)) ); 
             return Track_t{
                 .x      = Xsv[0],
                 .y      = Xsv[1],
@@ -504,7 +445,7 @@ int newton_iteration_test_mlp(  const char* path_infile="",
                 .dpp    = Xsv[4]
             }; 
 
-        }, {"Xfp", "Xsv"})
+        }, {"Xfp", "Xsv_fwd_model"})
 
         .Define("Xsv_trajectories",     [&Find_trajectories](const Track_t& Xfp, const Track_t& Xsv)
         {
@@ -649,12 +590,28 @@ int newton_iteration_test_mlp(  const char* path_infile="",
     }); 
 #endif 
 
+    add_branch_from_Track_t( output_nodes, "Xfp_fwd_model_error", {
+        {"err_fwd_x_fp",      &Track_t::x},
+        {"err_fwd_y_fp",      &Track_t::y},
+        {"err_fwd_dxdz_fp",   &Track_t::dxdz},
+        {"err_fwd_dydz_fp",   &Track_t::dydz}
+    });
+
+    add_branch_from_Track_t( output_nodes, "Xfp_fwd_model", {
+        {"fwd_x_fp",      &Track_t::x},
+        {"fwd_y_fp",      &Track_t::y},
+        {"fwd_dxdz_fp",   &Track_t::dxdz},
+        {"fwd_dydz_fp",   &Track_t::dydz}
+    });
+
+
     auto df_output = output_nodes.back(); 
 
     //book the histograms we need. 
     char buff_hxy_title[200];  
     sprintf(buff_hxy_title, "Reconstructed sieve coordinates. VDC smearing: %.1f um;x_sv;y_sv", vdc_smearing_um); 
     
+    //histograms to measure sieve-coordinate errors
     auto h_xy_sieve         = df_output
         .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (best fit);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
 
@@ -667,6 +624,12 @@ int newton_iteration_test_mlp(  const char* path_infile="",
     auto h_n_trajectories   = df_output
         .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5},       "n_trajectories"); 
 
+    //histograms to measure the error of the forward-model's error (when projected back onto fp-coordinates)
+    auto h_err_fwd_xfp      = df_output.Histo2D<double>({"h_errfwd_xfp",    ";x_{fp};x_{fp} fwd-model",    200, -1, -1, 200, -1, -1},    "x_fp",    "fwd_x_fp"); 
+    auto h_err_fwd_yfp      = df_output.Histo2D<double>({"h_errfwd_yfp",    ";y_{fp};y_{fp} fwd-model",    200, -1, -1, 200, -1, -1},    "y_fp",    "fwd_y_fp"); 
+    auto h_err_fwd_dxdzfp   = df_output.Histo2D<double>({"h_errfwd_dxdzfp", ";dxdz_{fp};dxdz_{fp} fwd-model", 200, -1, -1, 200, -1, -1}, "dxdz_fp", "fwd_dxdz_fp"); 
+    auto h_err_fwd_dydzfp   = df_output.Histo2D<double>({"h_errfwd_dydzfp", ";dydz_{fp};dydz_{fp} fwd-model", 200, -1, -1, 200, -1, -1}, "dydz_fp", "fwd_dydz_fp"); 
+    
 
     auto h_hcs_projection_yz = df_output 
         .Histo1D<double>({"h_z_proj_yz", "Error of Projection of track onto z_{HCS} (y-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_yz"); 
@@ -675,10 +638,10 @@ int newton_iteration_test_mlp(  const char* path_infile="",
         .Histo1D<double>({"h_z_proj_xz", "Error of Projection of track onto z_{HCS} (x-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_xz"); 
 
 #if MONTE_CARLO_DATA
-    auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_fp;mm", 200, -5, 5},      "err_x_sv"); 
-    auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_fp;mm", 200, -5, 5},      "err_y_sv"); 
-    auto h_dxdz = df_output.Histo1D<double>({"h_dxdz", "Error of dxdz_fp;mrad", 200, -5, 5}, "err_dxdz_sv"); 
-    auto h_dydz = df_output.Histo1D<double>({"h_dydz", "Error of dydz_fp;mrad", 200, -5, 5}, "err_dydz_sv"); 
+    auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_{sv};mm",      200, -5, 5}, "err_x_sv"); 
+    auto h_y    = df_output.Histo1D<double>({"h_y",    "Error of y_{sv};mm",      200, -5, 5}, "err_y_sv"); 
+    auto h_dxdz = df_output.Histo1D<double>({"h_dxdz", "Error of dx/dz_{sv};mrad", 200, -5, 5}, "err_dxdz_sv"); 
+    auto h_dydz = df_output.Histo1D<double>({"h_dydz", "Error of dy/dz_{sv};mrad", 200, -5, 5}, "err_dydz_sv"); 
 #endif 
 
     //this histogram will be of the actual sieve-coords
@@ -687,11 +650,21 @@ int newton_iteration_test_mlp(  const char* path_infile="",
     
     gStyle->SetPalette(kSunset);
 
+    
+    auto cfe = new TCanvas("c_fwd_error", b_c_title, 1200, 800); 
+    cfe->Divide(2,2, 0.005,0.005); 
+    TStopwatch timer; 
+
+    cfe->cd(1); h_err_fwd_xfp   ->DrawCopy("col"); 
+    cfe->cd(2); h_err_fwd_yfp   ->DrawCopy("col"); 
+    cfe->cd(3); h_err_fwd_dxdzfp->DrawCopy("col"); 
+    cfe->cd(4); h_err_fwd_dydzfp->DrawCopy("col"); 
+
+
     auto cc = new TCanvas("c4", b_c_title, 1200, 500);
     cc->Divide(2,1, 0.01,0.01); 
     
-    TStopwatch timer; 
-
+    
     cc->cd(1); h_hcs_projection_yz->DrawCopy(); 
     cc->cd(2); h_hcs_projection_xz->DrawCopy(); 
     
@@ -713,8 +686,6 @@ int newton_iteration_test_mlp(  const char* path_infile="",
     
     new TCanvas("c2", b_c_title); 
     h_xy_sieve->DrawCopy("col2"); 
-
-    return 0; 
 
 #if MONTE_CARLO_DATA
     auto c = new TCanvas("c1", b_c_title, 1200, 800); 
