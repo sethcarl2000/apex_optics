@@ -86,7 +86,6 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     delete infile; 
 
     
-
     vector<string> branches_sv{
         "x_sv",
         "y_sv",
@@ -96,6 +95,12 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
 
     NPolyArray parr_forward = ApexOptics::Parse_NPolyArray_from_file(path_dbfile, branches_sv, 4); 
     
+    //check to see if the poly was parsed successfully
+    if (parr_forward.Get_status() != NPolyArray::kGood) {
+        Error(here, "Problem parsing NPolyArray from file '%s'", path_dbfile); 
+        return -1; 
+    }
+
     //transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
     auto HCS_to_SCS = [is_RHRS](TVector3 *pos, TVector3 *dir=nullptr) 
     {
@@ -139,7 +144,7 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz }; 
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
 
-        .Define("Xsv",  [&parr_forward](const Track_t& Xfp)
+        .Define("Xsv_reco",  [&parr_forward](const Track_t& Xfp)
         {
             auto Xsv = parr_forward.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});
             return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3] }; 
@@ -151,25 +156,25 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
             return vtx_scs; 
         }, {"position_vtx"}); 
 
-    auto df_out = add_branch_from_Track_t(df_reco, "Xsv", {
-        {"x_sv",    &Track_t::x},
-        {"y_sv",    &Track_t::y},
-        {"dxdz_sv", &Track_t::dxdz},
-        {"dydz_sv", &Track_t::dydz}
+    auto df_out = add_branch_from_Track_t(df_reco, "Xsv_reco", {
+        {"reco_x_sv",    &Track_t::x},
+        {"reco_y_sv",    &Track_t::y},
+        {"reco_dxdz_sv", &Track_t::dxdz},
+        {"reco_dydz_sv", &Track_t::dydz}
     }); 
 
     //create both histograms
     auto hist_xy = df_out
         
         //correct for react-vertex position
-        .Define("x_react_vtx_fix", [](double x, TVector3 r){return x + r.x();}, {"x_sv", "position_vtx_scs"})
-        .Define("y_react_vtx_fix", [](double y, TVector3 r){return y + r.y();}, {"y_sv", "position_vtx_scs"})
+        .Define("x_react_vtx_fix", [](double x, TVector3 r){return x + r.x();}, {"reco_x_sv", "position_vtx_scs"})
+        .Define("y_react_vtx_fix", [](double y, TVector3 r){return y + r.y();}, {"reco_y_sv", "position_vtx_scs"})
 
         .Histo2D({"h_xy", "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, 
                 "x_react_vtx_fix", "y_react_vtx_fix");
     
     auto hist_angles    
-        = df_out.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
+        = df_out.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "reco_dxdz_sv", "reco_dydz_sv"); 
     
     
     char c_title[255]; 
@@ -178,11 +183,9 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     //set the color pallete
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
-
-    auto c = new TCanvas("c1", c_title, 1200, 600); 
-    c->Divide(2,1, 1e-3,0.01); 
-    c->cd(1); hist_angles->DrawCopy("col2");
-    c->cd(2); hist_xy->DrawCopy("col2"); 
+    
+    new TCanvas("c1", c_title, 800, 600); 
+    hist_xy->DrawCopy("col2"); 
 
     return 0; 
 }
