@@ -327,6 +327,33 @@ const NPoly::NPolyElem* NPoly::Get_elem(unsigned int i) const
   return &fElems[i];
 }
 //_____________________________________________________________________________
+NPoly::NPolyElem* NPoly::Get_elem(unsigned int i) 
+{
+  if (i >= Get_nElems()) {
+    Warning("Get_elemCoeff",
+	    "Invalid element-index requested; %i, max is %i",i,Get_nElems()-1);
+    return nullptr;
+  }
+  return &fElems[i];
+}
+//_____________________________________________________________________________
+NPoly::NPolyElem* NPoly::Find_element(const RVec<int> &powers)
+{
+  if ((int)powers.size() != Get_nDoF()) return nullptr; 
+
+  auto is_match = [&powers](const NPolyElem& elem) {
+    for (int diff : powers - elem.powers) if (diff != 0) return false; 
+    return true; 
+  }; 
+
+  auto elem_it = std::find_if( fElems.begin(), fElems.end(), is_match ); 
+  if (elem_it == fElems.end()) return nullptr; 
+
+  return elem_it; 
+}
+//_____________________________________________________________________________
+
+
 void NPoly::Add_element(const RVec<int> &pows, double coefficient)
 { 
   //just calls the method below. 

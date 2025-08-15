@@ -72,10 +72,13 @@ class NPoly : public TObject {
  
   //Get a pointer to an individual element
   const NPolyElem*    Get_elem      (unsigned int i) const; 
+  NPolyElem*          Get_elem      (unsigned int i); 
   //Get the RVec<int> of the powers of each input var for this element
   ROOT::RVec<int>     Get_elemPowers(unsigned int i) const;
   //get the coefficient of this element
   double              Get_elemCoeff (unsigned int i) const;
+
+  NPolyElem*          Find_element(const ROOT::RVec<int>& powers); 
 
   //for debug purposes, print
   void Print() const;
