@@ -406,6 +406,7 @@ NPolyArray ApexOptics::Parse_NPolyArray_from_file(const char* path_dbfile, const
 {
     const char* const here = "ApexOptics::Parse_NPolyArray_from_file";
 
+    bool parse_failure(false); 
     //parse all relevant polys from file
     vector<NPoly> poly_vec; 
 
@@ -416,13 +417,19 @@ NPolyArray ApexOptics::Parse_NPolyArray_from_file(const char* path_dbfile, const
         ApexOptics::Parse_NPoly_from_file(path_dbfile, output_branch.data(), &poly); 
 
         if (poly.Get_nElems()==0) {
-            fprintf(stderr, "Warning in <%s>: Poly '%s' did not parse any elements in file '%s'.\n", here, output_branch.data(), path_dbfile);  
+            fprintf(stderr, "Warning in <%s>: Poly '%s' did not parse any elements in file '%s'.\n", here, output_branch.data(), path_dbfile);          
+            parse_failure = true; 
         }
 
         poly_vec.push_back(poly); 
     }
 
-    return NPolyArray(poly_vec); 
+    NPolyArray parr(poly_vec); 
+
+    //If there was a problem while parsing, then set the polyarray's status as failure 
+    if (parse_failure) parr.Set_status(NPolyArray::kError); 
+
+    return parr; 
 }  
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________

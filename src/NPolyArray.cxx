@@ -11,7 +11,7 @@ using namespace ROOT::VecOps;
 
 //______________________________________________________________________________________________
 NPolyArray::NPolyArray(int _DoF_out, int _DoF_in) 
-    : fDoF_out(_DoF_out), fDoF_in(_DoF_in)
+    : fStatus(NPolyArray::kNot_init), fDoF_out(_DoF_out), fDoF_in(_DoF_in)
 {
     //create empty polynomials with the proper dimensions
     for (int i=0; i<Get_DoF_out(); i++) 
@@ -20,7 +20,9 @@ NPolyArray::NPolyArray(int _DoF_out, int _DoF_in)
 
 //______________________________________________________________________________________________
 NPolyArray::NPolyArray(const vector<NPoly>& _polys) 
+    : fStatus(NPolyArray::kNot_init)
 {
+    
     const char* const here = "NPolyArray(vector<NPoly>)";
     //use the first polynomial to check the number of input DoF
     fDoF_out = _polys.size(); 
@@ -28,6 +30,7 @@ NPolyArray::NPolyArray(const vector<NPoly>& _polys)
     
     if (fDoF_out < 1) { 
         Error(here, "Input vector is empty. Cannot construct"); 
+        fStatus = NPolyArray::kError; 
         return; 
     }
 
@@ -37,16 +40,19 @@ NPolyArray::NPolyArray(const vector<NPoly>& _polys)
             Error(here, "DoF of input polys does not match. Cannot construct"); 
             fDoF_in  =0; 
             fDoF_out =0; 
+            fStatus = NPolyArray::kError; 
             return; 
         } 
     }
 
     //if we got here, then all polys match one another. 
     fPolys = _polys; 
+    fStatus = NPolyArray::kGood; 
 }
 
 //______________________________________________________________________________________________
 NPolyArray::NPolyArray(const vector<NPoly*>& _polys) 
+    : fStatus(NPolyArray::kNot_init)
 {
     const char* const here = "NPolyArray(vector<NPoly>)";
     //use the first polynomial to check the number of input DoF
@@ -55,6 +61,7 @@ NPolyArray::NPolyArray(const vector<NPoly*>& _polys)
     
     if (fDoF_out < 1) { 
         Error(here, "Input vector is empty. Cannot construct"); 
+        fStatus = NPolyArray::kError; 
         return; 
     }
 
@@ -65,6 +72,7 @@ NPolyArray::NPolyArray(const vector<NPoly*>& _polys)
             Error(here, "DoF of input polys does not match. Cannot construct"); 
             fDoF_in  =0; 
             fDoF_out =0; 
+            fStatus = NPolyArray::kError; 
             return; 
         } 
     }
@@ -72,6 +80,7 @@ NPolyArray::NPolyArray(const vector<NPoly*>& _polys)
     //if we got here, then all polys match one another's DoF. We may now construct our vector of NPolys 
     fPolys.reserve(_polys.size()); 
     for (const NPoly* poly : _polys) fPolys.push_back(*poly); 
+    fStatus = NPolyArray::kGood; 
 }
 
 //______________________________________________________________________________________________

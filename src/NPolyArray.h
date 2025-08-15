@@ -66,7 +66,14 @@ public:
     int Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, int n_iterations=1) const;
 
 
+    enum EStatus { kError=-1, kNot_init=0, kGood=1 }; 
+
+    inline void Set_status(EStatus _val) { fStatus=_val; }
+    inline EStatus Get_status() const { return fStatus; }
+
 private: 
+
+    EStatus fStatus; 
 
     int fDoF_out, fDoF_in; 
 
