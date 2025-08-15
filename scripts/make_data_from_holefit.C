@@ -30,11 +30,11 @@ vector<SieveHole> Construct_sieve_holes(bool is_RHRS)
 {
     vector<SieveHole> sieve_holes; 
 
-    const double dx = 5.842; //all units in mm
+    const double dx = 5.842e-3; //all units in meters
 
     //the sign is different here, because the L & R-sieves are mirror-images of
     // of one another
-    const double dy = is_RHRS ? 4.826 : -4.826;
+    const double dy = is_RHRS ? 4.826e-3 : -4.826e-3;
     
     //the first row is 8 rows above (-x) the center hole
     const double x0 = -dx * 8.; 
@@ -42,13 +42,13 @@ vector<SieveHole> Construct_sieve_holes(bool is_RHRS)
     const double y0 =  dy * 7.; 
 
     //sieve thickness
-    const double sieve_thickness = 12.7; 
+    const double sieve_thickness = 12.7e-3; 
 
     //two possible hole radii
-    const double holeR_small = 0.6985; 
-    const double holeR_big   = 1.3462; 
+    const double holeR_small = 0.6985e-3; 
+    const double holeR_big   = 1.3462e-3; 
 
-    const double holeR_widened = 0.9525; //radius of the holes whose exits are widened. 
+    const double holeR_widened = 0.9525e-3; //radius of the holes whose exits are widened. 
 
     const int nRows=17; 
     for (int row=0; row<nRows; row++) { 
