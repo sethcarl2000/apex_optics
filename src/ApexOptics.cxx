@@ -6,6 +6,8 @@
 #include <cmath>
 #include <fstream>
 #include <algorithm> 
+#include <thread> 
+#include <stdexcept> 
 #include <ROOT/RVec.hxx> 
 #include <ROOT/RResultPtr.hxx>
 #include "RMatrix.h"
@@ -21,15 +23,15 @@ map<string, NPoly*> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
 {
     const char* const here = "ApexOptics::Create_NPoly_fit"; 
     
-    const int nDoF_in  = inputs.size();  
-    const int nDoF_out = outputs.size(); 
+    const int DoF_in  = inputs.size();  
+    const int DoF_out = outputs.size(); 
 
-    if (nDoF_in < 1 ) {
+    if (DoF_in < 1 ) {
         fprintf(stderr, "Error in <%s>: No inputs given.\n", here); 
         return {}; 
     }
 
-    if (nDoF_out < 1) {
+    if (DoF_out < 1) {
         fprintf(stderr, "Error in <%s>: No outputs given.\n", here); 
         return {};
     }
@@ -63,98 +65,142 @@ map<string, NPoly*> ApexOptics::Create_NPoly_fit( ROOT::RDF::RNode df,
         return {}; 
     }
 
-    
+    struct TrainingData_t {
+        RVec<double> inputs, outputs; 
+    }; 
+
     //now that we know all the necessary columns exist, we can proceed: 
     //first, define the vector of inputs. 
     // since this function can take a variable number of inputs, we need to 'tack' each input onto a single vector. 
-    vector<ROOT::RDF::RNode> df_vec{df.Define("inputs", [](double _inp){return RVec<double>{};}, {inputs[0].data()})}; 
+    vector<ROOT::RDF::RNode> df_vec{ df
+        .Define("inputs",  [DoF_in ](){ RVec<double> v; v.reserve(DoF_in);  return v; })
+        .Define("outputs", [DoF_out](){ RVec<double> v; v.reserve(DoF_out); return v; })
+    }; 
 
-    int i_branch=0; 
-    for (const string& input_name : inputs) {
-
+    for (const string& name : inputs) {   //add all the inputs
         //define the next node. run thru this loop to add all inputs into a single RVec<double>. 
-        auto new_df = df_vec.at(df_vec.size()-1) 
+        df_vec.push_back( df_vec.back() 
         
-            .Redefine("inputs",  [](RVec<double> &input_vec, double _inp) 
+            .Redefine("inputs",  [](RVec<double> &vec, double _val) 
             {
-                input_vec.push_back(_inp);
-                return input_vec; 
-            }, {"inputs", input_name.data()}); 
-
-        df_vec.push_back(new_df); 
+                vec.push_back(_val);
+                return vec; 
+            }, {"inputs", name.c_str()})
+        ); 
     }
+    for (const string& name : outputs) {   //add all the outputs
+        //define the next node. run thru this loop to add all inputs into a single RVec<double>. 
+        df_vec.push_back( df_vec.back() 
+        
+            .Redefine("outputs",  [](RVec<double> &vec, double _val) 
+            {
+                vec.push_back(_val);
+                return vec; 
+            }, {"outputs", name.c_str()})
+        ); 
+    }
+    
+    //now, we get a vector of all the inputs/outputs
+    vector<TrainingData_t> training_data = *df_vec.back()
 
+        .Define("training_data", [](RVec<double>& inputs, RVec<double>& outputs)
+        {
+            return TrainingData_t{ 
+                .inputs  = inputs, 
+                .outputs = outputs 
+            }; 
+        }, {"inputs", "outputs"})
+
+        .Take<TrainingData_t>("training_data"); 
+    
+    //now that we have our vector, we can go ahead and compute the matrix and 'B' vectors 
     //The polynomial we output will follow the same template as this one:
-    NPoly* poly_template = new NPoly(nDoF_in, poly_order); 
+    NPoly* poly_template = new NPoly(DoF_in, poly_order); 
+
+    //number of threads 
+    const size_t n_events_train        = training_data.size(); 
+    const size_t n_threads             = thread::hardware_concurrency(); 
+    const size_t n_events_per_thread   = n_events_train / n_threads; 
+    const size_t remainder             = n_events_train % n_threads; 
+
 
     const int n_elems = poly_template->Get_nElems(); 
-
-    //now that we have put all the inputs into a vector, we can continue. 
-    auto df_output = df_vec.at(df_vec.size()-1)
     
-        .Define("X_elems", [poly_template](const RVec<double> &inputs) 
+    //initialize the 'partial' matrix, one for each thread
+    RMatrix A_partial[n_threads]; 
+    RVec<RVec<double>> B_partial[n_threads]; 
+    
+    for (int i=0; i<n_threads; i++) {
+        A_partial[i] = RMatrix(n_elems, n_elems, 0.); 
+        for (int j=0; j<DoF_out; j++) B_partial[i].emplace_back(n_elems, 0.);  
+    }
+
+    auto Process_event_range = [&training_data, poly_template, DoF_out, n_elems]
+        (RMatrix& A, RVec<RVec<double>>& B, size_t start, size_t end) 
+    {   
+        //check to make sure we were not passed an out-of-range vector
+        if (end > training_data.size()) {
+            ostringstream oss; 
+            throw logic_error("in <ApexOptics::Create_NPoly_fit::Process_event_range>: attempted to access element"
+                   " in 'training-data' vector which is out-of-range."); 
+            return; 
+        }
+
+        //construct the A-matrix, and B-vector
+        for (size_t i=start; i<end; i++) { 
+            const auto& data = training_data[i]; 
+
+            auto X_elems = poly_template->Eval_noCoeff(data.inputs); 
+
+            for (int j=0; j<n_elems; j++) {
+                
+                for (int i_out=0; i_out<DoF_out; i_out++) B.at(i_out).at(j) += data.outputs.at(i_out) * X_elems[j]; 
+
+                for (int k=0; k<n_elems; k++) A.at(j,k) += X_elems[j] * X_elems[k]; 
+            }
+        }
+
+        return; 
+    }; 
+
+    
+    //create & launch each thread (thank you to claude for teaching me how to use std::thread!)
+    vector<thread> threads; threads.reserve(n_threads); 
+
+    size_t start = 0; 
+    for (size_t t=0; t<n_threads; t++) {
+
+        size_t end = start + n_events_per_thread + (t < remainder ? 1 : 0); 
+        
+        threads.emplace_back([&Process_event_range, &A_partial, &B_partial, start, end, t]
         {
-            return poly_template->Eval_noCoeff(inputs); 
-        }, {"inputs"}); 
+            Process_event_range(A_partial[t], B_partial[t], start, end); 
+        });
 
-    
-    ROOT::RDF::RResultPtr<double> A_ptr[n_elems][n_elems]; 
-
-    for (int i=0; i<n_elems; i++) {
-        for (int j=0; j<n_elems; j++) {
-            A_ptr[i][j] = df_output
-                .Define("val", [i,j](const ROOT::RVec<double> &X){ return X[i]*X[j]; }, {"X_elems"}).Sum("val"); 
-        }
+        start = end; 
     }
     
-    
-    //these are the 'outputs'; what the polynomial maps onto. 
-    //the 'outside' vector will have .size()=num_of_output_branches (output_branches.size()), and the 'inside' vector  
-    // will have .size()=num_of_input_branches
-    ROOT::RDF::RResultPtr<double> B_ptr[nDoF_out][n_elems];  
-    
-    //'book' the calculations for each element
-    int i_br=0; 
-    for (const string& out_branch : outputs) {
-        for (int i=0; i<n_elems; i++) {
-            
-            //this RResultPtr<double> will be the sum of the branch 'str' (see the construction of the output_branches vector above)
-            B_ptr[i_br][i] = df_output
-                .Define("val", [i](const ROOT::RVec<double> &X, double y){ return X[i] * y; }, {"X_elems", out_branch.data()}).Sum("val"); 
-        }
-        i_br++;
+    //synchronize all the threads once they're done
+    for (auto& thread : threads) thread.join();
+
+    //combine all partial results in one sum
+    RMatrix& A = A_partial[0]; 
+    RVec<RVec<double>>& B = B_partial[0]; 
+
+    for (int i=1; i<n_threads; i++) {
+        A += A_partial[i]; 
+        B += B_partial[i]; 
     }
 
-    //this matrix will be used to find the best coefficients for each element 
-    RMatrix A(n_elems, n_elems); 
-    ROOT::RVec<double> B[nDoF_out]; 
-
-    //now, fill the matrix, and the 'b' values. 
-    // When we request access to the RResultPtr objects created above (which is what the B_ptr and A_ptr arrays are), 
-    // this is the moment that the RDataFrame actually loops through all events in the dataframe.  
-    //cout << "--filling matrix..." << flush; 
-    for (int i=0; i<n_elems; i++) {
-        
-        for (int i_br=0; i_br<nDoF_out; i_br++) B[i_br].push_back( *(B_ptr[i_br][i]) ); 
-        
-        for (int j=0; j<n_elems; j++) {
-            A.get(i,j) = *(A_ptr[i][j]);
-        }  
-    }
-    //cout << "done." << endl; 
-
-    //now, we can actually solve the linear equation for the tensor coefficients. 
-    //cout << "--Solving linear system(s)..." << flush; 
-    
     //Solve the linear system of equations to get our best-fit coefficients
     map<string, NPoly*> polymap; 
 
-    i_br=0; 
+    int i_br=0; 
     for (const string& out_branch : outputs) {
      
         auto coeffs = A.Solve( B[i_br++] ); 
 
-        auto poly = new NPoly(nDoF_in); 
+        auto poly = new NPoly(DoF_in); 
 
         for (int i=0; i<n_elems; i++) { 
             
