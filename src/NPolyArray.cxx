@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <cstdio> 
 #include <iostream> 
+#include <sstream> 
+#include <stdexcept> 
 
 
 using namespace std; 
@@ -272,7 +274,33 @@ int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>&
     
     return n_iterations; 
 }
+//______________________________________________________________________________________________
+void NPolyArray::Print() const 
+{
+    printf(" NPolyArray object. DoF in/out %i/%i. Status: ", Get_DoF_in(), Get_DoF_out() );
+    
+    switch (Get_status()) {
+        case NPolyArray::kGood:         cout << "good (kGood).\n"; break;
+        case NPolyArray::kNot_init:     cout << "not initialized (kNot_init).\n"; break; 
+        case NPolyArray::kError:        cout << "error (kError).\n"; break;  
+    }; 
 
+    if (Get_status() == NPolyArray::kGood) {
+
+        for (int i=0; i<Get_DoF_out(); i++) {       
+            printf(" ---- polynomial %2i ---- :\n", i);
+            Get_poly(i)->Print();  
+        }
+    }
+    return; 
+}
+//______________________________________________________________________________________________
+//______________________________________________________________________________________________
+//______________________________________________________________________________________________
+//______________________________________________________________________________________________
+//______________________________________________________________________________________________
+//______________________________________________________________________________________________
+//______________________________________________________________________________________________
 //______________________________________________________________________________________________
 
 ClassImp(NPolyArray); 

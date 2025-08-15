@@ -71,6 +71,9 @@ public:
     inline void Set_status(EStatus _val) { fStatus=_val; }
     inline EStatus Get_status() const { return fStatus; }
 
+    //print each polynomial
+    void Print() const; 
+
 private: 
 
     EStatus fStatus; 
