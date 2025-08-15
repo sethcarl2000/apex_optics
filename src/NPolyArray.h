@@ -45,7 +45,7 @@ public:
 
     //get the underlying polynomial which is responsible for a coordinate of this array. 
     const NPoly* Get_poly(int i) const; 
-
+    NPoly* Get_poly(int i); 
 
     //this symbolically computes the action of feeding the output of one NPolyArray into the input of another ('nesting'). 
     // This way, if an optics model is composed of a 'chain' of NPolyArray's, in which the output of one is fed into the input of the next, 
