@@ -151,10 +151,19 @@ void SCS_to_HCS(Track_t& track, const bool is_RHRS)
     track.y = pos.y() - track.dydz * pos.z(); 
 }
 
+//minimum dist between skew lines in 3d space. 
+// if the first line is defiend as vec{a1} + t * vec{s1}
+// and second line defined as      vec{a2} + s * vec{s2}
+// then the closest distance is given by
+// d = ( a1 - a2 ) * ( s1 X s2 ) / | s1 X s2 |
+double skew_lines_min_dist(const TVector3& a1, const TVector3& s1, const TVector3& a2, const TVector3& s2)
+{
+    return fabs( ( a2 - a1 ) * (s1.Cross(s2)).Unit() ); 
+}
 
 
 //are we dealing with monte-carlo, or real data? 
-#define MONTE_CARLO_DATA true
+#define MONTE_CARLO_DATA false
 #define EVENT_RANGE 10000
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
@@ -254,11 +263,24 @@ int newton_iteration_test(  const char* path_infile="",
     //const char* path_db_fp_sv = "data/csv/poly_center_fp_sv_L_3ord.dat"; 
     const char* path_db_fp_sv = "data/csv/poly_prod_fp_sv_L_3ord.dat";
     NPolyArray poly_array_fp_sv = Parse_NPolyArray_from_file(path_db_fp_sv, branches_sv, DoF_fp); 
+
+    //check if NPolyArray parsed successfully
+    if (poly_array_fp_sv.Get_status() != NPolyArray::kGood) {
+        Error(here, "'forward' poly array was not parsed from file: '%s'", path_db_fp_sv); 
+        return -1; 
+    }
     
     NPolyArray* parr_forward = &poly_array_fp_sv;   
    
     //if we use this model, we just use the model that maps directly from the SIEVE to the FOCAL PLANE
     NPolyArray poly_array_sv_fp = Parse_NPolyArray_from_file(path_dbfile, branches_fp, DoF_sv);
+
+    //check if NPolyArray parsed successfully
+    if (poly_array_sv_fp.Get_status() != NPolyArray::kGood) {
+        Error(here, "'reverse' poly array was not parsed from file: '%s'", path_db_fp_sv); 
+        return -1; 
+    }
+
     NPolyArray *parr = &poly_array_sv_fp; 
 
     //count how many elements there are in this monstrosity
@@ -482,10 +504,13 @@ int newton_iteration_test(  const char* path_infile="",
                                   vertex_uncertainty_y ](const RVec<Track_t>& traj, TVector3 vtx)
         {
             const Track_t *Xsv_best = nullptr;
-            double err2_best = 1e30; 
+            double dist_best = 1e30; 
 
             double vx = vtx.x();
             double vy = vtx.y();
+
+            TVector3 beam_ray  (0., 0., 1.); 
+            TVector3 beam_point(0., 0., 0.); 
 
             //look for the best track
             for (const Track_t& track_scs : traj) {
@@ -494,14 +519,23 @@ int newton_iteration_test(  const char* path_infile="",
 
                 SCS_to_HCS(track_hcs, is_RHRS); 
                 
-                //project our 'track' onto the z-plane of the react vertex
-                double err2(0.); 
-                err2 += pow( ((track_hcs.x  +  track_hcs.dxdz * vtx.z())    -   vx)/vertex_uncertainty_x, 2 );
-                err2 += pow( ((track_hcs.y  +  track_hcs.dydz * vtx.z())    -   vy)/vertex_uncertainty_y, 2 ); 
+                TVector3 track_ray( 
+                    track_hcs.dxdz / vertex_uncertainty_x,
+                    track_hcs.dydz / vertex_uncertainty_y,
+                    1. 
+                ); 
 
-                if (err2 < err2_best) {
+                TVector3 track_point(
+                    (track_hcs.x - vx) / vertex_uncertainty_x,
+                    (track_hcs.y - vy) / vertex_uncertainty_y,
+                    0. 
+                ); 
+
+                double dist = skew_lines_min_dist( beam_point, beam_ray, track_point, track_ray ); 
+
+                if (dist < dist_best) {
                     Xsv_best = &track_scs;
-                    err2_best = err2; 
+                    dist_best = dist; 
                 }
             }
 
@@ -549,16 +583,16 @@ int newton_iteration_test(  const char* path_infile="",
         }, {"Xsv_first_guess"})
 
         //compute the error projection of the 'best' trajectory onto the y-z plane in HCS
-        .Define("z_hcs_projection_yz", [](const Track_t& Xhcs, TVector3 vtx_reco, TVector3 vtx)
+        .Define("z_hcs_projection_vertical",   [](const Track_t& Xhcs, TVector3 vtx_reco)
         {
-            return ( vtx.z() + (Xhcs.x - vtx_reco.x()) / Xhcs.dxdz )*1e3;  
-        }, {"Xhcs", "position_vtx_with_error", "position_vtx"})
+            return ((vtx_reco.x() - Xhcs.x) / Xhcs.dxdz )*1e3;  
+        }, {"Xhcs", "position_vtx_with_error"})
 
         //compute the error projection of the 'best' trajectory onto the x-z plane in HCS
-        .Define("z_hcs_projection_xz", [](const Track_t& Xhcs, TVector3 vtx_reco, TVector3 vtx)
+        .Define("z_hcs_projection_horizontal", [](const Track_t& Xhcs, TVector3 vtx_reco)
         {
-            return ( vtx.z() + (Xhcs.y - vtx_reco.y()) / Xhcs.dydz )*1e3;  
-        }, {"Xhcs", "position_vtx_with_error", "position_vtx"}); 
+            return ((vtx_reco.y() - Xhcs.y) / Xhcs.dydz )*1e3;  
+        }, {"Xhcs", "position_vtx_with_error"}); 
 
         
 
@@ -633,17 +667,17 @@ int newton_iteration_test(  const char* path_infile="",
         .Histo1D<int>({"h_n_traj", "Number of trajectories generated", 121, -0.5, 120.5},       "n_trajectories"); 
 
     //histograms to measure the error of the forward-model's error (when projected back onto fp-coordinates)
-    auto h_err_fwd_xfp      = df_output.Histo2D<double>({"h_errfwd_xfp",    ";x_{fp};x_{fp} fwd-model",    200, -1, -1, 200, -1, -1},    "x_fp",    "fwd_x_fp"); 
-    auto h_err_fwd_yfp      = df_output.Histo2D<double>({"h_errfwd_yfp",    ";y_{fp};y_{fp} fwd-model",    200, -1, -1, 200, -1, -1},    "y_fp",    "fwd_y_fp"); 
+    auto h_err_fwd_xfp      = df_output.Histo2D<double>({"h_errfwd_xfp",    ";x_{fp};x_{fp} fwd-model",       200, -1, -1, 200, -1, -1},    "x_fp",    "fwd_x_fp"); 
+    auto h_err_fwd_yfp      = df_output.Histo2D<double>({"h_errfwd_yfp",    ";y_{fp};y_{fp} fwd-model",       200, -1, -1, 200, -1, -1},    "y_fp",    "fwd_y_fp"); 
     auto h_err_fwd_dxdzfp   = df_output.Histo2D<double>({"h_errfwd_dxdzfp", ";dxdz_{fp};dxdz_{fp} fwd-model", 200, -1, -1, 200, -1, -1}, "dxdz_fp", "fwd_dxdz_fp"); 
     auto h_err_fwd_dydzfp   = df_output.Histo2D<double>({"h_errfwd_dydzfp", ";dydz_{fp};dydz_{fp} fwd-model", 200, -1, -1, 200, -1, -1}, "dydz_fp", "fwd_dydz_fp"); 
     
 
-    auto h_hcs_projection_yz = df_output 
-        .Histo1D<double>({"h_z_proj_yz", "Error of Projection of track onto z_{HCS} (y-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_yz"); 
+    auto h_hcs_projection_vertical   = df_output 
+        .Histo1D<double>({"h_z_proj_vertical",   "Proejction of track onto z_{HCS} (y-z vertical plane);z_{HCS} (mm);", 200, -300, 300},  "z_hcs_projection_vertical"); 
 
-    auto h_hcs_projection_xz = df_output 
-        .Histo1D<double>({"h_z_proj_xz", "Error of Projection of track onto z_{HCS} (x-z plane);z_{HCS} (mm);", 200, -70, 70},  "z_hcs_projection_xz"); 
+    auto h_hcs_projection_horizontal = df_output 
+        .Histo1D<double>({"h_z_proj_horizontal", "Projection of track onto z_{HCS} (x-z horizontal plane);z_{HCS} (mm);", 200, -300, 300},  "z_hcs_projection_horizontal"); 
 
 #if MONTE_CARLO_DATA
     auto h_x    = df_output.Histo1D<double>({"h_x",    "Error of x_{sv};mm",       200, -5, 5}, "err_x_sv"); 
@@ -669,12 +703,11 @@ int newton_iteration_test(  const char* path_infile="",
     cfe->cd(4); h_err_fwd_dydzfp->DrawCopy("col"); 
 
 
-    auto cc = new TCanvas("c4", b_c_title, 1200, 500);
-    cc->Divide(2,1, 0.01,0.01); 
+    auto cc = new TCanvas("c4", b_c_title, 1200, 800);
+    cc->Divide(1,2, 0.01,0.01); 
     
-    
-    cc->cd(1); h_hcs_projection_yz->DrawCopy(); 
-    cc->cd(2); h_hcs_projection_xz->DrawCopy(); 
+    cc->cd(1); h_hcs_projection_vertical  ->DrawCopy(); 
+    cc->cd(2); h_hcs_projection_horizontal->DrawCopy(); 
     
     //measure time it has taken to run over all events
     double realtime = timer.RealTime(); 
