@@ -177,6 +177,13 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
         = df_out.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "reco_dxdz_sv", "reco_dydz_sv"); 
     
     
+    auto hist_y_dydz 
+        = df_out.Histo2D({"h_y_dydz", "y_{sv} vs dy/dz_{sv};y_{sv};dy/dz_{sv}", 200, -0.07, 0.07, 200, -0.035, 0.035}, "reco_y_sv", "reco_dydz_sv");
+
+    auto hist_x_dxdz 
+        = df_out.Histo2D({"h_x_dxdz", "x_{sv} vs dx/dz_{sv};x_{sv};dx/dz_{sv}", 200, -0.07, 0.07, 200, -0.035, 0.035}, "reco_y_sv", "reco_dydz_sv");
+
+
     char c_title[255]; 
     sprintf(c_title, "data:'%s', db:'%s'", path_infile, path_dbfile); 
 
@@ -184,8 +191,17 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
     
-    new TCanvas("c1", c_title, 800, 600); 
-    hist_xy->DrawCopy("col2"); 
+    auto c = new TCanvas("c1", c_title, 1200, 600); 
+    c->Divide(2,1, 0.01,0.01); 
+
+    c->cd(1); hist_xy->DrawCopy("col2"); 
+    c->cd(2); hist_angles->DrawCopy("col2");
+    
+    auto c1 = new TCanvas("c2", c_title, 1200, 600); 
+    c1->Divide(2,1, 0.01,0.01); 
+
+    c1->cd(1); hist_y_dydz->DrawCopy("col2"); 
+    c1->cd(2); hist_x_dxdz->DrawCopy("col2"); 
 
     return 0; 
 }
