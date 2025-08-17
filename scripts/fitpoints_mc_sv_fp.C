@@ -69,7 +69,7 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
         "dydz_fp"
     };
 
-    cout << "Creating polynomials for fp => sv..." << endl; 
+    cout << "Creating polynomials for sv => fp..." << endl; 
     
     ROOT::EnableImplicitMT(); 
     Info(here, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
