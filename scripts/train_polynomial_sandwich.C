@@ -17,7 +17,7 @@ struct TrainingData_t {
 
 double rv_mag2(const ROOT::RVec<double>& v) {
     double ret=0.; 
-    for (const double& xx : v * v) ret += xx; 
+    for (const double& x : v) ret += x * x; 
     return ret; 
 }
 
@@ -64,7 +64,7 @@ void Process_event_range(   ROOT::RVec<double>& dW,
     const auto& input_array  = chain->arrays[0];     
 
     const size_t DoF_out = output_array.Get_DoF_out(); 
-    const size_t DoF_in  = input_array.Get_DoF_in(); 
+    const size_t DoF_in  = input_array.Get_DoF_out(); 
 
     for (size_t i=start; i<end; i++) { 
         
@@ -75,11 +75,18 @@ void Process_event_range(   ROOT::RVec<double>& dW,
         auto X_last = chain->arrays[1].Eval( X_mid ); 
         auto Z_err  = chain->arrays[2].Eval( X_last ) - data.outputs; 
 
+        
         //get the product of the jacobian of the last two layers
         RMatrix J2 = std::move(chain->arrays[2].Jacobian( X_last )); 
-        RMatrix J1 = std::move(chain->arrays[1].Jacobian( X_mid  )); 
+        RMatrix J1 = std::move(chain->arrays[1].Jacobian( X_mid )); 
 
-        RMatrix J_12 = std::move( J2 * J1 );
+        RMatrix J_21 = std::move( J2 * J1 );
+
+        //check matrix for NaN. this can happen because of the way the jacobian is computed. 
+        // if there is a nan-element, then skip this point.
+        bool has_nan=false;  
+        for (double &x : J_21.Data()) if (x != x) { has_nan=true; break; }
+        if (has_nan) continue;  
 
         int i_elem =0;  
 
@@ -88,17 +95,16 @@ void Process_event_range(   ROOT::RVec<double>& dW,
 
             for(double weight : input_array.Get_poly(j)->Eval_noCoeff(data.inputs)) {
 
-                for (int i=0; i<DoF_out; i++) dW.at(i_elem) += Z_err[i] * J_12.at(i, j) * weight; 
+                for (int i_out=0; i_out<DoF_out; i_out++) dW[i_elem] += Z_err[i_out] * J_21.get(i_out, j) * weight; 
                 i_elem++; 
             }
         }
 
         //this is the gradient of the function w/r/t each of the output weights
-        for (int i=0; i<DoF_out; i++) {
- 
-            for (double weight : output_array.Get_poly(i)->Eval_noCoeff(X_last)) 
-                dW.at(i_elem++) += weight * Z_err[i]; 
-        }
+        for (int i_out=0; i_out<DoF_out; i_out++) 
+            for (double weight : output_array.Get_poly(i_out)->Eval_noCoeff(X_last)) 
+                dW[i_elem++] += weight * Z_err[i_out]; 
+        
     }//for (size_t i=start; i<end; i++)
 }
 //__________________________________________________________________________________________________________________
@@ -124,10 +130,13 @@ double Evaluate_error_range(const std::vector<TrainingData_t>& data_vec,
     for (size_t i=start; i<end; i++) {
         auto& data = data_vec[i]; 
         error += rv_mag2( data.outputs - chain->Eval(data.inputs) ); 
-    }//for (size_t i=start; i<end; i++)
+    }
 
     return error; 
 }
+
+
+#define RUN_WITHOUT_MULTITHREADDING false
 
 //____________________________________________________________________________________________________________________________________
 int train_polynomial_sandwich(  const int n_grad_iterations = 10,
@@ -141,21 +150,21 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     const char* const here = "train_polynomial_sandwich"; 
     
     //if there are more training events than this in the 'path_infile' root file, then only use this many. 
-    const int max_events_train = 12e3; 
+    const int max_events_train = 1e7; 
 
     //put in a number here which is orders of magnitude larger than the maximum reasonable error you expect. 
     //if the error of any particular iteration exceeds this, then quit. 
     const double max_error = 1e3; 
 
 
-    vector<string> branches_input   = {
+    vector<string> branches_output = {
         "x_fp",
         "y_fp",
         "dxdz_fp",
         "dydz_fp"
     };
 
-    vector<string> branches_output  = {
+    vector<string> branches_input  = {
         "x_sv",
         "y_sv",
         "dxdz_sv",
@@ -256,7 +265,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     NPolyArray poly_array = ApexOptics::Parse_NPolyArray_from_file(path_dbfile, branches_output, (int)branches_input.size()); 
 
     if (poly_array.Get_status() != NPolyArray::kGood) {
-        Error(here, "NPolyArray from file '%s' did not parse successfully", path_infile); 
+        Error(here, "NPolyArray from file '%s' did not parse successfully", path_dbfile); 
         return -1; 
     }
 
@@ -304,13 +313,13 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     //  HYPERPARAMETERS - 
     //  
     //the extent to which 
-    double eta          = 1e-3;
+    double eta          = 1e-4;
 
     //the fraction of the 'existing' gradient which stays behind at the last step
-    double momentum     = 0.; //1.0000 - 0;
+    double momentum     = 1.0000 - 4e-3;
     
     //the number of epochs between graph updates: 
-    const int update_period = 25; 
+    const int update_period = 50; 
     //  
     //  
     //  
@@ -335,7 +344,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     
 
     //number of threads 
-    const size_t n_threads             = thread::hardware_concurrency(); 
+    const size_t n_threads             = ( RUN_WITHOUT_MULTITHREADDING ? 1 : std::thread::hardware_concurrency() ); 
     const size_t n_events_per_thread   = n_events_train / n_threads; 
     const size_t remainder             = n_events_train % n_threads; 
     
@@ -370,7 +379,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
 
         //add the sum from all threads
         double error=0.; 
-        for (auto &err : error_threads) error += err; 
+        for (auto &err : error_threads) error += err;
 
         //return the final error
         return sqrt( error / ((double)n_events_train * DoF_out)); 
@@ -411,11 +420,11 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
 
             for (int i=0; i<DoF_in; i++) 
                 for (int j=0; j<array_input.Get_poly(i)->Get_nElems(); j++) 
-                    best_weights.at(i_elem++) = array_input.Get_poly(i)->Get_elemCoeff(j); 
+                    best_weights[i_elem++] = array_input.Get_poly(i)->Get_elemCoeff(j); 
 
             for (int i=0; i<DoF_out; i++) 
                 for (int j=0; j<array_output.Get_poly(i)->Get_nElems(); j++) 
-                    best_weights.at(i_elem++) = array_output.Get_poly(i)->Get_elemCoeff(j); 
+                    best_weights[i_elem++] = array_output.Get_poly(i)->Get_elemCoeff(j); 
 
             best_error = error; 
             return true; 
@@ -425,8 +434,6 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
 
     //gradient descent trials. We will try to 'match' the inputs of the  
     for (int i=0; i<n_grad_iterations; i++) {
-
-        //loop over all training data 
 
         //create a dW_partial vector for each thread
         RVec<double> dW_partial[n_threads]; 
@@ -440,6 +447,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
             size_t end = start + n_events_per_thread + (t < remainder ? 1 : 0); 
             
             threads.emplace_back([&training_data, start, end, sandwich, &dW_partial, t]{
+               
                 Process_event_range(dW_partial[t], sandwich, training_data, start, end);  
             });
             start = end; 
@@ -454,15 +462,14 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         //combine all partial results from each thread 
         for (size_t t=0; t<n_threads; t++) dW += dW_partial[t] * eta; 
 
-        
         int i_elem=0; 
-        for (int i=0; i<DoF_in; i++)                    //input layer
-            for (int j=0; j<array_input.Get_poly(i)->Get_nElems(); j++) 
-                array_input .Get_poly(i)->Get_elem(j)->coeff += -dW.at(i_elem++) / ((double)n_events_train); 
+        for (int j=0; j<DoF_in; j++)                    //input layer
+            for (int k=0; k<array_input.Get_poly(j)->Get_nElems(); k++) 
+                array_input .Get_poly(j)->Get_elem(k)->coeff += -dW[i_elem++] / ((double)n_events_train); 
 
-        for (int i=0; i<DoF_out; i++)                   //output layer
-            for (int j=0; j<array_output.Get_poly(i)->Get_nElems(); j++) 
-                array_output.Get_poly(i)->Get_elem(j)->coeff += -dW.at(i_elem++) / ((double)n_events_train); 
+        for (int j=0; j<DoF_out; j++)                   //output layer
+            for (int k=0; k<array_output.Get_poly(j)->Get_nElems(); k++) 
+                array_output.Get_poly(j)->Get_elem(k)->coeff += -dW[i_elem++] / ((double)n_events_train); 
         
         //compute error with new weights
         error = Evaluate_error(sandwich);
@@ -477,7 +484,12 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         
         if (error > max_error) {
             printf("\nMaximum error exceeded (%.4e > %.4e). iteration loop terminated.\n", error, max_error); 
-            return 1; 
+            break; 
+        }
+
+        if (error != error) {
+            printf("\nNan Error reached. iteration loop terminated.\n"); 
+            break; 
         }
 
         //update the graph & redraw
