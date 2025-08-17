@@ -16,6 +16,32 @@ struct Track_t {
     double x,y,dxdz,dydz,dpp; 
 }; 
 
+NPoly dummy; 
+
+//transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
+void SCS_to_HCS(Track_t& track, const bool is_RHRS) 
+{
+    //direction (SCS)
+    auto dir = TVector3( track.dxdz, track.dydz, 1. );
+
+    auto pos = TVector3( track.x, track.y, 0. ) + ApexOptics::Get_sieve_pos(is_RHRS); 
+
+    //rotate both the position and the direction
+    dir.RotateZ( -TMath::Pi()/2. ); 
+    dir.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
+
+    pos.RotateZ( -TMath::Pi()/2. ); 
+    pos.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
+
+    //compute the new slopes
+    track.dxdz = dir.x() / dir.z(); 
+    track.dydz = dir.y() / dir.z(); 
+
+    //use these new slopes to project the track onto the z=0 plane in HCS 
+    track.x = pos.x() - track.dxdz * pos.z(); 
+    track.y = pos.y() - track.dydz * pos.z(); 
+}
+
 //_______________________________________________________________________________________________________________________________________________
 //this is a helper function which automates the creation of branches, which are just members of the Track_t struct. 
 ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch_in, map<string, double Track_t::*> branches)
@@ -150,6 +176,23 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
             return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3] }; 
         }, {"Xfp"})
 
+        .Define("Xhcs_reco", [is_RHRS](const Track_t& Xsv)
+        {
+            Track_t Xhcs{Xsv}; 
+            SCS_to_HCS(Xhcs, is_RHRS); 
+            return Xhcs; 
+        }, {"Xsv_reco"})
+
+        .Define("z_reco_horizontal", [](const Track_t& Xhcs, const TVector3& vtx)
+        {   
+            return - ( Xhcs.y - vtx.y() ) / Xhcs.dydz; 
+        }, {"Xhcs_reco", "position_vtx"})
+
+        .Define("z_reco_vertical",   [](const Track_t& Xhcs, const TVector3& vtx)
+        {
+            return - ( Xhcs.x - vtx.x() ) / Xhcs.dxdz; 
+        }, {"Xhcs_reco", "position_vtx"})
+
         .Define("position_vtx_scs", [&HCS_to_SCS](TVector3 vtx_hcs){
             TVector3 vtx_scs = vtx_hcs; 
             HCS_to_SCS(&vtx_scs); 
@@ -180,8 +223,8 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     auto hist_y_dydz 
         = df_out.Histo2D({"h_y_dydz", "y_{sv} vs dy/dz_{sv};y_{sv};dy/dz_{sv}", 200, -0.07, 0.07, 200, -0.035, 0.035}, "reco_y_sv", "reco_dydz_sv");
 
-    auto hist_x_dxdz 
-        = df_out.Histo2D({"h_x_dxdz", "x_{sv} vs dx/dz_{sv};x_{sv};dx/dz_{sv}", 200, -0.07, 0.07, 200, -0.035, 0.035}, "reco_y_sv", "reco_dydz_sv");
+    auto hist_z_dydz 
+        = df_out.Histo2D({"h_x_dxdz", "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "reco_y_sv");
 
 
     char c_title[255]; 
@@ -201,7 +244,7 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     c1->Divide(2,1, 0.01,0.01); 
 
     c1->cd(1); hist_y_dydz->DrawCopy("col2"); 
-    c1->cd(2); hist_x_dxdz->DrawCopy("col2"); 
+    c1->cd(2); hist_z_dydz->DrawCopy("col2"); 
 
     return 0; 
 }
