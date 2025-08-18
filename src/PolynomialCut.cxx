@@ -3,6 +3,8 @@
 #include <string> 
 #include <stdexcept> 
 #include <iostream> 
+#include <fstream> 
+#include <cstdio> 
 
 using namespace std; 
 
@@ -164,6 +166,39 @@ bool PolynomialCut::DoSegmentsIntersect(const Segment_t& s1, const Segment_t& s2
     return true; 
 }
 //_____________________________________________________________________________________________________________________
+void PolynomialCut::Create_dbfile(const char* path_outfile) const
+{
+    const char* const here = "PolynomialCut::Create_dbfile"; 
+
+    //create a new output file. if one exists, then delete all contents and overwrite it. 
+    fstream file(path_outfile, ios::out | ios::trunc); 
+
+    //check if file could be opened
+    if (!file.is_open()) { 
+        ostringstream oss; 
+        oss << "in <" << here << ">: unable to open output file"; 
+        throw DBFileException(oss.str().c_str(), path_outfile); 
+        return;  
+    }
+
+    //add the preamble to the dbfile
+    file << "# PolynomialCut vertex file. the data format is space-delimited, and is as follows:\n"
+            "#\n"
+            "# [vertex-index] [vertex-x] [vertex-y]\n"
+            "#\n"
+            "# note that any lines startig with '#' will be ignored, so you can add comments to indicate\n"
+            "# the circumstances under which this data was created, and how it should be used\n"
+            "# (like which branches 'x' and 'y' correspond to.)\n"; 
+
+    int i=0; 
+    for (const Vertex_t& vertex : fVertices) {
+
+        char line[200]; sprintf(line, "%-3i %+.9e %+.9e\n", i++, vertex.x, vertex.y); 
+        file << line; 
+    }
+
+    file.close(); 
+}
 //_____________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________
 

@@ -28,6 +28,10 @@ public:
 
     std::vector<Vertex_t> GetVertices() const { return fVertices; }
 
+    //create a dbfile at the given path, with all vertices. check implementation in PolynomialCut.cxx to see output file format. 
+    void Create_dbfile(const char* path_outfile) const; 
+
+
     enum EStatus { kError=-1, kGood=0, kNot_init=1 };
     EStatus GetStatus() const { return fStatus; }
 
@@ -35,10 +39,26 @@ public:
     class InvalidVertexException : public std::exception {
     private: 
         std::string fMessage;
+        ClassDef(PolynomialCut::InvalidVertexException,1); 
     public:   
         explicit InvalidVertexException(std::string message) : fMessage{message} {}; 
 
         const char* what() const noexcept override { return fMessage.c_str(); }; 
+    }; 
+
+    //exception thrown when there is some sort of fatal error with the input/output file parsing/writing.  
+    class DBFileException : public std::exception {
+    private: 
+        std::string fError, fPath;  
+        ClassDef(PolynomialCut::DBFileException,1);  
+    public: 
+        explicit DBFileException(const char* error, const char* path) 
+            : fError(error), fPath(path) {};
+
+        const char* what() const noexcept override { 
+            std::string *report = new std::string("Error: '" + fError + "' file path: '" + fPath + "'"); 
+            return report->c_str(); 
+        }
     }; 
 
 private: 
@@ -63,7 +83,7 @@ private:
     std::vector<Vertex_t>  fVertices; 
     std::vector<Segment_t> fSegments; 
 
-ClassDef(PolynomialCut,1); 
+ClassDef(PolynomialCut,1);
 };
 
 #endif 
