@@ -38,13 +38,12 @@ public:
     public:   
         explicit InvalidVertexException(std::string message) : fMessage{message} {}; 
 
-        const char* what() const noexcept override {
-            return fMessage.c_str(); 
-        }; 
+        const char* what() const noexcept override { return fMessage.c_str(); }; 
     }; 
 
 private: 
 
+    //create a segment from two vertices
     Segment_t MakeSegment(const Vertex_t& v1, const Vertex_t& v2) const {
         return Segment_t{ 
             .x0 = v1.x, 
@@ -54,8 +53,10 @@ private:
         }; 
     };
 
+    //Check if two segements intersect 
     bool DoSegmentsIntersect(const Segment_t& seg1, const Segment_t& seg2) const; 
 
+    //Create segments from the list of all vertices 
     void InitSegments(); 
 
     EStatus fStatus;
