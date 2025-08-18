@@ -181,6 +181,17 @@ void PolynomialCut::Create_dbfile(const char* path_outfile) const
         return;  
     }
 
+    if (GetStatus() != kGood) {
+        ostringstream oss; 
+        string status="undefined status"; 
+        switch (GetStatus()) {
+            case kError    : status="kError"; break; 
+            case kNot_init : status="kNot_init"; break; 
+        }
+        oss << "in <" << here << ">: Tried to write PolynomialCut object with status '" << status << "'"; 
+        throw logic_error(oss.str()); 
+    }
+
     //add the preamble to the dbfile
     file << "# PolynomialCut vertex file. the data format is space-delimited, and is as follows:\n"
             "#\n"
