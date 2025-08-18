@@ -24,12 +24,14 @@ public:
     bool IsInside(double x, double y) const; 
     
     //add a vertex to a list of vertices 
-    void AddVertex(double x, double y);     
+    void AddVertices(const std::vector<Vertex_t>& vertices); 
 
     std::vector<Vertex_t> GetVertices() const { return fVertices; }
 
     //create a dbfile at the given path, with all vertices. check implementation in PolynomialCut.cxx to see output file format. 
     void Create_dbfile(const char* path_outfile) const; 
+
+    void Parse_dbfile(const char* path_infile); 
 
 
     enum EStatus { kError=-1, kGood=0, kNot_init=1 };
@@ -56,7 +58,8 @@ public:
             : fError(error), fPath(path) {};
 
         const char* what() const noexcept override { 
-            std::string *report = new std::string("Error: '" + fError + "' file path: '" + fPath + "'"); 
+            std::string *report = new std::string("\n -- error:           " + fError + 
+                                                  "\n -- with file path: '" + fPath + "'\n"); 
             return report->c_str(); 
         }
     }; 

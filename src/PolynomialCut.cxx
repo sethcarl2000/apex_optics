@@ -5,6 +5,7 @@
 #include <iostream> 
 #include <fstream> 
 #include <cstdio> 
+#include <utility> 
 
 using namespace std; 
 
@@ -43,73 +44,22 @@ bool PolynomialCut::IsInside(double x, double y) const
         
         n_segments_match++; 
     }   
-    cout << "n_segments_match " << n_segments_match << endl; 
-
     //if the number of intersections with all segments is even, then the point is outside. otherwise, it is inside. 
     if (n_segments_match % 2 == 0) { return false; } else { return true; }
 }
 //_____________________________________________________________________________________________________________________
-void PolynomialCut::AddVertex(double x, double y)
+void PolynomialCut::AddVertices(const vector<Vertex_t>& vertices)
 {
-    const char* const here = "PolynomialCut::AddVertex"; 
-
-    Vertex_t new_vertex{ .x=x, .y=y }; 
-
-    //if there's less than two vertices, we don't have to check 'collision' problem
-    if (fVertices.size() <= 2) {
-        fVertices.push_back(new_vertex); 
-        if (fVertices.size()==3) InitSegments(); 
-        return; 
-    }
-
-    //if this is NOT the first vertex, then we need to go thru all pre-existing segments, and 
-    // check if any of the segments overlap (not allowed!)
-
-    //first check the segment between the last vertex and the new vertex 
-    Segment_t segment_last_new  = MakeSegment( fVertices.back(), new_vertex ); 
-    Segment_t segment_new_first = MakeSegment( new_vertex, fVertices.front() ); 
-
-    for (size_t i=0; i<fSegments.size()-1; i++) { 
-
-        const auto& segment = fSegments.at(i); 
-
-        //if this new segment intersects with any of the pre-existing segments, then throw an exception. 
-        if (DoSegmentsIntersect(segment_last_new, segment)) {
-
-            ostringstream oss; 
-
-            oss <<  "in <" << here << ">: New segment "
-                    "(vert-index:["<<fVertices.size()-1<<","<<fVertices.size()<<"])" 
-                    " intersects with pre-existing segment "
-                    "(vert-index:["<<i<<","<<i+1<<"])";  
-
-            throw InvalidVertexException(oss.str()); 
-        }
-        //if this new segment intersects with any of the pre-existing segments, then throw an exception. 
-        if (DoSegmentsIntersect(segment, segment_new_first)) {
-
-            ostringstream oss; 
-
-            oss <<  "in <" << here << ">: New segment "
-                    "(vert-index:["<<fVertices.size()<<","<<0<<"])" 
-                    " intersects with pre-existing segment "
-                    "(vert-index:["<<i<<","<<i+1<<"])";  
-
-            throw InvalidVertexException(oss.str()); 
-        }
-    }
-
-    //if we got here, it's safe to add thew new vertex. 
-    fVertices.push_back(new_vertex); 
-
-    //Check if we have enough veritces to have a closed shape (3 minimum)
-    InitSegments();   
+    std::copy( vertices.begin(), vertices.end(), std::back_inserter(fVertices) ); 
+    InitSegments(); 
 }
 //_____________________________________________________________________________________________________________________
 void PolynomialCut::InitSegments() 
 {
+    //this returns 'true' if any segments collide with one another, and false if not.
+    const char* const here = "PolynomialCut::InitSegments"; 
+
     if (fVertices.size() < 3) {
-        throw logic_error("in <PolynomialCut::InitSegments>: tried to initialize segments with less than 3 vertices"); 
         return; 
     }
     fSegments.clear(); fSegments.reserve(fVertices.size()); 
@@ -118,6 +68,36 @@ void PolynomialCut::InitSegments()
     
     //add one last segment to complete the loop, by making a segment connecting the last -> first segments 
     fSegments.push_back(MakeSegment(fVertices.back(), fVertices.front())); 
+
+    if (fVertices.size() <= 3 && GetStatus() == PolynomialCut::kNot_init) {
+        fStatus = PolynomialCut::kGood; 
+        return; 
+    }
+
+    //now, check each vertex to see if they collide with any other. 
+    //first check the segment between the last vertex and the new vertex 
+    for (size_t i=0; i<fSegments.size(); i++) {
+        Segment_t seg_old = fSegments[i]; 
+
+        for (size_t j=i+1; j<fSegments.size(); j++) {
+            Segment_t seg_new = fSegments[j]; 
+
+            //if this new segment intersects with any of the pre-existing segments, then throw an exception. 
+            if (DoSegmentsIntersect(seg_old, seg_new)) {
+
+                ostringstream oss; 
+
+                oss <<  "in <" << here << ">: Vertices "
+                        "(vert-index:["<< j <<","<< (j+1==fSegments.size() ? 0 : j+1) <<"])"
+                        " collide with vertices"
+                        "(vert-index:["<< i <<","<< i+1 <<"])";  
+
+                fStatus = kError; 
+                throw InvalidVertexException(oss.str()); 
+                return; 
+            }   
+        }
+    }
 
     if (GetStatus() == PolynomialCut::kNot_init) fStatus = PolynomialCut::kGood; 
 }
@@ -211,6 +191,56 @@ void PolynomialCut::Create_dbfile(const char* path_outfile) const
     file.close(); 
 }
 //_____________________________________________________________________________________________________________________
+void PolynomialCut::Parse_dbfile(const char* path_infile)
+{
+    const char* const here = "PolynomialCut::Parse_dbfile"; 
+
+    //delete all pre-existing vertices
+    fVertices.clear(); 
+
+    ifstream infile(path_infile); 
+    if (!infile.is_open()) {
+        ostringstream oss; 
+        oss << "in <" << here << ">: unable to open input file"; 
+        throw DBFileException(oss.str().c_str(), path_infile); 
+        return; 
+    }
+
+    //now, we can parse the file
+    string token, line; 
+    istringstream iss; 
+
+    vector<Vertex_t> vertices; 
+
+    while (getline(infile, line)) {
+
+        iss = istringstream(line); 
+        
+        //check if this line is a comment line. if so, skip. 
+        iss >> token; 
+        if (!token.empty() && token == "#") continue; 
+
+        Vertex_t vertex; 
+        iss >> vertex.x >> vertex.y; 
+
+        vertices.push_back(vertex); 
+    }
+
+
+    //we'll do a try-catch block here, as an exception will be thrown in this step if any of the segments overlap 
+        try {   
+            
+            AddVertices(vertices); 
+
+        } catch (const InvalidVertexException& e) {
+
+            ostringstream oss; oss << "in <" << here << ">: vertices in input file are invalid; one or more segements intersect"; 
+            fStatus = kError; 
+            throw DBFileException(oss.str().c_str(), path_infile); 
+            return; 
+        }
+}
+
 //_____________________________________________________________________________________________________________________
 
 ClassImp(PolynomialCut); 

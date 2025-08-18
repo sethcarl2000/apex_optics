@@ -172,7 +172,7 @@ void PolynomialCutApp::WriteOutput()
     //we'll do a try-catch block here, as an exception will be thrown in this step if any of the segments overlap 
     try {   
         
-        for (const auto& vertex : fVertices) polycut.AddVertex( vertex.x, vertex.y ); 
+        polycut.AddVertices(fVertices); 
 
     } catch (const PolynomialCut::InvalidVertexException& e) {
 
