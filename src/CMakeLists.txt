@@ -28,6 +28,7 @@ set(sources
     RMatrix.cxx 
     NPolyArray.cxx
     MultiLayerPerceptron.cxx
+    PolynomialCut.cxx
 )
 
 set(headers 
@@ -36,6 +37,7 @@ set(headers
     RMatrix.h 
     NPolyArray.h
     MultiLayerPerceptron.h
+    PolynomialCut.h 
 )
 
 #---------------------------------------------------------
