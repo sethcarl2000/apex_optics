@@ -1,4 +1,6 @@
 #include "PolynomialCut.h"
+#include "PolynomialCutApp.h"
+#include "TGClient.h"
 #include <sstream> 
 #include <string> 
 #include <stdexcept> 
@@ -240,7 +242,12 @@ void PolynomialCut::Parse_dbfile(const char* path_infile)
             return; 
         }
 }
-
+//_____________________________________________________________________________________________________________________
+void PolynomialCut::InteractiveApp(TH2* hist, const char* drawing_option, unsigned int palette)
+{
+    //launch the interactive app
+    new PolynomialCutApp(gClient->GetRoot(), 1200, 800, hist, drawing_option, palette);
+}
 //_____________________________________________________________________________________________________________________
 
 ClassImp(PolynomialCut); 

@@ -16,5 +16,6 @@
 #pragma link C++ struct PolynomialCut::Vertex_t+; 
 #pragma link C++ class PolynomialCut::InvalidVertexException+; 
 #pragma link C++ class PolynomialCut::DBFileException+; 
+#pragma link C++ class PolynomialCutApp+; 
 
 #endif 

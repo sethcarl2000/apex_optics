@@ -10,6 +10,8 @@
 #include "TROOT.h"
 #include <vector> 
 #include <exception> 
+#include "TH2.h"
+#include "TColor.h"
 
 class PolynomialCut {
 public: 
@@ -31,8 +33,11 @@ public:
     //create a dbfile at the given path, with all vertices. check implementation in PolynomialCut.cxx to see output file format. 
     void Create_dbfile(const char* path_outfile) const; 
 
+    //parse polynomialcut from a db-file. 
     void Parse_dbfile(const char* path_infile); 
 
+    //Launch the interactive app which lets you draw a polynomial 
+    static void InteractiveApp(TH2* hist, const char* drawing_option="col2", unsigned int palette=103); // 103=kSunset; see TPad::SetPalette().
 
     enum EStatus { kError=-1, kGood=0, kNot_init=1 };
     EStatus GetStatus() const { return fStatus; }
