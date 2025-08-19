@@ -65,9 +65,10 @@ struct SieveHoleData {
     FPcoordPolynomial fpcoord_poly; 
 
     bool is_evaluated{false};
-    bool selected{false};  
 
     TEllipse* draw_circ{nullptr}; 
+
+    bool operator==(const SieveHoleData& rhs) const { return hole == rhs.hole; }
 };
 
 //constructs a container of SieveHole structs with accurate positions, row/column indices, and sizes. 
@@ -206,7 +207,13 @@ private:
     TH2D *fSieveHist;   //histogram to draw actual data
     TH2D *fHoleDrawingHist; //histogram which has schematic drawing of all sieve-holes
 
+    //size of sieve holes in drawing
+    const double fDrawSize_big   = 3.0e-3; 
+    const double fDrawSize_small = 1.5e-3;
+
     std::vector<SieveHoleData> fSieveHoleData; 
+    SieveHoleData *fSelectedSieveHole{nullptr}; 
+
 
     static constexpr std::string fTreeName{"tracks_fp"}; 
     const bool f_is_RHRS; 
@@ -232,6 +239,7 @@ public:
     void HandleCanvasClick_drawing(); //handle the canvas beign clicked (drawing histogram)
 
     void DrawSieveHoles(); 
+    void DeselectSieveHole(); 
 
     enum ECanvasEventType { kMouseButton1_down=1, kMouseButton1_up=11, kEnterObj=52, kLeaveObj=53 };  
     
@@ -363,60 +371,6 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     Resize(GetDefaultSize());
     MapWindow();
 
-#if 0
-    //create horizontal frame for writing the output file
-    // Create horizontal frame for labels and button
-    TGHorizontalFrame* bframe = new TGHorizontalFrame(this, 1200, 50);
-
-    Add_button(wframe, fWriteButton, "Write Output",  "WriteOutput()", 
-        new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)
-    ); 
-
-    fFilePathEntry = new TGTextEntry(wframe);
-    wframe->AddFrame(fFilePathEntry, new TGLayoutHints(kLHintsLeft | kLHintsExpandX, 20, 20, 5, 5)); 
-
-    AddFrame(wframe, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 0, 0, 5, 10)); 
-
-    // Create horizontal frame for labels and button
-    TGHorizontalFrame* bframe = new TGHorizontalFrame(this, 1200, 50);
-    
-    // Create coordinate labels
-    fXLabel = new TGLabel(bframe, "X: ---");
-    fXLabel->SetTextJustify(kTextLeft);
-    bframe->AddFrame(fXLabel, new TGLayoutHints(kLHintsLeft | kLHintsCenterY | kLHintsExpandX, 10, 20, 5, 5));
-    
-    fYLabel = new TGLabel(bframe, "Y: ---");
-    fYLabel->SetTextJustify(kTextLeft);
-    bframe->AddFrame(fYLabel, new TGLayoutHints(kLHintsLeft | kLHintsCenterY | kLHintsExpandX, 20, 20, 5, 5));
-
-    Add_button(bframe, fExitButton,  "Exit",          "DoExit()", 
-        new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)
-    ); 
-    Add_button(bframe, fUndoButton,  "Undo",          "DeleteLast()", 
-        new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)
-    );
-    Add_button(bframe, fClearButton, "Clear",         "DeleteAll()", 
-        new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)
-    );
-
-    AddFrame(bframe, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 0, 0, 5, 10));
-    
-    // Draw histogram on canvas
-    if (gStyle) {
-        gStyle->SetOptStat(0); 
-        gStyle->SetPalette(palette); 
-    }
-    TCanvas* canvas = fEcanvas->GetCanvas();
-    canvas->cd();
-    fHistogram->Draw(drawing_option);
-    canvas->Update();
-    
-    // Connect canvas click event
-    canvas->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "PickSieveHoleApp", this, 
-                    "HandleCanvasClick()");
-    
-    // Set window properties
-#endif 
 }
 //_____________________________________________________________________________________________________________________________________
 PickSieveHoleApp::~PickSieveHoleApp() {
@@ -457,15 +411,15 @@ void PickSieveHoleApp::DrawSieveHoles()
         .line_color = 1,   
         .line_style = 1, 
         .fill_color = 2,    //red 
-        .fill_style = 3001, //dense dotted style
+        .fill_style = 1001, //dense dotted style
     }; 
 
     //hole hole has already been evaluated
     const CircleStyle style_evaluated {
         .line_color = 1,   
         .line_style = 1, 
-        .fill_color = 17,   //grey 
-        .fill_style = 3004, //diagonal hatching style
+        .fill_color = 1,   //grey 
+        .fill_style = 3001, //dense dotted style
     }; 
 
 
@@ -484,15 +438,12 @@ void PickSieveHoleApp::DrawSieveHoles()
     }
     canv->cd(); 
 
-    //assumes that the status of all sieve holes is recorded correctly 
-    const double draw_size_big   = 3.0e-3; 
-    const double draw_size_small = 1.5e-3;
-
+    
     //draw all sieve-holes
     for (SieveHoleData& hole_data : fSieveHoleData) {
         auto& circ = hole_data.draw_circ;
 
-        double draw_rad = hole_data.hole.is_big ? draw_size_big : draw_size_small; 
+        double draw_rad = hole_data.hole.is_big ? fDrawSize_big : fDrawSize_small; 
 
         //if circ already exists, delete it to prevent a memory leak
         if (circ) delete circ; 
@@ -506,7 +457,7 @@ void PickSieveHoleApp::DrawSieveHoles()
         ); 
 
         //set line/fill style based on the status of the hole (has it been selected / drawn / etc.)
-        if (hole_data.selected) {
+        if ((fSelectedSieveHole != nullptr) && (hole_data == *fSelectedSieveHole)) {
             set_circle_style( circ, style_selected ); 
         } else {
             if (hole_data.is_evaluated) { set_circle_style( circ, style_evaluated ); }
@@ -515,6 +466,8 @@ void PickSieveHoleApp::DrawSieveHoles()
         
         circ->Draw();  
     }
+
+
 
     canv->Modified(); 
     canv->Update(); 
@@ -561,13 +514,16 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
     // Get canvas and event information
     TCanvas* canvas = fEcanvas_drawing->GetCanvas();
     if (!canvas) return;
-
+    
     //new event registered 
     if (fEventType != canvas->GetEvent()) {
         fEventType = canvas->GetEvent(); 
 
         //if the mouse-button was just released
         if (fEventType == kMouseButton1_up) {
+
+            //deselect any selected sievehole 
+            fSelectedSieveHole = nullptr; 
 
              // Get pixel coordinates
             Int_t px = canvas->GetEventX();
@@ -577,9 +533,42 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
             Double_t x = canvas->AbsPixeltoX(px);
             Double_t y = canvas->AbsPixeltoY(py);
             
-            printf("Drawing histogram clicked: %+.6f, %+.6f \n", x, y); cout << endl; 
-        }
-    }
+            printf("Drawing histogram clicked: %+.6f, %+.6f ", x, y); 
+
+            //check to see if any sieve hole has been selected
+            fSelectedSieveHole = nullptr; 
+
+            for (auto& hole_data : fSieveHoleData) {
+                const auto& hole = hole_data.hole; 
+                
+                const double rad2 = pow( hole.is_big ? fDrawSize_big : fDrawSize_small, 2 );
+                
+                if ( pow(hole.x - x, 2) + pow(hole.y - y, 2) < rad2 ) { //this hole was clicked. 
+            
+                    fSelectedSieveHole = &hole_data; 
+                    break; 
+                }
+            }//for (auto& hole_data : fSieveHoleData)
+
+            //if no sieve hole was picked, then return. 
+            if (fSelectedSieveHole == nullptr) { cout << endl; }
+            else {
+                printf("; hole selected, row %i, col %i", 
+                fSelectedSieveHole->hole.row, 
+                fSelectedSieveHole->hole.col); cout << endl; 
+            } 
+
+            DrawSieveHoles(); 
+        }// if (fEventType == kMouseButton1_up) 
+    }// if (fEventType != canvas->GetEvent()) 
+    
+}
+//_____________________________________________________________________________________________________________________________________
+void PickSieveHoleApp::DeselectSieveHole()
+{
+    //deselect any selected sieve holes
+    fSelectedSieveHole = nullptr; 
+    DrawSieveHoles();
 }
 //_____________________________________________________________________________________________________________________________________
 int isolate_sieveholes( const bool is_RHRS, 
