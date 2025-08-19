@@ -71,6 +71,82 @@ struct SieveHoleData {
     bool operator==(const SieveHoleData& rhs) const { return hole == rhs.hole; }
 };
 
+//this class is a mini-window which pops up when the user clicks the 'save' button. 
+//_________________________________________________________________________________________________________________________________
+class SaveOutputFrame : public TGMainFrame {
+private: 
+    TGTextButton *fButton_Save; 
+    TGTextButton *fButton_Exit; 
+
+    TGTextEntry *fTextEntry; 
+
+    const std::vector<SieveHoleData> *fSieveHoleData; 
+
+public: 
+    SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const std::vector<SieveHoleData>* _shd); 
+    ~SaveOutputFrame() { Cleanup(); } 
+
+    void DoSave(); 
+    void DoExit(); 
+
+    ClassDef(SaveOutputFrame, 1); 
+}; 
+//_________________________________________________________________________________________________________________________________
+SaveOutputFrame::SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const std::vector<SieveHoleData>* _shd)
+    : TGMainFrame(p, w, h), 
+      fSieveHoleData{_shd} 
+{
+    if (!fSieveHoleData) {
+        throw logic_error("in <SaveOutputFrame::SaveOutputFrame>: ptr to SieveHoleData vector passed is null"); 
+        return; 
+    }
+
+    // Set up the main frame
+    SetCleanup(kDeepCleanup);
+
+    auto bframe = new TGHorizontalFrame(this, 900, 500); 
+
+    auto Add_button = [this](   TGHorizontalFrame *frame, 
+                                TGTextButton* button, 
+                                string button_label, 
+                                string method, 
+                                TGLayoutHints* hints  ) 
+    {
+        button_label = "&" + button_label; 
+        button = new TGTextButton(frame, button_label.c_str(), 1); 
+        button->Connect("Clicked()", "SaveOutputFrame", this, method.c_str()); 
+        frame->AddFrame(button, hints); 
+    };
+
+    Add_button(bframe, fButton_Save, "Save", "DoSave()", new TGLayoutHints(kLHintsLeft  | kLHintsExpandX , 10, 10, 10, 5));
+    Add_button(bframe, fButton_Exit, "Exit", "DoExit()", new TGLayoutHints(kLHintsRight | kLHintsExpandX , 10, 10, 10, 5));
+    
+    AddFrame(bframe, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 10, 10, 10, 10)); 
+
+    fTextEntry = new TGTextEntry(this);
+    AddFrame(fTextEntry, new TGLayoutHints(kLHintsTop | kLHintsExpandX, 20, 20, 20, 20));  
+
+    char buff[200]; sprintf(buff, "Save %zi sieve holes?", fSieveHoleData->size()); 
+
+    SetWindowName("Save holes to output?");
+    MapSubwindows();
+    Resize(GetDefaultSize());
+    MapWindow();
+}
+//_________________________________________________________________________________________________________________________________
+void SaveOutputFrame::DoSave() 
+{ 
+    if (!fTextEntry) return; 
+    cout << "saved file: " << fTextEntry->GetBuffer()->GetString() << endl; 
+
+    DoExit(); 
+    /*noop*/ 
+}
+//_________________________________________________________________________________________________________________________________
+void SaveOutputFrame::DoExit() { CloseWindow(); }
+//_________________________________________________________________________________________________________________________________
+//_________________________________________________________________________________________________________________________________
+
 //constructs a container of SieveHole structs with accurate positions, row/column indices, and sizes. 
 // all units in mm for sieve hole positions and sizes. 
 vector<SieveHole> Construct_sieve_holes(bool is_RHRS) 
@@ -244,80 +320,6 @@ public:
     ClassDef(PickSieveHoleApp, 1)
 };
 
-//_________________________________________________________________________________________________________________________________
-class SaveOutputFrame : public TGMainFrame {
-private: 
-    TGTextButton *fButton_Save; 
-    TGTextButton *fButton_Exit; 
-
-    TGTextEntry *fTextEntry; 
-
-    const std::vector<SieveHoleData> *fSieveHoleData; 
-
-public: 
-    SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const std::vector<SieveHoleData>* _shd); 
-    ~SaveOutputFrame() { Cleanup(); } 
-
-    void DoSave(); 
-    void DoExit(); 
-
-    ClassDef(SaveOutputFrame, 1); 
-}; 
-//_________________________________________________________________________________________________________________________________
-SaveOutputFrame::SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const std::vector<SieveHoleData>* _shd)
-    : TGMainFrame(p, w, h), 
-      fSieveHoleData{_shd} 
-{
-    if (!fSieveHoleData) {
-        throw logic_error("in <SaveOutputFrame::SaveOutputFrame>: ptr to SieveHoleData vector passed is null"); 
-        return; 
-    }
-
-    // Set up the main frame
-    SetCleanup(kDeepCleanup);
-
-    auto bframe = new TGHorizontalFrame(this, 900, 500); 
-
-    auto Add_button = [this](   TGHorizontalFrame *frame, 
-                                TGTextButton* button, 
-                                string button_label, 
-                                string method, 
-                                TGLayoutHints* hints  ) 
-    {
-        button_label = "&" + button_label; 
-        button = new TGTextButton(frame, button_label.c_str(), 1); 
-        button->Connect("Clicked()", "SaveOutputFrame", this, method.c_str()); 
-        frame->AddFrame(button, hints); 
-    };
-
-    Add_button(bframe, fButton_Save, "Save", "DoSave()", new TGLayoutHints(kLHintsLeft  | kLHintsExpandX , 10, 10, 10, 5));
-    Add_button(bframe, fButton_Exit, "Exit", "DoExit()", new TGLayoutHints(kLHintsRight | kLHintsExpandX , 10, 10, 10, 5));
-    
-    AddFrame(bframe, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 10, 10, 10, 10)); 
-
-    fTextEntry = new TGTextEntry(this);
-    AddFrame(fTextEntry, new TGLayoutHints(kLHintsTop | kLHintsExpandX, 20, 20, 20, 20));  
-
-    char buff[200]; sprintf(buff, "Save %zi sieve holes?", fSieveHoleData->size()); 
-
-    SetWindowName("Save holes to output?");
-    MapSubwindows();
-    Resize(GetDefaultSize());
-    MapWindow();
-}
-//_________________________________________________________________________________________________________________________________
-void SaveOutputFrame::DoSave() 
-{ 
-    if (!fTextEntry) return; 
-    cout << "saved file: " << fTextEntry->GetBuffer()->GetString() << endl; 
-
-    DoExit(); 
-    /*noop*/ 
-}
-//_________________________________________________________________________________________________________________________________
-void SaveOutputFrame::DoExit() { CloseWindow(); }
-//_________________________________________________________________________________________________________________________________
-//_________________________________________________________________________________________________________________________________
 
 using namespace std; 
 
@@ -544,9 +546,6 @@ void PickSieveHoleApp::DrawSieveHoles()
         
         circ->Draw();  
     }
-
-
-
     canv->Modified(); 
     canv->Update(); 
 }
@@ -673,4 +672,6 @@ int isolate_sieveholes( const bool is_RHRS,
 
 
 
+
 ClassImp(PickSieveHoleApp); 
+ClassImp(SaveOutputFrame); 
