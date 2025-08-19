@@ -174,11 +174,8 @@ private:
     //button which appears when a hole is picked which has already been evaluated
     TGTextButton* fButton_Delete;   //delete this hole which has already been evaluated
     
-    
-    
-    //entering a file path in a text window
-    TGTextEntry*  fFilePathEntry;  //window to enter file path
-    TGTextButton* fButton_write_output; */ 
+    //entering a file path in a text window*/ 
+    TGTextButton* fButton_Save_Output; 
     //Status of sieve-hole picking window
     enum EWindow { 
         kPickSieveHole=0, //the default window, evaluate the sieve-holes
@@ -233,8 +230,9 @@ public:
     
     void CloseWindow();     //close the window
     void DoExit();          //exit button (exits)
-/*    void Evaluate();        //execute the evaluation loop for the selected sievehole
-    void Deselect();        //de-select the current sieve hole */ 
+    void WriteOutput(); 
+    //void Evaluate();        //execute the evaluation loop for the selected sievehole
+    //void Deselect();        //de-select the current sieve hole 
     void HandleCanvasClick_data();    //handle the canvas being clicked (data histogram)
     void HandleCanvasClick_drawing(); //handle the canvas beign clicked (drawing histogram)
 
@@ -245,6 +243,81 @@ public:
     
     ClassDef(PickSieveHoleApp, 1)
 };
+
+//_________________________________________________________________________________________________________________________________
+class SaveOutputFrame : public TGMainFrame {
+private: 
+    TGTextButton *fButton_Save; 
+    TGTextButton *fButton_Exit; 
+
+    TGTextEntry *fTextEntry; 
+
+    const std::vector<SieveHoleData> *fSieveHoleData; 
+
+public: 
+    SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const std::vector<SieveHoleData>* _shd); 
+    ~SaveOutputFrame() { Cleanup(); } 
+
+    void DoSave(); 
+    void DoExit(); 
+
+    ClassDef(SaveOutputFrame, 1); 
+}; 
+//_________________________________________________________________________________________________________________________________
+SaveOutputFrame::SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const std::vector<SieveHoleData>* _shd)
+    : TGMainFrame(p, w, h), 
+      fSieveHoleData{_shd} 
+{
+    if (!fSieveHoleData) {
+        throw logic_error("in <SaveOutputFrame::SaveOutputFrame>: ptr to SieveHoleData vector passed is null"); 
+        return; 
+    }
+
+    // Set up the main frame
+    SetCleanup(kDeepCleanup);
+
+    auto bframe = new TGHorizontalFrame(this, 900, 500); 
+
+    auto Add_button = [this](   TGHorizontalFrame *frame, 
+                                TGTextButton* button, 
+                                string button_label, 
+                                string method, 
+                                TGLayoutHints* hints  ) 
+    {
+        button_label = "&" + button_label; 
+        button = new TGTextButton(frame, button_label.c_str(), 1); 
+        button->Connect("Clicked()", "SaveOutputFrame", this, method.c_str()); 
+        frame->AddFrame(button, hints); 
+    };
+
+    Add_button(bframe, fButton_Save, "Save", "DoSave()", new TGLayoutHints(kLHintsLeft  | kLHintsExpandX , 10, 10, 10, 5));
+    Add_button(bframe, fButton_Exit, "Exit", "DoExit()", new TGLayoutHints(kLHintsRight | kLHintsExpandX , 10, 10, 10, 5));
+    
+    AddFrame(bframe, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 10, 10, 10, 10)); 
+
+    fTextEntry = new TGTextEntry(this);
+    AddFrame(fTextEntry, new TGLayoutHints(kLHintsTop | kLHintsExpandX, 20, 20, 20, 20));  
+
+    char buff[200]; sprintf(buff, "Save %zi sieve holes?", fSieveHoleData->size()); 
+
+    SetWindowName("Save holes to output?");
+    MapSubwindows();
+    Resize(GetDefaultSize());
+    MapWindow();
+}
+//_________________________________________________________________________________________________________________________________
+void SaveOutputFrame::DoSave() 
+{ 
+    if (!fTextEntry) return; 
+    cout << "saved file: " << fTextEntry->GetBuffer()->GetString() << endl; 
+
+    DoExit(); 
+    /*noop*/ 
+}
+//_________________________________________________________________________________________________________________________________
+void SaveOutputFrame::DoExit() { CloseWindow(); }
+//_________________________________________________________________________________________________________________________________
+//_________________________________________________________________________________________________________________________________
 
 using namespace std; 
 
@@ -272,9 +345,9 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     //setup the canvas, and split it 
     // Create embedded canvas
 
-    fFrame_canv = new TGHorizontalFrame(this, 1400, 700); 
+    fFrame_canv   = new TGHorizontalFrame(this, 1400, 700); 
 
-    fEcanvas_data    = new TRootEmbeddedCanvas("ECanvas_data", this, 700, 700);
+    fEcanvas_data = new TRootEmbeddedCanvas("ECanvas_data", this, 700, 700);
     fFrame_canv->AddFrame(fEcanvas_data, new TGLayoutHints(kLHintsLeft | kLHintsExpandX | kLHintsExpandY, 10, 10, 10, 5)); 
     
     TCanvas* canvas = fEcanvas_data->GetCanvas();
@@ -345,8 +418,6 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
 
     AddFrame(fFrame_canv, new TGLayoutHints(kLHintsTop | kLHintsExpandX | kLHintsExpandY, 10, 10, 10, 5)); 
 
-    //now, we can start adding buttons
-    TGHorizontalFrame* bframe = new TGHorizontalFrame(this, 1400, 50);
     
     auto Add_button = [this](   TGHorizontalFrame *frame, 
                                 TGTextButton* button, 
@@ -360,7 +431,14 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
         frame->AddFrame(button, hints); 
     };
 
-    Add_button(bframe, fButton_Exit,  "Exit",  "DoExit()", 
+    //now, we can start adding buttons
+    TGHorizontalFrame* bframe = new TGHorizontalFrame(this, 1400, 50);
+    
+    Add_button(bframe, fButton_Save_Output, "Save Output",  "WriteOutput()", 
+        new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)
+    ); 
+
+    Add_button(bframe, fButton_Exit,        "Exit",         "DoExit()", 
         new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)
     ); 
 
@@ -484,6 +562,9 @@ void PickSieveHoleApp::DoExit() {
     gApplication->Terminate(0);
 }
 //_____________________________________________________________________________________________________________________________________
+void PickSieveHoleApp::WriteOutput() {
+    new SaveOutputFrame(gClient->GetRoot(), 900, 500, &fSieveHoleData); 
+}
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::HandleCanvasClick_data() {
     // Get canvas and event information
