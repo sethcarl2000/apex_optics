@@ -428,6 +428,48 @@ PickSieveHoleApp::~PickSieveHoleApp() {
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DrawSieveHoles()
 {
+    //basic struct to set style & color of circle
+    struct CircleStyle { 
+        unsigned int 
+            line_color,
+            line_style, 
+            fill_color, 
+            fill_style;  
+    }; 
+
+    auto set_circle_style = [](TEllipse *circ, const CircleStyle& style) {
+        circ->SetLineColor(style.line_color);
+        circ->SetLineStyle(style.line_style);
+        circ->SetFillColor(style.fill_color);
+        circ->SetFillStyle(style.fill_style); 
+    }; 
+
+    //hole is not selected and not evaluated
+    const CircleStyle style_default {
+        .line_color = 1, //black   
+        .line_style = 1, //solid
+        .fill_color = 0, //no fill 
+        .fill_style = 0  //no fill 
+    }; 
+
+    //hole is currently selected
+    const CircleStyle style_selected {
+        .line_color = 1,   
+        .line_style = 1, 
+        .fill_color = 2,    //red 
+        .fill_style = 3001, //dense dotted style
+    }; 
+
+    //hole hole has already been evaluated
+    const CircleStyle style_evaluated {
+        .line_color = 1,   
+        .line_style = 1, 
+        .fill_color = 17,   //grey 
+        .fill_style = 3004, //diagonal hatching style
+    }; 
+
+
+
     if (!fEcanvas_drawing) {
         Warning("PickSieveHolesApp::DrawSieveHoles", "Tried to execute when ptr for 'drawing'"
                 " embedded canvas (fEcanvas_drawing) is null"); 
@@ -464,8 +506,13 @@ void PickSieveHoleApp::DrawSieveHoles()
         ); 
 
         //set line/fill style based on the status of the hole (has it been selected / drawn / etc.)
-        circ->SetFillColor(6); 
-        circ->SetFillStyle(3008);
+        if (hole_data.selected) {
+            set_circle_style( circ, style_selected ); 
+        } else {
+            if (hole_data.is_evaluated) { set_circle_style( circ, style_evaluated ); }
+            else                        { set_circle_style( circ, style_default ); } 
+        }
+        
         circ->Draw();  
     }
 
