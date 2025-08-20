@@ -60,6 +60,13 @@ struct FPcoordPolynomial {
 //stores information about 
 struct SieveHoleData {
     
+    SieveHoleData(const SieveHole& _hole) : hole{_hole} {}; 
+
+    ~SieveHoleData() { 
+        if (draw_circ) delete draw_circ; 
+        if (hole_cut)  delete hole_cut; 
+    }; 
+
     SieveHole hole; 
 
     double cut_x    {std::numeric_limits<double>::quiet_NaN()};
@@ -72,6 +79,7 @@ struct SieveHoleData {
     bool is_evaluated{false};
 
     TEllipse* draw_circ{nullptr}; 
+    TEllipse* hole_cut{nullptr}; 
 
     bool operator==(const SieveHoleData& rhs) const { return hole == rhs.hole; }
 };
@@ -251,7 +259,8 @@ private:
     //additional buttons when a hole is picked on the plot
     TGTextButton*  fButton_Evaluate; //evaluate this hole
 
-    TGLabel* fLabel_holename; 
+    //label for the currently selected hole
+    TGLabel* fLabel_selectedHole; 
 
     TGNumberEntry* fNumber_cutWidth; 
     TGLabel*       fLabel_cutWidth;  
@@ -304,6 +313,8 @@ private:
     std::vector<SieveHoleData> fSieveHoleData; 
     SieveHoleData *fSelectedSieveHole{nullptr}; 
 
+    //RDF node, with which we will do analysis 
+    ROOT::RDataFrame* fRDF{nullptr};  
 
     static constexpr std::string fTreeName{"tracks_fp"}; 
     const bool f_is_RHRS; 
@@ -390,9 +401,9 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     //first things first, lets set up & draw the histogram: 
     ROOT::EnableImplicitMT(); 
 
-    ROOT::RDataFrame df(fTreeName.c_str(), path_infile); 
+    fRDF = new ROOT::RDataFrame(fTreeName.c_str(), path_infile); 
 
-    fSieveHist = (TH2D*)df.Histo2D<double>({
+    fSieveHist = (TH2D*)fRDF->Histo2D<double>({
         "h_sieve_cpy", 
         "Sieve-coordinates;dx/dz_{sv};dy/dz_{sv}", 
         200, xsv_draw_range[0], xsv_draw_range[1], 
@@ -406,8 +417,11 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fSieveHist->SetDirectory(0); 
     
     //draw the histogram and update the canvas. 
-    fSieveHist->Draw(drawing_option); 
-    canvas->Update(); 
+    fSieveHist->DrawCopy(drawing_option); 
+    /*canvas->Modified(); 
+    canvas->Update();*/  
+
+    DrawHoleCuts(); 
 
     //connect the canvas to the 'HandleCanvasClick_data()' event
     canvas->Connect(
@@ -418,7 +432,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     ); 
 
     //construct the vector of sieve holes...
-    for (const SieveHole& hole : Construct_sieve_holes(f_is_RHRS)) fSieveHoleData.push_back({ .hole = hole }); 
+    for (const SieveHole& hole : Construct_sieve_holes(f_is_RHRS)) fSieveHoleData.emplace_back(hole); 
 
     fEcanvas_drawing = new TRootEmbeddedCanvas("ECanvas_drawing", this, 700, 700);
     fFrame_canv->AddFrame(fEcanvas_drawing, new TGLayoutHints(kLHintsRight | kLHintsExpandX | kLHintsExpandY, 10, 10, 10, 5)); 
@@ -435,7 +449,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     ); 
     //draw thie histogram, draw the canvas
     fHoleDrawingHist->SetDirectory(0); 
-    fHoleDrawingHist->Draw(); 
+    fHoleDrawingHist->DrawCopy(); 
 
     //draw the sieve-holes
     DrawSieveHoles(); 
@@ -453,11 +467,13 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     //now, we can start adding buttons
     fFrame_PickHoleButtons = new TGHorizontalFrame(this, 1400, 50);
 
+    
     //Evaluate button
     fButton_Evaluate = new TGTextButton(fFrame_PickHoleButtons, "&Evaluate", 1); 
     fButton_Evaluate->Connect("Clicked()", "PickSieveHoleApp", this, "DoEvaluate()"); 
     fFrame_PickHoleButtons->AddFrame(fButton_Evaluate, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)); 
 
+    
     //this frame contains all the hole size parameters
     fFrame_numbers = new TGHorizontalFrame(fFrame_PickHoleButtons, 500, 50); 
     
@@ -486,10 +502,12 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fNumber_cutHeight->GetNumberEntry()->Connect("ReturnPressed()", "PickSieveHoleApp", this, "SetCutSize()"); 
     fNumber_cutHeight->SetButtonToNum(false); //setting this to 'false' ensures that the 'ValueChanged' signal is sent to 'SetCutSize'
     fFrame_numbers->AddFrame(fNumber_cutHeight, new TGLayoutHints( kLHintsLeft | kLHintsCenterY, 20, 10, 5, 5)); 
-    
+
+    fLabel_selectedHole = new TGLabel(fFrame_numbers, "No hole selected"); 
+    fFrame_numbers->AddFrame(fLabel_selectedHole, new TGLayoutHints(kLHintsLeft | kLHintsCenterY | kLHintsExpandX, 20,0,0,0)); 
     
     //add the number frame 
-    fFrame_PickHoleButtons->AddFrame(fFrame_numbers, new TGLayoutHints(kLHintsLeft | kLHintsCenterY, 0,0,0,0)); 
+    fFrame_PickHoleButtons->AddFrame(fFrame_numbers, new TGLayoutHints(kLHintsLeft | kLHintsCenterY | kLHintsExpandX, 0,0,0,0)); 
 
     //Delete button
     fButton_Delete      = new TGTextButton(fFrame_PickHoleButtons, "&Delete", 1); 
@@ -566,8 +584,6 @@ void PickSieveHoleApp::DrawSieveHoles()
         .fill_style = 3001, //dense dotted style
     }; 
 
-
-
     if (!fEcanvas_drawing) {
         Warning("PickSieveHolesApp::DrawSieveHoles", "Tried to execute when ptr for 'drawing'"
                 " embedded canvas (fEcanvas_drawing) is null"); 
@@ -582,7 +598,6 @@ void PickSieveHoleApp::DrawSieveHoles()
     }
     canv->cd(); 
 
-    
     //draw all sieve-holes
     for (SieveHoleData& hole_data : fSieveHoleData) {
         auto& circ = hole_data.draw_circ;
@@ -622,13 +637,70 @@ void PickSieveHoleApp::SetCutSize()
         return; 
     }
 
-    fSelectedSieveHole->cut_width  = fNumber_cutWidth ->GetNumber() * 1e-3;
-    fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber() * 1e-3;
+    if (!fSelectedSieveHole->is_evaluated) {
+        fSelectedSieveHole->cut_width  = fNumber_cutWidth ->GetNumber() * 1e-3;
+        fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber() * 1e-3;
+    }
 
-
-    //DrawSieveHoleCuts(); 
+    DrawHoleCuts(); 
 }
 //_____________________________________________________________________________________________________________________________________
+void PickSieveHoleApp::DrawHoleCuts() 
+{
+    const unsigned int line_color         = kRed; 
+    const unsigned int line_size          = 1; 
+    const unsigned int line_size_selected = 3; 
+
+    if (!fEcanvas_data) {
+        Warning("PickSieveHolesApp::DrawHoleCuts", "Tried to execute when ptr for 'drawing'"
+                " embedded canvas (fEcanvas_drawing) is null"); 
+        return; 
+    }
+
+    TCanvas* canv = fEcanvas_data->GetCanvas(); 
+    if (!canv) {
+        Warning("PickSieveHolesApp::DrawHoleCuts", "Tried to execute when ptr for 'drawing'"
+                " canvas (from: fEcanvas_drawing->GetCanvas()) is null"); 
+        return; 
+    }
+    canv->cd(); 
+
+    //draw all sieve-holes
+    for (SieveHoleData& hole_data : fSieveHoleData) {
+
+        auto& circ = hole_data.hole_cut;
+
+        //if circ already exists, delete it to prevent a memory leak
+        if (circ) delete circ; 
+
+        //check if the cuts have been defiend for this hole
+        if (hole_data.cut_x      != hole_data.cut_x ||
+            hole_data.cut_y      != hole_data.cut_y ||
+            hole_data.cut_width  != hole_data.cut_width ||
+            hole_data.cut_height != hole_data.cut_height) continue; 
+
+        circ = new TEllipse(
+            hole_data.cut_x, 
+            hole_data.cut_y, 
+            hole_data.cut_width,
+            hole_data.cut_height
+        );  
+
+        circ->SetLineColor(line_color); 
+
+        //set line/fill style based on the status of the hole (has it been selected / eval'd / etc.)
+        if ((fSelectedSieveHole != nullptr) && (hole_data == *fSelectedSieveHole)) { 
+            circ->SetLineWidth(line_size_selected); 
+        } else {
+            circ->SetLineWidth(line_size); 
+        }
+
+        circ->SetFillStyle(0); //no fill (transparent)
+        circ->Draw(); 
+    }
+    canv->Modified(); 
+    canv->Update(); 
+}
 //_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
@@ -673,6 +745,7 @@ void PickSieveHoleApp::DoEvaluate()
 
     //redraw the sieve holes, and update the button layout
     DrawSieveHoles(); 
+    DrawHoleCuts(); 
     UpdateButtons(); 
 }
 //_____________________________________________________________________________________________________________________________________
@@ -691,14 +764,16 @@ void PickSieveHoleApp::DoDelete()
     }
 
     //create a new, 'fresh' SieveHoleData, in which everything is default-initialized except the SieveHole struct. 
-    SieveHoleData new_hole{ .hole = fSelectedSieveHole->hole }; 
-    *fSelectedSieveHole = new_hole; 
+    SieveHoleData clean_slate(fSelectedSieveHole->hole); 
+    fSelectedSieveHole->~SieveHoleData(); 
+    *fSelectedSieveHole = clean_slate; 
     
     //and, finally, deselect the hole. 
     DeselectSieveHole(); 
 
     //redraw all the sieveholes, and update the button layout
     DrawSieveHoles(); 
+    DrawHoleCuts(); 
     UpdateButtons(); 
 }
 //_____________________________________________________________________________________________________________________________________
@@ -707,8 +782,7 @@ void PickSieveHoleApp::UpdateButtons()
     //first, unmap all buttons
     fButton_Delete      ->UnmapWindow(); 
     fButton_Evaluate    ->UnmapWindow(); 
-    fFrame_numbers      ->UnmapWindow(); 
-
+    
     if (!fFrame_PickHoleButtons) { Error("UpdateButtons()", "fFrame_PickHoleButtons is null"); return; }
     
     auto redraw_button = [this](TGTextButton* button) {
@@ -719,8 +793,8 @@ void PickSieveHoleApp::UpdateButtons()
     //now, handle specific cases. we're only redrawing buttons which are specific to these cases
     switch (fCurrentPickStatus) {
         case kNoneSelected   : break;  
-        case kPickHoleOnPlot : fFrame_numbers->MapWindow(); break;  
-        case kOldSelected    : fButton_Delete->MapWindow(); break; 
+        case kPickHoleOnPlot : break;  
+        case kOldSelected    : fButton_Delete->MapWindow();   break; 
         case kReadyToEval    : fButton_Evaluate->MapWindow(); break;  
     }
     
@@ -748,11 +822,6 @@ void PickSieveHoleApp::WriteOutput() {
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::HandleCanvasClick_data() {
     
-    //check if the status is valid
-    if (fCurrentPickStatus != kPickHoleOnPlot) return; 
-
-    double cut_radius = 1.75e-3; 
-
     //get canvas event information
     TCanvas* canvas = fEcanvas_data->GetCanvas();
     if (!canvas) return;
@@ -761,8 +830,15 @@ void PickSieveHoleApp::HandleCanvasClick_data() {
     if (fEventType != canvas->GetEvent()) {
         fEventType = canvas->GetEvent(); 
 
+        //check if the status is valid
+        if (fCurrentPickStatus != kPickHoleOnPlot) return; 
+        if (!fSelectedSieveHole) return;     
+
         //if the mouse-button was just released
         if (fEventType == kMouseButton1_up) {
+
+            fSelectedSieveHole->cut_width  = fNumber_cutWidth ->GetNumber() * 1e-3; 
+            fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber() * 1e-3; 
 
              // Get pixel coordinates
             Int_t px = canvas->GetEventX();
@@ -772,11 +848,18 @@ void PickSieveHoleApp::HandleCanvasClick_data() {
             Double_t x = canvas->AbsPixeltoX(px);
             Double_t y = canvas->AbsPixeltoY(py);
             
-
+            fSelectedSieveHole->cut_x = x;
+            fSelectedSieveHole->cut_y = y;              
 
             printf("Data histogram clicked: %+.6f, %+.6f \n", x, y); cout << endl; 
-        }
-    }
+
+            fCurrentPickStatus = kReadyToEval; 
+
+            DrawSieveHoles(); 
+            DrawHoleCuts(); 
+            UpdateButtons();
+         }// if (fEventType == kMouseButton1_up) 
+    }// if (fEventType != canvas->GetEvent()) 
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::HandleCanvasClick_drawing() {
@@ -810,7 +893,7 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
                 const double rad2 = pow( hole.is_big ? fDrawSize_big : fDrawSize_small, 2 );
                 
                 if ( pow(hole.x - x, 2) + pow(hole.y - y, 2) < rad2 ) { //this hole was clicked. 
-            
+
                     fSelectedSieveHole = &hole_data; 
                     
                     //check to see if this hole has been evaluated or not 
@@ -821,6 +904,15 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
                         fCurrentPickStatus = kPickHoleOnPlot;   //this hole has not been selected. we are ready to let the user 
                                                                 //select a position on the data plot to make a cicular cut on events. 
                     }
+
+                    char buff[200]; 
+                    sprintf(buff, "selected: row %i, col %i. %s", 
+                        fSelectedSieveHole->hole.row, 
+                        fSelectedSieveHole->hole.col,
+                        fSelectedSieveHole->is_evaluated ? "Already evaluated. Delete?" : "Not yet evaluated." 
+                    ); 
+                    fLabel_selectedHole->SetText(buff);  
+
                     break; 
                 }
             }//for (auto& hole_data : fSieveHoleData)
@@ -834,10 +926,10 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
             } 
 
             DrawSieveHoles(); 
+            DrawHoleCuts(); 
             UpdateButtons(); 
         }// if (fEventType == kMouseButton1_up) 
     }// if (fEventType != canvas->GetEvent()) 
-    
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DeselectSieveHole()
@@ -846,15 +938,19 @@ void PickSieveHoleApp::DeselectSieveHole()
     //check if we've already loaded a bit of data into this hole
     if (fSelectedSieveHole && !fSelectedSieveHole->is_evaluated) {
 
-        //delete the ellipse drawn for this sieve hole 
-        if (fSelectedSieveHole->draw_circ) delete fSelectedSieveHole->draw_circ;  
+        SieveHole hole = fSelectedSieveHole->hole; 
+        
+        //clean up the sieve hole by deleting this one
+        fSelectedSieveHole->~SieveHoleData(); 
         
         //this hole has not been evaluated. therefore, we need to make sure that we 'clean it up' when we deselect. 
         //but if it *has* been evaluated, we don't want to wipe the data that has already been recorded. 
-        SieveHoleData clean_slate{ .hole = fSelectedSieveHole->hole }; 
+        SieveHoleData clean_slate(fSelectedSieveHole->hole); 
 
         *fSelectedSieveHole = clean_slate; 
     }
+    fLabel_selectedHole->SetText("No hole selected"); 
+
     fSelectedSieveHole = nullptr; 
     fCurrentPickStatus = kNoneSelected; 
 }
