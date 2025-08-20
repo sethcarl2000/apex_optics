@@ -69,12 +69,12 @@ struct SieveHoleData {
 
     SieveHole hole; 
 
-    double cut_x    {std::numeric_limits<double>::quiet_NaN()};
-    double cut_y    {std::numeric_limits<double>::quiet_NaN()};
+    double cut_x     {std::numeric_limits<double>::quiet_NaN()};
+    double cut_y     {std::numeric_limits<double>::quiet_NaN()};
     double cut_width {std::numeric_limits<double>::quiet_NaN()};
     double cut_height{std::numeric_limits<double>::quiet_NaN()}; 
     
-    FPcoordPolynomial fpcoord_poly; 
+    FPcoordPolynomial y_fp, dxdz_fp, dydz_fp; 
 
     bool is_evaluated{false};
 
@@ -158,6 +158,10 @@ void SaveOutputFrame::DoSave()
 //_________________________________________________________________________________________________________________________________
 void SaveOutputFrame::DoExit() { CloseWindow(); }
 //_________________________________________________________________________________________________________________________________
+//_________________________________________________________________________________________________________________________________
+
+
+
 //_________________________________________________________________________________________________________________________________
 
 //constructs a container of SieveHole structs with accurate positions, row/column indices, and sizes. 
@@ -245,7 +249,8 @@ vector<SieveHole> Construct_sieve_holes(bool is_RHRS)
 
 class PickSieveHoleApp : public TGMainFrame {
 private:
-    TGHorizontalFrame*   fFrame_canv; 
+
+    TGHorizontalFrame*   fFrame_canvPick;
     
     TRootEmbeddedCanvas* fEcanvas_data;
     TRootEmbeddedCanvas* fEcanvas_drawing; 
@@ -254,7 +259,7 @@ private:
     TGHorizontalFrame *fFrame_PickHoleButtons; 
     TGHorizontalFrame *fFrame_numbers; 
     //buttons, sorted by the 'status' in which they appear
-    TGTextButton* fButton_Exit;     //Exit
+    TGTextButton*  fButton_Exit;     //Exit
     
     //additional buttons when a hole is picked on the plot
     TGTextButton*  fButton_Evaluate; //evaluate this hole
@@ -271,7 +276,6 @@ private:
     TGLabel*       fLabel_cutHeight; 
     const double fCutHeight_default =  1.75; //units are in mm 
     const double fCutHeight_max     = 10.00; //units are in mm 
-
 
     //button which appears when a hole is picked which has already been evaluated
     TGTextButton* fButton_Delete;   //delete this hole which has already been evaluated
@@ -293,7 +297,7 @@ private:
     //      kNoneSelected   |   Exit
     //      kPickHoleOnPlot |   Exit
     //      kReadyToEval    |   Exit Evaluate
-    //      kOldSelected    |   Exit Reset (Delete)  
+    //      kOldSelected    |   Exit Delete  
 
     enum EPickStatus { 
         kNoneSelected=0,    //no sieve hole is selected. the default state
@@ -319,6 +323,9 @@ private:
     static constexpr std::string fTreeName{"tracks_fp"}; 
     const bool f_is_RHRS; 
 
+    const char* fDrawingOption; 
+    unsigned int fPalette;
+
 public:
     PickSieveHoleApp(const TGWindow* p, 
                      UInt_t w, 
@@ -337,12 +344,19 @@ public:
     void WriteOutput(); 
 
     void DoEvaluate();        //execute the evaluation loop for the selected sievehole
+    void DoneEvaluate();      //this is executed upon exiting the EvaluateCutApp 
+
     void DoDelete();          //delete the sieve-hole which is currently selected 
     
     void HandleCanvasClick_data();    //handle the canvas being clicked (data histogram)
     void HandleCanvasClick_drawing(); //handle the canvas beign clicked (drawing histogram)
 
-    void UpdateButtons(); 
+    void HandleCanvasClick_eval();    //handle the 'eval' canvas being clicked. 
+
+    void UpdateButtons(); //update buttons to reflect current state
+
+    void DoEvalSave()   {/*noop*/}; 
+    void DoEvalReject() {/*noop*/}; 
 
     //this is called when the size of the hole cut is updated. 
     void SetCutSize(); 
@@ -352,10 +366,60 @@ public:
     void DrawSieveHoles(); 
     void DeselectSieveHole(); 
 
+    //this is called to draw the 'DrawWindow_pickHole()' method
+    void DrawWindow_pickHole(); 
+
     enum ECanvasEventType { kMouseButton1_down=1, kMouseButton1_up=11, kEnterObj=52, kLeaveObj=53 };  
     
     ClassDef(PickSieveHoleApp, 1)
 };
+
+//_________________________________________________________________________________________________________________________________
+class EvaluateCutFrame : public TGMainFrame {
+private: 
+    TGHorizontalFrame *fFrame_canv; 
+    TRootEmbeddedCanvas *fEcanvas; 
+
+    TGHorizontalFrame *fFrame_buttons; 
+
+    TGTextButton *fButton_Save; 
+    TGTextButton *fButton_Reject; 
+
+    PickSieveHoleApp *fParent; 
+
+    ROOT::RDataFrame *fRDF{nullptr}; 
+
+    SieveHoleData *fSelectedSieveHole{nullptr}; 
+
+public: 
+    EvaluateCutFrame(   const TGWindow *p, 
+                        PickSieveHoleApp *_parent, 
+                        ROOT::RDataFrame *_rdf, 
+                        SieveHoleData *_hd,
+                        const char* branch_x="dxdz_sv", 
+                        const char* branch_y="dydz_sv", 
+                        const char* draw_option="col2",
+                        const unsigned int palette=kBird    );
+     
+    ~EvaluateCutFrame(); 
+
+    //slots for button signals
+    void DoSave()   {/*noop*/}; 
+    void DoReject() {/*noop*/}; 
+    
+    enum EFPCoord { kY=0, kDxdz=1, kDydz=2 };
+    
+    void HandleCanvasClicked_yfp()    { HandleCanvasClicked(kY);    }
+    void HandleCanvasClicked_dxdzfp() { HandleCanvasClicked(kDxdz); }
+    void HandleCanvasClicked_dydzfp() { HandleCanvasClicked(kDydz); }
+
+    void HandleCanvasClicked(EFPCoord coord); 
+
+    void DrawCuts() {/*noop*/}; 
+
+    ClassDef(EvaluateCutFrame, 1); 
+};
+//_________________________________________________________________________________________________________________________________
 
 
 using namespace std; 
@@ -374,7 +438,9 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
                                     const char* drawing_option, 
                                     unsigned int palette) 
     : TGMainFrame(p, w, h),
-    f_is_RHRS(is_RHRS)
+    f_is_RHRS(is_RHRS), 
+    fDrawingOption{drawing_option},
+    fPalette{palette}
 {
     fEventType=-1; 
 
@@ -387,15 +453,16 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     
     //setup the canvas, and split it 
     // Create embedded canvas
+    //fGFrame_pick    = new TGHorizontalFrame(this, 1400, 700); 
 
-    fFrame_canv   = new TGHorizontalFrame(this, 1400, 700); 
+    fFrame_canvPick = new TGHorizontalFrame(this, 1400, 700); 
 
-    fEcanvas_data = new TRootEmbeddedCanvas("ECanvas_data", this, 700, 700);
-    fFrame_canv->AddFrame(fEcanvas_data, new TGLayoutHints(kLHintsLeft | kLHintsExpandX | kLHintsExpandY, 10, 10, 10, 5)); 
+    fEcanvas_data   = new TRootEmbeddedCanvas("ECanvas_data", fFrame_canvPick, 700, 700);
+    fFrame_canvPick->AddFrame(fEcanvas_data, new TGLayoutHints(kLHintsLeft | kLHintsExpandX | kLHintsExpandY, 0, 0, 0, 5)); 
     
     TCanvas* canvas = fEcanvas_data->GetCanvas();
     gStyle->SetOptStat(0); 
-    gStyle->SetPalette(palette); 
+    gStyle->SetPalette(fPalette); 
 
     canvas->cd(); 
     //first things first, lets set up & draw the histogram: 
@@ -417,7 +484,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fSieveHist->SetDirectory(0); 
     
     //draw the histogram and update the canvas. 
-    fSieveHist->DrawCopy(drawing_option); 
+    fSieveHist->DrawCopy(fDrawingOption); 
     /*canvas->Modified(); 
     canvas->Update();*/  
 
@@ -434,8 +501,8 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     //construct the vector of sieve holes...
     for (const SieveHole& hole : Construct_sieve_holes(f_is_RHRS)) fSieveHoleData.emplace_back(hole); 
 
-    fEcanvas_drawing = new TRootEmbeddedCanvas("ECanvas_drawing", this, 700, 700);
-    fFrame_canv->AddFrame(fEcanvas_drawing, new TGLayoutHints(kLHintsRight | kLHintsExpandX | kLHintsExpandY, 10, 10, 10, 5)); 
+    fEcanvas_drawing = new TRootEmbeddedCanvas("ECanvas_drawing", fFrame_canvPick, 700, 700);
+    fFrame_canvPick->AddFrame(fEcanvas_drawing, new TGLayoutHints(kLHintsRight | kLHintsExpandX | kLHintsExpandY, 0, 0, 0, 0)); 
 
     canvas = fEcanvas_drawing->GetCanvas(); 
     canvas->cd(); 
@@ -462,11 +529,10 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
         "HandleCanvasClick_drawing()"
     );
 
-    AddFrame(fFrame_canv, new TGLayoutHints(kLHintsTop | kLHintsExpandX | kLHintsExpandY, 10, 10, 10, 5)); 
+    AddFrame(fFrame_canvPick, new TGLayoutHints(kLHintsTop | kLHintsExpandX | kLHintsExpandY, 0, 0, 0, 0)); 
 
     //now, we can start adding buttons
     fFrame_PickHoleButtons = new TGHorizontalFrame(this, 1400, 50);
-
     
     //Evaluate button
     fButton_Evaluate = new TGTextButton(fFrame_PickHoleButtons, "&Evaluate", 1); 
@@ -541,6 +607,12 @@ PickSieveHoleApp::~PickSieveHoleApp() {
     if (fHoleDrawingHist) delete fHoleDrawingHist; 
     Cleanup();
 }
+//_____________________________________________________________________________________________________________________________________
+void PickSieveHoleApp::DrawWindow_pickHole()
+{
+
+} 
+//_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DrawSieveHoles()
 {
@@ -647,7 +719,7 @@ void PickSieveHoleApp::SetCutSize()
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DrawHoleCuts() 
 {
-    const unsigned int line_color         = kRed; 
+    const unsigned int line_color         = kBlue; 
     const unsigned int line_size          = 1; 
     const unsigned int line_size_selected = 3; 
 
@@ -725,12 +797,17 @@ void PickSieveHoleApp::DoEvaluate()
         fCurrentWindow = kWindow_EvalSieveHole; 
     }
     
-    //... 
-    //... compute the sieve-hole data ...
-    //... 
-
+    new EvaluateCutFrame(gClient->GetRoot(), this, fRDF, fSelectedSieveHole, "dxdz_sv", "dydz_sv", "col", kBird); 
+}
+//_____________________________________________________________________________________________________________________________________
+void PickSieveHoleApp::DoneEvaluate()
+{
+    //once the EvaluateCutFrame object is done working, then we reutrn here. 
     //now, we've evaluated this sievehole
     fSelectedSieveHole->is_evaluated = true; 
+
+    //this might be changed by the EvaulateCutFrame app
+    gStyle->SetPalette(fPalette); 
 
     cout << "Evaluated hole: row " << fSelectedSieveHole->hole.row << ", col " << fSelectedSieveHole->hole.col << endl; 
 
@@ -954,6 +1031,246 @@ void PickSieveHoleApp::DeselectSieveHole()
     fSelectedSieveHole = nullptr; 
     fCurrentPickStatus = kNoneSelected; 
 }
+
+EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p, 
+                                    PickSieveHoleApp *_parent, 
+                                    ROOT::RDataFrame *_rdf, 
+                                    SieveHoleData *_hd,
+                                    const char* branch_x, 
+                                    const char* branch_y, 
+                                    const char* draw_option,
+                                    const unsigned int palette )
+    : TGMainFrame( p, 1400, 800 ), 
+    fParent{_parent},
+    fRDF{_rdf}, 
+    fSelectedSieveHole{_hd}
+{   
+    const int polynomial_degree =3; 
+
+    //setup the window
+    SetCleanup(kDeepCleanup); 
+
+    fFrame_canv = new TGHorizontalFrame(this, 1400, 800); 
+
+    fEcanvas = new TRootEmbeddedCanvas("ECanvas_eval", fFrame_canv, 1400, 800); 
+
+    const double cut_x = fSelectedSieveHole->cut_x; 
+    const double cut_y = fSelectedSieveHole->cut_y; 
+    const double cut_width  = fSelectedSieveHole->cut_width; 
+    const double cut_height = fSelectedSieveHole->cut_height; 
+
+    auto hist_xy = (*fRDF).Histo2D<double>({"h_xy", "", 
+            200, xsv_draw_range[0], xsv_draw_range[1],
+            200, ysv_draw_range[0], ysv_draw_range[1] }, branch_x, branch_y);     
+
+
+    auto df_output = (*fRDF)
+
+        .Filter([cut_x, cut_y, cut_width, cut_height](double x, double y)
+        {
+            return pow( (x - cut_x)/cut_width, 2 ) + pow( (y - cut_y)/cut_height, 2 ) < 1.; 
+        }, {branch_x, branch_y}); 
+    
+    
+    auto hist_y_fp    = df_output.Histo2D<double>({"h_y",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055}, "x_fp", "y_fp"); 
+    auto hist_dxdz_fp = df_output.Histo2D<double>({"h_dxdz", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025}, "x_fp", "y_fp"); 
+    auto hist_dydz_fp = df_output.Histo2D<double>({"h_dydz", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040}, "x_fp", "y_fp"); 
+    
+    TCanvas *canv = fEcanvas->GetCanvas(); 
+    
+    //fit a graph and polynomial to each point
+    const int min_stats = 10; 
+    const double min_frac  = 0.10; 
+    const double fit_radius = 8e-3; 
+    
+    struct FitPoint_t { double x,y,sigma, N; };
+    //__________________________________________________________________________________________________________
+    auto fit_hist = [min_stats,
+			         min_frac,
+			         fit_radius](TH2D *th2d) 
+    {
+        auto x_axis = th2d->GetXaxis(); 
+        vector<FitPoint_t> pts; 
+
+        double max_proj_integral=0.; 
+
+        for (int b=1; b<x_axis->GetNbins(); b++) { 
+        
+            auto proj = th2d->ProjectionY("proj",b,b); 
+
+            if (proj->Integral()<min_stats) continue; 
+
+            double fit_center = proj->GetXaxis()->GetBinCenter( proj->GetMaximumBin() ); 
+            
+            max_proj_integral = max<double>( max_proj_integral, proj->Integral() ); 
+        
+            auto gaus_fit = new TF1("gausFit", "gaus(0)", fit_center - fit_radius, fit_center + fit_radius); 
+        
+            gaus_fit->SetParameter(0, proj->GetMaximum());
+            gaus_fit->SetParameter(1, fit_center);
+            gaus_fit->SetParameter(2, 2.5e-3); 
+        
+            auto fit_result = proj->Fit("gausFit", "N Q S L R"); 
+
+            if (!fit_result->IsValid()) continue; //skip if the fit failed
+	
+            pts.push_back({
+                .x      = x_axis->GetBinCenter(b),
+                .y      = fit_result->Parameter(1),
+                .sigma  = fit_result->Parameter(2), 
+                .N      = proj->Integral()
+            }); 
+        }
+        
+        //prune the vectors. delete points which are less than  maxHeight * minStat_frac        
+        for(auto it = pts.begin(); it != pts.end();) {
+            if ( it->N < min_frac * max_proj_integral ) { pts.erase(it); }
+            else                                        { it++; }
+        }
+
+        if ((int)pts.size() < polynomial_degree+1 ) return vector<FitPoint_t>{}; 
+        
+        return pts; 
+    };
+    //__________________________________________________________________________________________________________
+    
+    //now, we can create the polynomial fit
+    //__________________________________________________________________________________________________________
+    auto Create_polynomial_fit = [](const vector<FitPoint_t>& points) 
+    {
+        RMatrix A(polynomial_degree+1, polynomial_degree+1, 0.); 
+
+        ROOT::RVec<double> B(polynomial_degree+1, 0.); 
+
+        for (const FitPoint_t& pt : points) {
+            
+            for (int i=0; i<=polynomial_degree; i++) { 
+
+                B[i] += pt.y * pow( pt.x, i ); 
+                
+                for (int j=0; j<=polynomial_degree; j++) A.get(i,j) += pow( pt.x, i ) * pow( pt.x, j ); 
+            }
+        }
+        auto coeffs = A.Solve( B ); 
+        
+        //check coeffs for NaN 
+        for (double x : coeffs) if (x != x) { return ROOT::RVec<double>{}; }
+
+        return coeffs; 
+    }; 
+    //__________________________________________________________________________________________________________
+    
+    auto Draw_hist_and_fit = [&fit_hist, &Create_polynomial_fit, polynomial_degree, draw_option]
+        (ROOT::RDF::RResultPtr<TH2D> hist_ptr, ROOT::RVec<double>& poly, const char* name)
+    {
+        auto hist = (TH2D*)hist_ptr->Clone("d_clone");
+        
+        vector<FitPoint_t> points = fit_hist(hist); 
+
+        if (!points.empty()) poly = Create_polynomial_fit(points); 
+        
+        hist->DrawCopy(draw_option); 
+
+        if (points.empty()) return; 
+
+        //draw the points & poylnomials
+        for (const auto& pt : points) {
+            auto box = new TBox( 
+                pt.x - 1e-3, pt.y - pt.sigma, 
+                pt.x + 1e-3, pt.y + pt.sigma
+            ); 
+            box->SetLineColor(1); 
+            box->SetLineWidth(1); 
+            box->SetFillStyle(0); 
+            box->Draw("SAME"); 
+        }
+
+        char buff[50]; sprintf(buff, "pol%i", polynomial_degree); 
+
+        auto f1_poly= new TF1(name, buff, -0.65, 0.65); 
+        f1_poly->SetLineColor(kRed); 
+        f1_poly->SetLineWidth(2); 
+        for (int i=0; i<=polynomial_degree; i++) f1_poly->SetParameter(i, poly.at(i)); 
+        f1_poly->Draw("SAME"); 
+    }; 
+
+
+    gStyle->SetPalette(palette); 
+    
+    canv->cd(); 
+    canv->Divide(2,2, 0.001, 0.001); 
+
+    canv->cd(1); hist_xy->DrawCopy("col2"); 
+    auto circ = new TEllipse(
+        fSelectedSieveHole->cut_x, 
+        fSelectedSieveHole->cut_y, 
+        fSelectedSieveHole->cut_width,
+        fSelectedSieveHole->cut_height
+    ); 
+    circ->SetFillStyle(0); 
+    circ->SetLineColor(kRed); 
+    circ->SetLineWidth(2); 
+    circ->Draw(); 
+
+    canv->cd(2); Draw_hist_and_fit(hist_y_fp,    fSelectedSieveHole->y_fp.poly,    "y_fp"); 
+    canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked_yfp()"); 
+
+    canv->cd(3); Draw_hist_and_fit(hist_dxdz_fp, fSelectedSieveHole->dxdz_fp.poly, "dxdz_fp"); 
+    canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked_dxdzfp()"); 
+    
+    canv->cd(4); Draw_hist_and_fit(hist_dydz_fp, fSelectedSieveHole->dydz_fp.poly, "dydz_fp"); 
+    canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked_dydzfp()"); 
+
+    canv->Modified(); 
+    canv->Update(); 
+
+    fFrame_canv->AddFrame(fEcanvas, new TGLayoutHints(kLHintsExpandX | kLHintsExpandY, 10,10,10,10)); 
+
+    AddFrame(fFrame_canv, new TGLayoutHints(kLHintsExpandX | kLHintsExpandY, 10,10)); 
+
+    fFrame_buttons = new TGHorizontalFrame(this, 1600, 50); 
+
+    //Reject button
+    fButton_Save = new TGTextButton(fFrame_buttons, "&Save", 1); 
+    fButton_Save->Connect("Clicked()", "EvaluateCutFrame", this, "DoSave()"); 
+    fFrame_buttons->AddFrame(fButton_Save, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)); 
+
+    //Reject button
+    fButton_Reject = new TGTextButton(fFrame_buttons, "&Reject", 1); 
+    fButton_Reject->Connect("Clicked()", "EvaluateCutFrame", this, "DoReject()"); 
+    fFrame_buttons->AddFrame(fButton_Reject, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)); 
+
+    //connect the exit of this app to the 'DoneEvaluate' 
+    Connect("CloseWindow()", "PickSieveHoleApp", fParent, "DoneEvaluate()"); 
+
+    AddFrame(fFrame_buttons, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 10,10,10,5 )); 
+
+    SetWindowName("Evaluating sieve-hole cut"); 
+    MapWindow();
+    Resize(GetDefaultSize()); 
+    MapSubwindows(); 
+}   
+//_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::HandleCanvasClicked(EFPCoord coord)
+{
+    switch (coord) {
+        case kY    : cout << "y_fp" << endl; break; 
+        case kDxdz : cout << "y_fp" << endl; break; 
+        case kDydz : cout << "y_fp" << endl; break; 
+    }
+}
+//_____________________________________________________________________________________________________________________________________
+//_____________________________________________________________________________________________________________________________________
+//_____________________________________________________________________________________________________________________________________
+EvaluateCutFrame::~EvaluateCutFrame() { Cleanup(); }
+//_____________________________________________________________________________________________________________________________________
+
+
+
+
+ClassImp(EvaluateCutFrame); 
+
+
 //_____________________________________________________________________________________________________________________________________
 int isolate_sieveholes( const bool is_RHRS, 
                         const char* path_infile,
