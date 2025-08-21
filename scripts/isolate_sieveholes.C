@@ -47,15 +47,19 @@ struct SieveHole {
 
 }; 
 
-constexpr double NaN{std::numeric_limits<double>::quiet_NaN()}; 
-
 //this will contian all the data we need to make a sieve-hole output. 
 struct FPcoordPolynomial {
-    double 
-        x_min, 
-        x_max; 
-    ROOT::RVec<double> poly{}; 
+    ROOT::RVec<double> poly{};
+    
+    //evaluate the polynomial 
+    double Eval(double x) const { 
+        double val=0.; 
+        for (int i=0; i<poly.size(); i++) val += pow( x, i ) * poly[i]; 
+        return val; 
+    }; 
 }; 
+
+#define DOUBLE_NAN std::numeric_limits<double>::quiet_NaN()
 
 //stores information about 
 struct SieveHoleData {
@@ -69,12 +73,15 @@ struct SieveHoleData {
 
     SieveHole hole; 
 
-    double cut_x     {std::numeric_limits<double>::quiet_NaN()};
-    double cut_y     {std::numeric_limits<double>::quiet_NaN()};
-    double cut_width {std::numeric_limits<double>::quiet_NaN()};
-    double cut_height{std::numeric_limits<double>::quiet_NaN()}; 
+    double cut_x     {DOUBLE_NAN};
+    double cut_y     {DOUBLE_NAN};
+    double cut_width {DOUBLE_NAN};
+    double cut_height{DOUBLE_NAN}; 
     
-    FPcoordPolynomial y_fp, dxdz_fp, dydz_fp; 
+    FPcoordPolynomial y_fp{}, dxdz_fp{}, dydz_fp{}; 
+
+    double x_fp_min{DOUBLE_NAN}; 
+    double x_fp_max{DOUBLE_NAN};
 
     bool is_evaluated{false};
 
@@ -160,7 +167,13 @@ void SaveOutputFrame::DoExit() { CloseWindow(); }
 //_________________________________________________________________________________________________________________________________
 //_________________________________________________________________________________________________________________________________
 
-
+enum ECanvasEventType { 
+    kMouseButton1_down=1, 
+    kMouseButton1_up=11, 
+    kEnterObj=52, 
+    kLeaveObj=53 
+};  
+    
 
 //_________________________________________________________________________________________________________________________________
 
@@ -369,8 +382,7 @@ public:
     //this is called to draw the 'DrawWindow_pickHole()' method
     void DrawWindow_pickHole(); 
 
-    enum ECanvasEventType { kMouseButton1_down=1, kMouseButton1_up=11, kEnterObj=52, kLeaveObj=53 };  
-    
+
     ClassDef(PickSieveHoleApp, 1)
 };
 
@@ -385,11 +397,16 @@ private:
     TGTextButton *fButton_Save; 
     TGTextButton *fButton_Reject; 
 
+    TH2D *fHist_holes, *fHist_yfp, *fHist_dxdzfp, *fHist_dydzfp; 
+
     PickSieveHoleApp *fParent; 
 
     ROOT::RDataFrame *fRDF{nullptr}; 
 
     SieveHoleData *fSelectedSieveHole{nullptr}; 
+
+    //type of canvas event passed to 'fEventType' 
+    int fEventType{-1}; 
 
 public: 
     EvaluateCutFrame(   const TGWindow *p, 
@@ -404,16 +421,19 @@ public:
     ~EvaluateCutFrame(); 
 
     //slots for button signals
-    void DoSave()   {/*noop*/}; 
-    void DoReject() {/*noop*/}; 
+    void DoSave(); 
+    void DoReject(); 
     
-    enum EFPCoord { kY=0, kDxdz=1, kDydz=2 };
+    void HandleCanvasClicked(); 
     
-    void HandleCanvasClicked_yfp()    { HandleCanvasClicked(kY);    }
-    void HandleCanvasClicked_dxdzfp() { HandleCanvasClicked(kDxdz); }
-    void HandleCanvasClicked_dydzfp() { HandleCanvasClicked(kDydz); }
+    //create fit points by fitting the profile of each x-bin of the histogram
+    struct FitPoint_t { double x,y,sigma,N; };
+    std::vector<FitPoint_t> CreatePointsFromHist(TH2D* hist); 
 
-    void HandleCanvasClicked(EFPCoord coord); 
+    //create a polynomial fit of the given degree from the points given
+    ROOT::RVec<double> FitPolynomialToPoints(const std::vector<FitPoint_t>& points, const int poly_degree); 
+      
+    void Draw_Hist_Points_Poly(TH2D* hist, const std::vector<FitPoint_t>& points, const ROOT::RVec<double>& poly, const char* draw_option); 
 
     void DrawCuts() {/*noop*/}; 
 
@@ -804,21 +824,27 @@ void PickSieveHoleApp::DoneEvaluate()
 {
     //once the EvaluateCutFrame object is done working, then we reutrn here. 
     //now, we've evaluated this sievehole
-    fSelectedSieveHole->is_evaluated = true; 
+
+    if (!fSelectedSieveHole) {
+        throw logic_error("in <PickSieveHoleApp::DoneEvaluate>: no sieve hole is selected."); 
+        return; 
+    }
 
     //this might be changed by the EvaulateCutFrame app
     gStyle->SetPalette(fPalette); 
 
-    cout << "Evaluated hole: row " << fSelectedSieveHole->hole.row << ", col " << fSelectedSieveHole->hole.col << endl; 
+    if (fSelectedSieveHole->is_evaluated) {
 
-    //return to the 'pick sieve-hole' window, and deselect the sieve-hole. 
-    //call something like: 
-    // DrawWindow_PickSieveHole(); 
-    {
-        //do re-drawing of buttons
-        fCurrentWindow     = kWindow_PickSieveHole; 
-        DeselectSieveHole(); 
+        cout << "Evaluated hole: row " << fSelectedSieveHole->hole.row << ", col " << fSelectedSieveHole->hole.col << endl; 
+    
+    } else { 
+
+        cout << "Rejected hole: row " << fSelectedSieveHole->hole.row << ", col " << fSelectedSieveHole->hole.col << endl; 
     }
+
+    //do re-drawing of buttons
+    fCurrentWindow     = kWindow_PickSieveHole; 
+    DeselectSieveHole(); 
 
     //redraw the sieve holes, and update the button layout
     DrawSieveHoles(); 
@@ -905,7 +931,7 @@ void PickSieveHoleApp::HandleCanvasClick_data() {
 
     //new event registered 
     if (fEventType != canvas->GetEvent()) {
-        fEventType = canvas->GetEvent(); 
+        fEventType =  canvas->GetEvent(); 
 
         //check if the status is valid
         if (fCurrentPickStatus != kPickHoleOnPlot) return; 
@@ -1015,15 +1041,14 @@ void PickSieveHoleApp::DeselectSieveHole()
     //check if we've already loaded a bit of data into this hole
     if (fSelectedSieveHole && !fSelectedSieveHole->is_evaluated) {
 
-        SieveHole hole = fSelectedSieveHole->hole; 
+        SieveHoleData clean_slate = SieveHoleData(fSelectedSieveHole->hole); 
         
         //clean up the sieve hole by deleting this one
         fSelectedSieveHole->~SieveHoleData(); 
         
         //this hole has not been evaluated. therefore, we need to make sure that we 'clean it up' when we deselect. 
         //but if it *has* been evaluated, we don't want to wipe the data that has already been recorded. 
-        SieveHoleData clean_slate(fSelectedSieveHole->hole); 
-
+        
         *fSelectedSieveHole = clean_slate; 
     }
     fLabel_selectedHole->SetText("No hole selected"); 
@@ -1054,15 +1079,16 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
 
     fEcanvas = new TRootEmbeddedCanvas("ECanvas_eval", fFrame_canv, 1400, 800); 
 
-    const double cut_x = fSelectedSieveHole->cut_x; 
-    const double cut_y = fSelectedSieveHole->cut_y; 
+    const double cut_x      = fSelectedSieveHole->cut_x; 
+    const double cut_y      = fSelectedSieveHole->cut_y; 
     const double cut_width  = fSelectedSieveHole->cut_width; 
     const double cut_height = fSelectedSieveHole->cut_height; 
 
-    auto hist_xy = (*fRDF).Histo2D<double>({"h_xy", "", 
+    auto hist_xy = (*fRDF).Histo2D<double>({"h_xy_temp", "", 
             200, xsv_draw_range[0], xsv_draw_range[1],
             200, ysv_draw_range[0], ysv_draw_range[1] }, branch_x, branch_y);     
 
+    fHist_holes = (TH2D*)hist_xy->Clone("h_xy"); 
 
     auto df_output = (*fRDF)
 
@@ -1072,135 +1098,18 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
         }, {branch_x, branch_y}); 
     
     
-    auto hist_y_fp    = df_output.Histo2D<double>({"h_y",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055}, "x_fp", "y_fp"); 
-    auto hist_dxdz_fp = df_output.Histo2D<double>({"h_dxdz", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025}, "x_fp", "y_fp"); 
-    auto hist_dydz_fp = df_output.Histo2D<double>({"h_dydz", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040}, "x_fp", "y_fp"); 
-    
+    auto hist_y_fp    = df_output.Histo2D<double>({"h_y_temp",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055}, "x_fp", "y_fp"); 
+    auto hist_dxdz_fp = df_output.Histo2D<double>({"h_dxdz_temp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025}, "x_fp", "y_fp"); 
+    auto hist_dydz_fp = df_output.Histo2D<double>({"h_dydz_temp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040}, "x_fp", "y_fp"); 
+
     TCanvas *canv = fEcanvas->GetCanvas(); 
-    
-    //fit a graph and polynomial to each point
-    const int min_stats = 10; 
-    const double min_frac  = 0.10; 
-    const double fit_radius = 8e-3; 
-    
-    struct FitPoint_t { double x,y,sigma, N; };
-    //__________________________________________________________________________________________________________
-    auto fit_hist = [min_stats,
-			         min_frac,
-			         fit_radius](TH2D *th2d) 
-    {
-        auto x_axis = th2d->GetXaxis(); 
-        vector<FitPoint_t> pts; 
-
-        double max_proj_integral=0.; 
-
-        for (int b=1; b<x_axis->GetNbins(); b++) { 
-        
-            auto proj = th2d->ProjectionY("proj",b,b); 
-
-            if (proj->Integral()<min_stats) continue; 
-
-            double fit_center = proj->GetXaxis()->GetBinCenter( proj->GetMaximumBin() ); 
-            
-            max_proj_integral = max<double>( max_proj_integral, proj->Integral() ); 
-        
-            auto gaus_fit = new TF1("gausFit", "gaus(0)", fit_center - fit_radius, fit_center + fit_radius); 
-        
-            gaus_fit->SetParameter(0, proj->GetMaximum());
-            gaus_fit->SetParameter(1, fit_center);
-            gaus_fit->SetParameter(2, 2.5e-3); 
-        
-            auto fit_result = proj->Fit("gausFit", "N Q S L R"); 
-
-            if (!fit_result->IsValid()) continue; //skip if the fit failed
-	
-            pts.push_back({
-                .x      = x_axis->GetBinCenter(b),
-                .y      = fit_result->Parameter(1),
-                .sigma  = fit_result->Parameter(2), 
-                .N      = proj->Integral()
-            }); 
-        }
-        
-        //prune the vectors. delete points which are less than  maxHeight * minStat_frac        
-        for(auto it = pts.begin(); it != pts.end();) {
-            if ( it->N < min_frac * max_proj_integral ) { pts.erase(it); }
-            else                                        { it++; }
-        }
-
-        if ((int)pts.size() < polynomial_degree+1 ) return vector<FitPoint_t>{}; 
-        
-        return pts; 
-    };
-    //__________________________________________________________________________________________________________
-    
-    //now, we can create the polynomial fit
-    //__________________________________________________________________________________________________________
-    auto Create_polynomial_fit = [](const vector<FitPoint_t>& points) 
-    {
-        RMatrix A(polynomial_degree+1, polynomial_degree+1, 0.); 
-
-        ROOT::RVec<double> B(polynomial_degree+1, 0.); 
-
-        for (const FitPoint_t& pt : points) {
-            
-            for (int i=0; i<=polynomial_degree; i++) { 
-
-                B[i] += pt.y * pow( pt.x, i ); 
-                
-                for (int j=0; j<=polynomial_degree; j++) A.get(i,j) += pow( pt.x, i ) * pow( pt.x, j ); 
-            }
-        }
-        auto coeffs = A.Solve( B ); 
-        
-        //check coeffs for NaN 
-        for (double x : coeffs) if (x != x) { return ROOT::RVec<double>{}; }
-
-        return coeffs; 
-    }; 
-    //__________________________________________________________________________________________________________
-    
-    auto Draw_hist_and_fit = [&fit_hist, &Create_polynomial_fit, polynomial_degree, draw_option]
-        (ROOT::RDF::RResultPtr<TH2D> hist_ptr, ROOT::RVec<double>& poly, const char* name)
-    {
-        auto hist = (TH2D*)hist_ptr->Clone("d_clone");
-        
-        vector<FitPoint_t> points = fit_hist(hist); 
-
-        if (!points.empty()) poly = Create_polynomial_fit(points); 
-        
-        hist->DrawCopy(draw_option); 
-
-        if (points.empty()) return; 
-
-        //draw the points & poylnomials
-        for (const auto& pt : points) {
-            auto box = new TBox( 
-                pt.x - 1e-3, pt.y - pt.sigma, 
-                pt.x + 1e-3, pt.y + pt.sigma
-            ); 
-            box->SetLineColor(1); 
-            box->SetLineWidth(1); 
-            box->SetFillStyle(0); 
-            box->Draw("SAME"); 
-        }
-
-        char buff[50]; sprintf(buff, "pol%i", polynomial_degree); 
-
-        auto f1_poly= new TF1(name, buff, -0.65, 0.65); 
-        f1_poly->SetLineColor(kRed); 
-        f1_poly->SetLineWidth(2); 
-        for (int i=0; i<=polynomial_degree; i++) f1_poly->SetParameter(i, poly.at(i)); 
-        f1_poly->Draw("SAME"); 
-    }; 
-
-
+   
     gStyle->SetPalette(palette); 
     
     canv->cd(); 
     canv->Divide(2,2, 0.001, 0.001); 
 
-    canv->cd(1); hist_xy->DrawCopy("col2"); 
+    canv->cd(1); fHist_holes->Draw("col2"); 
     auto circ = new TEllipse(
         fSelectedSieveHole->cut_x, 
         fSelectedSieveHole->cut_y, 
@@ -1212,17 +1121,27 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     circ->SetLineWidth(2); 
     circ->Draw(); 
 
-    canv->cd(2); Draw_hist_and_fit(hist_y_fp,    fSelectedSieveHole->y_fp.poly,    "y_fp"); 
-    canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked_yfp()"); 
+    //handle y_fp drawing 
+    fHist_yfp    = (TH2D*)hist_y_fp    ->Clone("h_yfp");
+    fHist_dxdzfp = (TH2D*)hist_dxdz_fp ->Clone("h_dxdzfp"); 
+    fHist_dydzfp = (TH2D*)hist_dydz_fp ->Clone("h_dydzfp"); 
 
-    canv->cd(3); Draw_hist_and_fit(hist_dxdz_fp, fSelectedSieveHole->dxdz_fp.poly, "dxdz_fp"); 
-    canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked_dxdzfp()"); 
+    auto Draw_and_fit = [&](TH2D* hist, ROOT::RVec<double>& poly)
+    {
+        auto points = CreatePointsFromHist(hist); 
+        poly = FitPolynomialToPoints(points, polynomial_degree); 
+        Draw_Hist_Points_Poly(hist, points, poly, draw_option); 
+    }; 
+
+    canv->cd(2); Draw_and_fit(fHist_yfp,    fSelectedSieveHole->y_fp.poly); 
     
-    canv->cd(4); Draw_hist_and_fit(hist_dydz_fp, fSelectedSieveHole->dydz_fp.poly, "dydz_fp"); 
-    canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked_dydzfp()"); 
-
+    canv->cd(3); Draw_and_fit(fHist_dxdzfp, fSelectedSieveHole->dxdz_fp.poly); 
+    
+    canv->cd(4); Draw_and_fit(fHist_dydzfp, fSelectedSieveHole->dydz_fp.poly); 
+    
     canv->Modified(); 
     canv->Update(); 
+    canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked()"); 
 
     fFrame_canv->AddFrame(fEcanvas, new TGLayoutHints(kLHintsExpandX | kLHintsExpandY, 10,10,10,10)); 
 
@@ -1251,24 +1170,188 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     MapSubwindows(); 
 }   
 //_____________________________________________________________________________________________________________________________________
-void EvaluateCutFrame::HandleCanvasClicked(EFPCoord coord)
+void EvaluateCutFrame::HandleCanvasClicked()
 {
-    switch (coord) {
-        case kY    : cout << "y_fp" << endl; break; 
-        case kDxdz : cout << "y_fp" << endl; break; 
-        case kDydz : cout << "y_fp" << endl; break; 
+    //get canvas event information
+    TCanvas* canvas = fEcanvas->GetCanvas();
+    if (!canvas) return;
+
+    //new event registered 
+    if (fEventType != canvas->GetEvent()) {
+        fEventType =  canvas->GetEvent(); 
+
+        //mouse button 1 was just released
+        if (fEventType == kMouseButton1_up) {
+
+            //check if the selected object is a TH2D. if not, then quit. 
+            auto selected_ptr = canvas->GetSelected(); 
+            if (!selected_ptr || selected_ptr->IsA() != TClass::GetClass<TH2D>()) return; 
+
+            TH2D* selected_hist = (TH2D*)selected_ptr; 
+
+            //check if its one of the three histograms of ours.
+            
+            //this hist is the hole drawing; it can't be used to reset the x-range
+            if (string(selected_hist->GetName()) == "h_xy") return; 
+
+            //so, wev've selected one of our 3 fp-coord histograms. 
+            //let's reset the x-drawing range
+        }
     }
+}   
+//_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::DoSave() 
+{
+    if (fSelectedSieveHole) {
+        fSelectedSieveHole->is_evaluated = true; 
+        //save the data of this sieve-hole cut
+    } else {
+        throw logic_error("in <EvaluateCutFrame::DoSave>: no sieve hole is selected (ptr is null)"); 
+        return; 
+    }
+    //exit this window 
+    CloseWindow();
+    fParent->DoneEvaluate(); 
+}
+//_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::DoReject()
+{
+    if (fSelectedSieveHole) {
+        fSelectedSieveHole->is_evaluated = false; 
+        //reject the data of this sieve-hole (reset it)
+    } else {
+        throw logic_error("in <EvaluateCutFrame::DoSave>: no sieve hole is selected (ptr is null)"); 
+        return; 
+    }
+    //exit this window 
+    CloseWindow(); 
+    fParent->DoneEvaluate(); 
+} 
+//_____________________________________________________________________________________________________________________________________
+vector<EvaluateCutFrame::FitPoint_t> EvaluateCutFrame::CreatePointsFromHist(TH2D* hist) {
+
+    if (!hist) {
+        throw logic_error("in <EvaluateCutFrame::CreatePointsFromHist>: hist passed is null"); 
+        return {}; 
+    }
+
+    //fit a graph and polynomial to each point
+    const int min_stats = 10; 
+    const double min_frac  = 0.10; 
+    const double fit_radius = 8e-3; 
+    auto x_axis = hist->GetXaxis(); 
+
+    vector<FitPoint_t> pts; 
+
+    double max_proj_integral=0.; 
+
+    for (int b=1; b<x_axis->GetNbins(); b++) { 
+    
+        auto proj = hist->ProjectionY("proj",b,b); 
+
+        if (proj->Integral()<min_stats) continue; 
+
+        double fit_center = proj->GetXaxis()->GetBinCenter( proj->GetMaximumBin() ); 
+        
+        max_proj_integral = max<double>( max_proj_integral, proj->Integral() ); 
+    
+        auto gaus_fit = new TF1("gausFit", "gaus(0)", fit_center - fit_radius, fit_center + fit_radius); 
+    
+        gaus_fit->SetParameter(0, proj->GetMaximum());
+        gaus_fit->SetParameter(1, fit_center);
+        gaus_fit->SetParameter(2, 2.5e-3); 
+    
+        auto fit_result = proj->Fit("gausFit", "N Q S L R"); 
+
+        if (!fit_result->IsValid()) continue; //skip if the fit failed
+
+        pts.push_back({
+            .x      = x_axis->GetBinCenter(b),              //center of bin
+            .y      = fit_result->Parameter(1),             //center of gaussian, according to fit_result
+            .sigma  = pow( fit_result->ParError(1), 2 ),    //error of this value from fit_result
+            .N      = proj->Integral()                      //total stats for this profile 
+        }); 
+    }
+    
+    //prune the vectors. delete points which are less than  maxHeight * minStat_frac        
+    for(auto it = pts.begin(); it != pts.end();) {
+        if ( it->N < min_frac * max_proj_integral ) { pts.erase(it); }
+        else                                        { it++; }
+    }
+    return pts; 
+}
+//_____________________________________________________________________________________________________________________________________
+ROOT::RVec<double> EvaluateCutFrame::FitPolynomialToPoints(const vector<EvaluateCutFrame::FitPoint_t>& points, const int polynomial_degree)
+{
+    //minimum number of points
+    if (points.size() < polynomial_degree+1) return {}; 
+
+    RMatrix A(polynomial_degree+1, polynomial_degree+1, 0.); 
+
+    ROOT::RVec<double> B(polynomial_degree+1, 0.); 
+
+    for (const FitPoint_t& pt : points) {
+        
+        for (int i=0; i<=polynomial_degree; i++) { 
+
+            B[i] += pt.y * pow( pt.x, i ) / pt.sigma; 
+            
+            for (int j=0; j<=polynomial_degree; j++) A.get(i,j) += pow( pt.x, i ) * pow( pt.x, j ) / pt.sigma; 
+        }
+    }
+    auto coeffs = A.Solve( B ); 
+    
+    //check coeffs for NaN 
+    for (double x : coeffs) if (x != x) { return{}; }
+
+    return coeffs; 
+}; 
+//_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t>& points, const ROOT::RVec<double>& poly, const char* draw_option)
+{
+    hist->DrawCopy(draw_option); 
+
+    if (points.empty()) return; 
+
+    //draw the points & poylnomials
+    for (const auto& pt : points) {
+        auto box = new TBox( 
+            pt.x - 2e-3, pt.y - 10. * sqrt(pt.sigma), 
+            pt.x + 2e-3, pt.y + 10. * sqrt(pt.sigma)
+        ); 
+        box->SetLineColor(1); 
+        box->SetLineWidth(1); 
+        box->SetFillStyle(0); 
+        box->Draw("SAME"); 
+    }
+
+    if (poly.empty()) return; 
+
+    char buff[50]; sprintf(buff, "pol%zi", poly.size()-1); 
+    
+    char name[200]; sprintf(name, "%s_poly", hist->GetName()); 
+
+    if (!points.empty()) {
+        auto f1_poly = new TF1(name, buff, -0.65, 0.65); 
+        f1_poly->SetLineColor(kRed); 
+        f1_poly->SetLineWidth(2); 
+        int i=0; for (double coeff : poly) f1_poly->SetParameter(i++, coeff); 
+        f1_poly->Draw("SAME");
+    } 
 }
 //_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
-EvaluateCutFrame::~EvaluateCutFrame() { Cleanup(); }
+EvaluateCutFrame::~EvaluateCutFrame() { 
+    
+    //delete histograms
+    if (fHist_yfp)    delete fHist_yfp;    
+    if (fHist_dxdzfp) delete fHist_dxdzfp;
+    if (fHist_dydzfp) delete fHist_dydzfp; 
+    
+    Cleanup(); 
+}
 //_____________________________________________________________________________________________________________________________________
-
-
-
-
-ClassImp(EvaluateCutFrame); 
 
 
 //_____________________________________________________________________________________________________________________________________
@@ -1291,8 +1374,6 @@ int isolate_sieveholes( const bool is_RHRS,
     return 0; 
 }
 
-
-
-
+ClassImp(EvaluateCutFrame); 
 ClassImp(PickSieveHoleApp); 
 ClassImp(SaveOutputFrame); 
