@@ -64,7 +64,20 @@ struct FPcoordPolynomial {
 //stores information about 
 struct SieveHoleData {
     
+    SieveHoleData() {}; 
     SieveHoleData(const SieveHole& _hole) : hole{_hole} {}; 
+
+    //copy constructor
+    SieveHoleData(const SieveHoleData& shd) 
+        : hole{shd.hole}, 
+        cut_x{shd.cut_x}, cut_y{shd.cut_y},
+        cut_width{shd.cut_width}, cut_height{shd.cut_height}, 
+        y_fp{shd.y_fp}, dxdz_fp{shd.dxdz_fp}, dydz_fp{shd.dydz_fp},
+        x_fp_min{shd.x_fp_min}, x_fp_max{shd.x_fp_max}, 
+        is_evaluated{shd.is_evaluated}, 
+        draw_circ{nullptr}, 
+        hole_cut{nullptr} 
+        {}; 
 
     ~SieveHoleData() { 
         if (draw_circ) delete draw_circ; 
@@ -100,10 +113,19 @@ private:
 
     TGTextEntry *fTextEntry; 
 
-    const std::vector<SieveHoleData> *fSieveHoleData; 
+    std::vector<SieveHoleData> fSavedHoles; 
+
+    TVector3 fReactVertex; 
+    bool fIsRHRS; 
 
 public: 
-    SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const std::vector<SieveHoleData>* _shd); 
+    SaveOutputFrame(const TGWindow *p, 
+                    UInt_t w, 
+                    UInt_t h, 
+                    const std::vector<SieveHoleData>& shd,
+                    bool is_RHRS,
+                    TVector3 vtx ); 
+
     ~SaveOutputFrame() { Cleanup(); } 
 
     void DoSave(); 
@@ -112,43 +134,47 @@ public:
     ClassDef(SaveOutputFrame, 1); 
 }; 
 //_________________________________________________________________________________________________________________________________
-SaveOutputFrame::SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const std::vector<SieveHoleData>* _shd)
-    : TGMainFrame(p, w, h), 
-      fSieveHoleData{_shd} 
+SaveOutputFrame::SaveOutputFrame(   const TGWindow *p, 
+                                    UInt_t w, 
+                                    UInt_t h, 
+                                    const std::vector<SieveHoleData>& shd,
+                                    bool is_RHRS,
+                                    TVector3 vtx )
+    : TGMainFrame(p, w, h)
 {
-    if (!fSieveHoleData) {
-        throw logic_error("in <SaveOutputFrame::SaveOutputFrame>: ptr to SieveHoleData vector passed is null"); 
-        return; 
-    }
+    if (shd.empty()) CloseWindow(); 
+
+    
+
+    fIsRHRS = is_RHRS; 
+    fReactVertex = vtx; 
 
     // Set up the main frame
     SetCleanup(kDeepCleanup);
 
     auto bframe = new TGHorizontalFrame(this, 900, 500); 
+    
+    fButton_Save = new TGTextButton(bframe, "&Save", 1); 
+    fButton_Save->Connect("Clicked()", "SaveOutputFrame", this, "DoSave()"); 
+    bframe->AddFrame(fButton_Save, new TGLayoutHints(kLHintsLeft  | kLHintsExpandX , 10, 10, 10, 5)); 
 
-    auto Add_button = [this](   TGHorizontalFrame *frame, 
-                                TGTextButton* button, 
-                                string button_label, 
-                                string method, 
-                                TGLayoutHints* hints  ) 
-    {
-        button_label = "&" + button_label; 
-        button = new TGTextButton(frame, button_label.c_str(), 1); 
-        button->Connect("Clicked()", "SaveOutputFrame", this, method.c_str()); 
-        frame->AddFrame(button, hints); 
-    };
-
-    Add_button(bframe, fButton_Save, "Save", "DoSave()", new TGLayoutHints(kLHintsLeft  | kLHintsExpandX , 10, 10, 10, 5));
-    Add_button(bframe, fButton_Exit, "Exit", "DoExit()", new TGLayoutHints(kLHintsRight | kLHintsExpandX , 10, 10, 10, 5));
+    fButton_Exit = new TGTextButton(bframe, "&Exit", 1); 
+    fButton_Exit->Connect("Clicked()", "SaveOutputFrame", this, "DoExit()"); 
+    bframe->AddFrame(fButton_Exit, new TGLayoutHints(kLHintsLeft  | kLHintsExpandX , 10, 10, 10, 5)); 
     
     AddFrame(bframe, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 10, 10, 10, 10)); 
 
     fTextEntry = new TGTextEntry(this);
     AddFrame(fTextEntry, new TGLayoutHints(kLHintsTop | kLHintsExpandX, 20, 20, 20, 20));  
 
-    char buff[200]; sprintf(buff, "Save %zi sieve holes?", fSieveHoleData->size()); 
+    //make copies of all the sieve holes which were sucessfully evaluated
+    for (const SieveHoleData& dat : shd) {
+        if (dat.is_evaluated) fSavedHoles.push_back(dat); 
+    }
 
-    SetWindowName("Save holes to output?");
+    char buff[200]; sprintf(buff, "Save %zi sieve holes?", fSavedHoles.size()); 
+
+    SetWindowName(buff);
     MapSubwindows();
     Resize(GetDefaultSize());
     MapWindow();
@@ -157,7 +183,90 @@ SaveOutputFrame::SaveOutputFrame(const TGWindow *p, UInt_t w, UInt_t h, const st
 void SaveOutputFrame::DoSave() 
 { 
     if (!fTextEntry) return; 
-    cout << "saved file: " << fTextEntry->GetBuffer()->GetString() << endl; 
+    
+    const char* path_outfile = fTextEntry->GetBuffer()->GetString(); 
+
+    //get the react vertex from the parent
+    const TVector3 rvtx = fReactVertex; 
+
+    //now, we save the output file 
+    if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
+
+    ROOT::RDataFrame df(fSavedHoles.size()); 
+
+    int i_elem =0; 
+
+    auto snapshot = df 
+
+        .Define("hole_data", [this, &i_elem]()
+        { 
+            printf("element %4i/%zi", i_elem, this->fSavedHoles.size()); cout << endl; 
+            return this->fSavedHoles.at(i_elem++); 
+        }, {})
+
+        .Define("x_sv",     [](const SieveHoleData& hd){ return hd.hole.x; }, {"hole_data"})
+        .Define("y_sv",     [](const SieveHoleData& hd){ return hd.hole.y; }, {"hole_data"}) 
+        .Define("dxdz_sv",  [rvtx](const SieveHoleData& hd){ return ( hd.hole.x - rvtx.x() ) / ( 0. - rvtx.z() ); }, {"hole_data"})
+        .Define("dydz_sv",  [rvtx](const SieveHoleData& hd){ return ( hd.hole.y - rvtx.y() ) / ( 0. - rvtx.z() ); }, {"hole_data"})
+
+        .Define("a_y_fp",      [](const SieveHoleData& hd){ return hd.y_fp.poly; },    {"hole_data"})        
+        .Define("a_dxdz_fp",   [](const SieveHoleData& hd){ return hd.dxdz_fp.poly; }, {"hole_data"})
+        .Define("a_dydz_fp",   [](const SieveHoleData& hd){ return hd.dydz_fp.poly; }, {"hole_data"})
+
+        .Define("hole_row",   [](const SieveHoleData& hd){ return hd.hole.row; },  {"hole_data"})
+        .Define("hole_col",   [](const SieveHoleData& hd){ return hd.hole.col; },  {"hole_data"})
+
+        .Define("x_fp_min",   [](const SieveHoleData& hd){ return hd.x_fp_min; },  {"hole_data"})
+        .Define("x_fp_max",   [](const SieveHoleData& hd){ return hd.x_fp_max; },  {"hole_data"})
+
+        .Define("hole_cut_x",   [](const SieveHoleData& hd){ return hd.cut_x; },  {"hole_data"})
+        .Define("hole_cut_y",   [](const SieveHoleData& hd){ return hd.cut_y; },  {"hole_data"})
+
+        .Define("hole_cut_width",  [](const SieveHoleData& hd){ return hd.cut_width;  },  {"hole_data"})
+        .Define("hole_cut_height", [](const SieveHoleData& hd){ return hd.cut_height; },  {"hole_data"})
+
+        .Define("position_vtx_scs", [rvtx](){ return rvtx; }, {})
+
+        .Snapshot("hole_data", path_outfile, {
+            "x_sv",
+            "y_sv",
+            "dxdz_sv",
+            "dydz_sv",
+
+            "a_y_fp",
+            "a_dxdz_fp",
+            "a_dydz_fp",
+
+            "x_fp_min",
+            "x_fp_max",
+
+            "hole_cut_x",
+            "hole_cut_y",
+
+            "hole_cut_width",
+            "hole_cut_height",
+
+            "hole_row",
+            "hole_col",
+
+            "position_vtx_scs"
+        }); 
+
+    //now, create the output parameters we want to make
+    auto file = new TFile(path_outfile, "UPDATE"); 
+
+    if (!file || file->IsZombie()) {
+        throw logic_error("in <SaveOutputFrame::DoSave>: putput file file is null/zombie. check path."); 
+        return; 
+    }
+
+    auto param_is_RHRS = new TParameter<bool>("is_RHRS", fIsRHRS);  
+    param_is_RHRS->Write();
+
+    file->Close();
+    delete file; 
+
+    cout << "saved file: " << path_outfile << endl; 
 
     DoExit(); 
     /*noop*/ 
@@ -330,6 +439,8 @@ private:
     std::vector<SieveHoleData> fSieveHoleData; 
     SieveHoleData *fSelectedSieveHole{nullptr}; 
 
+    TVector3 fReactVertex; 
+
     //RDF node, with which we will do analysis 
     ROOT::RDataFrame* fRDF{nullptr};  
 
@@ -365,6 +476,18 @@ public:
     void HandleCanvasClick_drawing(); //handle the canvas beign clicked (drawing histogram)
 
     void UpdateButtons();     //update buttons to reflect current state
+
+    //public methods needed by SaveOutputFrame
+    TVector3 GetReactVertex() const { return fReactVertex; }
+
+private: 
+    string fPathInfile, fBranchX, fBranchY; 
+public: 
+
+    bool   Get_IsRHRS()     const { return f_is_RHRS; }
+    string Get_PathInfile() const { return fPathInfile; }
+    string Get_BranchX()    const { return fBranchX; }
+    string Get_BranchY()    const { return fBranchY; }
 
 
     //this is called when the size of the hole cut is updated. 
@@ -452,7 +575,7 @@ public:
     ClassDef(EvaluateCutFrame, 1); 
 };
 //_________________________________________________________________________________________________________________________________
-
+//transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
 
 using namespace std; 
 
@@ -471,6 +594,9 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
                                     unsigned int palette) 
     : TGMainFrame(p, w, h),
     f_is_RHRS(is_RHRS), 
+    fBranchX(coordname_x),
+    fBranchY(coordname_y),
+    fPathInfile(path_infile),
     fDrawingOption{drawing_option},
     fPalette{palette}
 {
@@ -498,7 +624,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
 
     canvas->cd(); 
     //first things first, lets set up & draw the histogram: 
-    ROOT::EnableImplicitMT(); 
+    if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
 
     fRDF = new ROOT::RDataFrame(fTreeName.c_str(), path_infile); 
 
@@ -511,6 +637,15 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
         coordname_x, 
         coordname_y
     )->Clone("h_sieve_cpy"); 
+
+    //compute the react-vertex
+    fReactVertex = TVector3(
+        *(fRDF->Define("x", [](const TVector3& v){ return v.x(); }, {"position_vtx_scs"}).Mean("x")),
+        *(fRDF->Define("y", [](const TVector3& v){ return v.y(); }, {"position_vtx_scs"}).Mean("y")),
+        *(fRDF->Define("z", [](const TVector3& v){ return v.z(); }, {"position_vtx_scs"}).Mean("z"))
+    ); 
+
+    printf("avg. react vertex: (% 4.1f, % 4.1f, % 4.1f) (mm)", fReactVertex.x(), fReactVertex.y(), fReactVertex.z()); cout << endl; 
 
     //make sure this histogram is not 'attached' to anything (won't be deleted by anything else). 
     fSieveHist->SetDirectory(0); 
@@ -626,7 +761,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     
     UpdateButtons(); 
 
-    SetWindowName("Hole-isolation interactive tool");
+    SetWindowName(Form("Sieve-hole selection tool. data: '%s'", path_infile));
     MapSubwindows();
     Resize(GetDefaultSize());
     MapWindow();
@@ -938,7 +1073,13 @@ void PickSieveHoleApp::WriteOutput() {
 
     if (fCurrentWindow != kWindow_PickSieveHole) return; 
 
-    new SaveOutputFrame(gClient->GetRoot(), 900, 500, &fSieveHoleData); 
+    new SaveOutputFrame(
+            gClient->GetRoot(), 
+            900, 500,  
+            fSieveHoleData,
+            Get_IsRHRS(),
+            GetReactVertex()
+        );
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::HandleCanvasClick_data() {
@@ -973,9 +1114,6 @@ void PickSieveHoleApp::HandleCanvasClick_data() {
             
             fSelectedSieveHole->cut_x = x;
             fSelectedSieveHole->cut_y = y;              
-
-            printf("Data histogram clicked: %+.6f, %+.6f \n", x, y); cout << endl; 
-
             fCurrentPickStatus = kReadyToEval; 
 
             DrawSieveHoles(); 
@@ -1011,8 +1149,6 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
             Double_t x = canvas->AbsPixeltoX(px);
             Double_t y = canvas->AbsPixeltoY(py);
             
-            printf("Drawing histogram clicked: %+.6f, %+.6f ", x, y); 
-
             for (auto& hole_data : fSieveHoleData) {
                 const auto& hole = hole_data.hole; 
                 
@@ -1044,13 +1180,6 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
             }//for (auto& hole_data : fSieveHoleData)
 
             //if no sieve hole was picked, then return. 
-            if (fSelectedSieveHole == nullptr) { cout << endl; }
-            else {
-                printf("; hole selected, row %i, col %i", 
-                fSelectedSieveHole->hole.row, 
-                fSelectedSieveHole->hole.col); cout << endl; 
-            } 
-
             DrawSieveHoles(); 
             DrawHoleCuts(); 
             UpdateButtons(); 
@@ -1124,8 +1253,8 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     
     
     auto hist_y_fp    = df_output.Histo2D<double>({"h_y_temp",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055}, "x_fp", "y_fp"); 
-    auto hist_dxdz_fp = df_output.Histo2D<double>({"h_dxdz_temp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025}, "x_fp", "y_fp"); 
-    auto hist_dydz_fp = df_output.Histo2D<double>({"h_dydz_temp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040}, "x_fp", "y_fp"); 
+    auto hist_dxdz_fp = df_output.Histo2D<double>({"h_dxdz_temp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025}, "x_fp", "dxdz_fp"); 
+    auto hist_dydz_fp = df_output.Histo2D<double>({"h_dydz_temp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040}, "x_fp", "dydz_fp"); 
 
     TCanvas *canv = fEcanvas->GetCanvas(); 
    
@@ -1189,7 +1318,8 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
 
     AddFrame(fFrame_buttons, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 10,10,10,5 )); 
 
-    SetWindowName("Evaluating sieve-hole cut"); 
+
+    SetWindowName("Evaluate hole cut"); 
     MapWindow();
     Resize(GetDefaultSize()); 
     MapSubwindows(); 
@@ -1321,6 +1451,14 @@ void EvaluateCutFrame::DoSave()
 {
     if (fSelectedSieveHole) {
         fSelectedSieveHole->is_evaluated = true; 
+
+        if (fX_max != fX_max || fX_min != fX_min) {
+            throw logic_error("in <EvaluateCutFrame::DoSave>: fX_min and/or fX_max is NaN, which should not be possible.");
+            return; 
+        }
+        fSelectedSieveHole->x_fp_min = fX_min; 
+        fSelectedSieveHole->x_fp_max = fX_max; 
+
         //save the data of this sieve-hole cut
     } else {
         throw logic_error("in <EvaluateCutFrame::DoSave>: no sieve hole is selected (ptr is null)"); 
