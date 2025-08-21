@@ -16,6 +16,8 @@ struct HoleData_t {
 
     //coefficients of the polynomial used to reconstruct these focal-plane coordinates (see usage below). 
     RVec<double> a_y_fp, a_dxdz_fp, a_dydz_fp; 
+
+    double x_fp_min{-0.6}, x_fp_max{0.6}; 
 }; 
 
 int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const char* path_infile, const char* path_outfile) 
@@ -40,7 +42,9 @@ int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const 
                                     double dydz_sv, 
                                     RVec<double> a_y_fp, 
                                     RVec<double> a_dxdz_fp,
-                                    RVec<double> a_dydz_fp )
+                                    RVec<double> a_dydz_fp,// ) 
+                                    double x_fp_min, 
+                                    double x_fp_max )
         {
             return HoleData_t{
                 .x_sv       = x_sv, 
@@ -49,9 +53,11 @@ int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const 
                 .dydz_sv    = dydz_sv, 
                 .a_y_fp     = a_y_fp,
                 .a_dxdz_fp  = a_dxdz_fp,
-                .a_dydz_fp  = a_dydz_fp
+                .a_dydz_fp  = a_dydz_fp,
+                .x_fp_min   = x_fp_min,
+                .x_fp_max   = x_fp_max 
             }; 
-        }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "a_y_fp", "a_dxdz_fp", "a_dydz_fp"})
+        }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "a_y_fp", "a_dxdz_fp", "a_dydz_fp", "x_fp_min", "x_fp_max"})
         
         //this 'Take' command tells the RDataFrame to put each event in the column 'holedata_vec' into a vector, 
         // and hand that vector back to us. 
@@ -116,10 +122,10 @@ int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const 
         .Define("dydz_sv", [](const HoleData_t& hole_data){ return hole_data.dydz_sv; },    {"hole_data"})
 
         //generate x_fp uniformly in the range defined above. 
-        .Define("x_fp", [x_fp_min, x_fp_max, &rand]()
+        .Define("x_fp", [x_fp_min, x_fp_max, &rand](const HoleData_t& hole_data)
         {
-            return x_fp_min + (x_fp_max - x_fp_min) * rand.Rndm(); 
-        }, {})
+            return hole_data.x_fp_min + (hole_data.x_fp_max - hole_data.x_fp_min) * rand.Rndm(); 
+        }, {"hole_data"})
 
         //this last one is a dummy model (which is not too far from accurate), because most of the 'polynomial-fit' 
         // scripts are expecting this branch, but we don't have this data from vertical-wire runs. 
@@ -159,6 +165,7 @@ int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const 
             "dxdz_sv",
             "dydz_sv",
             "dpp_sv",
+            
             "x_fp",
             "y_fp",
             "dxdz_fp",
