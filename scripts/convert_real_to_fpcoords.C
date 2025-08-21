@@ -24,6 +24,9 @@ int convert_real_to_fpcoords(const bool is_RHRS, const char* path_infile, const 
 
     const char* br_n_tracks = (is_RHRS ? "R_tr_n" : "L_tr_n"); 
 
+    //a very rough cut on sum of all cerenkov channels. 
+    const double min_cerenkov_sum = 1e3; 
+    string branch_cerenkov_adc = (is_RHRS ? "R" : "L") + "_cer_a_c"; 
 
     vector<ROOT::RDF::RNode> nodes{ df.Filter([](int n){ return n>0; }, {br_n_tracks}) }; 
 
@@ -39,6 +42,16 @@ int convert_real_to_fpcoords(const bool is_RHRS, const char* path_infile, const 
     }
 
     nodes.back()
+
+        //perform a very basic cut on sum of cerenkov ADCs 
+        .Define("cer_sum", [](const ROOT::RVec<double>& cer_a_c)
+        {
+            double val=0.; 
+            for (double adc : cer_a_c) if (fabs(adc) < 5e4) val += adc; 
+            return val; 
+        }, {branch_cerenkov_adc.c_str()})
+
+        .Filter([min_cerenkov_sum](double cer_sum){ return cer_cum > min_cerenkov_sum; }, {"cer_sum"})
 
         //perform the conversion from 'transport' coordinates (tra) to 'focal-plane' coordinates (fp)
         .Redefine("dxdz_fp", [](double x_tra, double dxdz_tra){
@@ -63,8 +76,12 @@ int convert_real_to_fpcoords(const bool is_RHRS, const char* path_infile, const 
   
     auto file = new TFile(path_outfile, "UPDATE"); 
 
-    auto param_is_RHRS = new TParameter<bool>("is_RHRS", is_RHRS); 
-    param_is_RHRS->Write();
+    auto param_is_RHRS     = new TParameter<bool>  ("is_RHRS", is_RHRS);      
+    auto param_cer_sum_cut = new TParameter<double>("min_cerenkov_sum", min_cerenkov_sum); 
+        
+    param_is_RHRS    ->Write();
+    param_cer_sum_cut->Write(); 
+
     file->Close(); 
 
     cout << "done." << endl; 
