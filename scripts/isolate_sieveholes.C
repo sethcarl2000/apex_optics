@@ -300,7 +300,7 @@ private:
         kWindow_PickSieveHole=0, //the default window, evaluate the sieve-holes
         kWindow_EvalSieveHole=1  //the window which is used to evaluate the sieve-holes, once one is picked. 
     }; 
-    EWindow fCurrentWindow; 
+    EWindow fCurrentWindow{kWindow_PickSieveHole}; 
 
     //possible status in the sieve-hole picking window
     //this is a guide of which buttons should be visible in each of these states: 
@@ -318,7 +318,7 @@ private:
         kReadyToEval=2,     //a sieve-hole has been picked on the plot, we are ready to evaluate it  
         kOldSelected=3      //a hole has been selected which is already evaluated. we will ask the user if they want to delete it.
     }; 
-    EPickStatus fCurrentPickStatus; 
+    EPickStatus fCurrentPickStatus{kNoneSelected}; 
 
     TH2D *fSieveHist;   //histogram to draw actual data
     TH2D *fHoleDrawingHist; //histogram which has schematic drawing of all sieve-holes
@@ -364,12 +364,8 @@ public:
     void HandleCanvasClick_data();    //handle the canvas being clicked (data histogram)
     void HandleCanvasClick_drawing(); //handle the canvas beign clicked (drawing histogram)
 
-    void HandleCanvasClick_eval();    //handle the 'eval' canvas being clicked. 
+    void UpdateButtons();     //update buttons to reflect current state
 
-    void UpdateButtons(); //update buttons to reflect current state
-
-    void DoEvalSave()   {/*noop*/}; 
-    void DoEvalReject() {/*noop*/}; 
 
     //this is called when the size of the hole cut is updated. 
     void SetCutSize(); 
@@ -378,10 +374,6 @@ public:
 
     void DrawSieveHoles(); 
     void DeselectSieveHole(); 
-
-    //this is called to draw the 'DrawWindow_pickHole()' method
-    void DrawWindow_pickHole(); 
-
 
     ClassDef(PickSieveHoleApp, 1)
 };
@@ -397,7 +389,24 @@ private:
     TGTextButton *fButton_Save; 
     TGTextButton *fButton_Reject; 
 
-    TH2D *fHist_holes, *fHist_yfp, *fHist_dxdzfp, *fHist_dydzfp; 
+    struct HistAndLimit {
+        
+        TH2D *hist{nullptr}; 
+        TLine *lim_low{nullptr}, *lim_high{nullptr}; 
+
+        HistAndLimit(TH2D* _hist=nullptr) : hist{_hist} {}; 
+
+        ~HistAndLimit() {
+            if (lim_low)  delete lim_low; 
+            if (lim_high) delete lim_high; 
+        }
+
+        void DrawLim_low (double val);
+        void DrawLim_high(double val);  
+    }; 
+    TH2D *fHist_holes;
+    //*fHist_yfp, *fHist_dxdzfp, *fHist_dydzfp; 
+    HistAndLimit fY_fp, fDxdz_fp, fDydz_fp; 
 
     PickSieveHoleApp *fParent; 
 
@@ -407,6 +416,8 @@ private:
 
     //type of canvas event passed to 'fEventType' 
     int fEventType{-1}; 
+
+    double fX_min{DOUBLE_NAN}, fX_max{DOUBLE_NAN}; 
 
 public: 
     EvaluateCutFrame(   const TGWindow *p, 
@@ -435,7 +446,8 @@ public:
       
     void Draw_Hist_Points_Poly(TH2D* hist, const std::vector<FitPoint_t>& points, const ROOT::RVec<double>& poly, const char* draw_option); 
 
-    void DrawCuts() {/*noop*/}; 
+    void UpdateButtons(); 
+    void DrawLimits();     
 
     ClassDef(EvaluateCutFrame, 1); 
 };
@@ -628,11 +640,6 @@ PickSieveHoleApp::~PickSieveHoleApp() {
     Cleanup();
 }
 //_____________________________________________________________________________________________________________________________________
-void PickSieveHoleApp::DrawWindow_pickHole()
-{
-
-} 
-//_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DrawSieveHoles()
 {
@@ -723,6 +730,8 @@ void PickSieveHoleApp::DrawSieveHoles()
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::SetCutSize()
 {
+    if (fCurrentWindow != kWindow_PickSieveHole) return; 
+    
     if (!fSelectedSieveHole) return; 
     if (!fNumber_cutHeight || !fNumber_cutHeight) {
         throw logic_error("in <PickSieveHoleApp::SetCutSize>: One or both of number-entry objects are null."); 
@@ -799,6 +808,8 @@ void PickSieveHoleApp::DrawHoleCuts()
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DoEvaluate() 
 {
+    if (fCurrentWindow != kWindow_PickSieveHole) return; 
+
     //check if there is a hole picked. 
     if (!fSelectedSieveHole) {
         Error("DoEvaluate", "No sieve hole is selected. It shoul not have been possible to get here..."); 
@@ -806,10 +817,10 @@ void PickSieveHoleApp::DoEvaluate()
     }
 
     //check if our status is 'kReadyToEval' 
-    /*if (fCurrentPickStatus != kReadyToEval) {
+    if (fCurrentPickStatus != kReadyToEval) {
         Error("DoEvaluate", "Tried to eval when fCurrentPickStatus is not 'kRreadyToEval'. It should not have been possible to get here..."); 
         return; 
-    }*/ 
+    } 
 
     //call something like: 
     // DrawWindow_EvalSieveHole() 
@@ -854,6 +865,8 @@ void PickSieveHoleApp::DoneEvaluate()
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DoDelete() 
 {
+    if (fCurrentWindow != kWindow_PickSieveHole) return;  
+
     //check if there is a hole picked. 
     if (!fSelectedSieveHole) {
         Error("DoDelete", "No sieve hole is selected. It shoul not have been possible to get here..."); 
@@ -882,6 +895,8 @@ void PickSieveHoleApp::DoDelete()
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::UpdateButtons()
 {
+    if (fCurrentWindow != kWindow_PickSieveHole) return; 
+    
     //first, unmap all buttons
     fButton_Delete      ->UnmapWindow(); 
     fButton_Evaluate    ->UnmapWindow(); 
@@ -920,11 +935,16 @@ void PickSieveHoleApp::DoExit() {
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::WriteOutput() {
+
+    if (fCurrentWindow != kWindow_PickSieveHole) return; 
+
     new SaveOutputFrame(gClient->GetRoot(), 900, 500, &fSieveHoleData); 
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::HandleCanvasClick_data() {
     
+    if (fCurrentWindow != kWindow_PickSieveHole) return; 
+
     //get canvas event information
     TCanvas* canvas = fEcanvas_data->GetCanvas();
     if (!canvas) return;
@@ -943,7 +963,7 @@ void PickSieveHoleApp::HandleCanvasClick_data() {
             fSelectedSieveHole->cut_width  = fNumber_cutWidth ->GetNumber() * 1e-3; 
             fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber() * 1e-3; 
 
-             // Get pixel coordinates
+            // Get pixel coordinates
             Int_t px = canvas->GetEventX();
             Int_t py = canvas->GetEventY();
             
@@ -966,6 +986,9 @@ void PickSieveHoleApp::HandleCanvasClick_data() {
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::HandleCanvasClick_drawing() {
+    
+    if (fCurrentWindow != kWindow_PickSieveHole) return; 
+    
     // Get canvas and event information
     TCanvas* canvas = fEcanvas_drawing->GetCanvas();
     if (!canvas) return;
@@ -1037,6 +1060,8 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DeselectSieveHole()
 {
+    if (fCurrentWindow != kWindow_PickSieveHole) return; 
+    
     //deselect any selected sieve holes
     //check if we've already loaded a bit of data into this hole
     if (fSelectedSieveHole && !fSelectedSieveHole->is_evaluated) {
@@ -1121,10 +1146,10 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     circ->SetLineWidth(2); 
     circ->Draw(); 
 
-    //handle y_fp drawing 
-    fHist_yfp    = (TH2D*)hist_y_fp    ->Clone("h_yfp");
-    fHist_dxdzfp = (TH2D*)hist_dxdz_fp ->Clone("h_dxdzfp"); 
-    fHist_dydzfp = (TH2D*)hist_dydz_fp ->Clone("h_dydzfp"); 
+    //create the histograms
+    fY_fp    = HistAndLimit((TH2D*)hist_y_fp    ->Clone("h_yfp"));
+    fDxdz_fp = HistAndLimit((TH2D*)hist_dxdz_fp ->Clone("h_dxdzfp")); 
+    fDydz_fp = HistAndLimit((TH2D*)hist_dydz_fp ->Clone("h_dydzfp")); 
 
     auto Draw_and_fit = [&](TH2D* hist, ROOT::RVec<double>& poly)
     {
@@ -1133,11 +1158,11 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
         Draw_Hist_Points_Poly(hist, points, poly, draw_option); 
     }; 
 
-    canv->cd(2); Draw_and_fit(fHist_yfp,    fSelectedSieveHole->y_fp.poly); 
+    canv->cd(2); Draw_and_fit(fY_fp.hist,    fSelectedSieveHole->y_fp.poly); 
     
-    canv->cd(3); Draw_and_fit(fHist_dxdzfp, fSelectedSieveHole->dxdz_fp.poly); 
+    canv->cd(3); Draw_and_fit(fDxdz_fp.hist, fSelectedSieveHole->dxdz_fp.poly); 
     
-    canv->cd(4); Draw_and_fit(fHist_dydzfp, fSelectedSieveHole->dydz_fp.poly); 
+    canv->cd(4); Draw_and_fit(fDydz_fp.hist, fSelectedSieveHole->dydz_fp.poly); 
     
     canv->Modified(); 
     canv->Update(); 
@@ -1168,6 +1193,8 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     MapWindow();
     Resize(GetDefaultSize()); 
     MapSubwindows(); 
+
+    UpdateButtons(); 
 }   
 //_____________________________________________________________________________________________________________________________________
 void EvaluateCutFrame::HandleCanvasClicked()
@@ -1175,6 +1202,13 @@ void EvaluateCutFrame::HandleCanvasClicked()
     //get canvas event information
     TCanvas* canvas = fEcanvas->GetCanvas();
     if (!canvas) return;
+
+    const map<string,int> hist_names_canv_map {
+        {"h_yfp",    2},
+        {"h_dxdzfp", 3},
+        {"h_dydzfp", 4}
+    }; 
+    
 
     //new event registered 
     if (fEventType != canvas->GetEvent()) {
@@ -1190,15 +1224,98 @@ void EvaluateCutFrame::HandleCanvasClicked()
             TH2D* selected_hist = (TH2D*)selected_ptr; 
 
             //check if its one of the three histograms of ours.
-            
-            //this hist is the hole drawing; it can't be used to reset the x-range
-            if (string(selected_hist->GetName()) == "h_xy") return; 
+            string selected_hist_name = string(selected_hist->GetName()); 
 
-            //so, wev've selected one of our 3 fp-coord histograms. 
-            //let's reset the x-drawing range
+            if (selected_hist_name == "h_xy") return; //this is the 'hole drawing' hist; do nothing
+
+            auto it = hist_names_canv_map.find(selected_hist_name); 
+            if (it == hist_names_canv_map.end()) {
+                throw logic_error("in <EvaluateCutFrame::HandleCanvasClicked>: invalid histogram name encountered."); 
+                return; 
+            }
+
+            canvas->cd(0); 
+            double x = canvas->cd(it->second)->AbsPixeltoX( canvas->GetEventX() );
+            canvas->cd(0); 
+
+            if (fX_min != fX_min) { 
+                fX_min = x; 
+            } else {
+                 //in this case, only the first (min) has been selected. 
+                if (fX_max != fX_max) { fX_max = x; }
+                //in this case, then both have been selected. wipe out both, and redraw them.     
+                else                  { fX_min = x; fX_max = DOUBLE_NAN; }
+            }
+            DrawLimits(); 
+            UpdateButtons(); 
         }
     }
 }   
+//_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::DrawLimits()
+{
+    auto canv = fEcanvas->GetCanvas(); 
+    if (!canv) {
+        throw logic_error("in <EvaluateCutFrame::DrawLimits>: canvas from 'fEcanvas' is null.");
+        return; 
+    }
+
+    //determine whether or not to draw the limits
+    //draw box limits on each histogram
+    const float        fill_alpha = 0.30; 
+    const unsigned int fill_color = kRed; 
+    const unsigned int fill_style = 3004; //diagonal hatching
+    
+    const unsigned int line_color = kRed;
+
+    int i_canv =1;  
+
+    for (HistAndLimit* hl : {&fY_fp, &fDxdz_fp, &fDydz_fp}) {
+
+        canv->cd(++i_canv); 
+
+        if (fX_min != fX_min || fX_max != fX_max) return; 
+            
+        auto y_ax = hl->hist->GetYaxis(); 
+
+        if (hl->lim_low) delete hl->lim_low; 
+        hl->lim_low = new TLine(
+            fX_min, 
+            y_ax->GetXmin(), 
+            fX_min,
+            y_ax->GetXmax() 
+        );  
+         
+        hl->lim_low->SetLineColor(line_color); 
+        hl->lim_low->Draw(); 
+            
+
+        if (hl->lim_high) delete hl->lim_high; 
+        hl->lim_high = new TLine(
+            fX_max, 
+            y_ax->GetXmin(), 
+            fX_max,
+            y_ax->GetXmax() 
+        );   
+
+        hl->lim_high->SetLineColor(line_color);
+        hl->lim_high->Draw(); 
+    }
+
+    canv->cd(0); 
+    canv->Modified();
+    canv->Update(); 
+}
+//_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::UpdateButtons()
+{
+    if (fX_min == fX_min && fX_max == fX_max) { 
+        fButton_Save->MapWindow(); 
+    } else { 
+        fButton_Save->UnmapWindow(); 
+    }
+}
+//_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
 void EvaluateCutFrame::DoSave() 
 {
@@ -1309,7 +1426,7 @@ ROOT::RVec<double> EvaluateCutFrame::FitPolynomialToPoints(const vector<Evaluate
 //_____________________________________________________________________________________________________________________________________
 void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t>& points, const ROOT::RVec<double>& poly, const char* draw_option)
 {
-    hist->DrawCopy(draw_option); 
+    hist->Draw(draw_option); 
 
     if (points.empty()) return; 
 
@@ -1342,13 +1459,12 @@ void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t
 //_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
+//_____________________________________________________________________________________________________________________________________
+//_____________________________________________________________________________________________________________________________________
+//_____________________________________________________________________________________________________________________________________
 EvaluateCutFrame::~EvaluateCutFrame() { 
     
     //delete histograms
-    if (fHist_yfp)    delete fHist_yfp;    
-    if (fHist_dxdzfp) delete fHist_dxdzfp;
-    if (fHist_dydzfp) delete fHist_dydzfp; 
-    
     Cleanup(); 
 }
 //_____________________________________________________________________________________________________________________________________
