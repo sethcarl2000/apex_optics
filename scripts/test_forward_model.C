@@ -7,6 +7,7 @@
 #include "TROOT.h"
 #include "TFile.h"
 #include "TTree.h"
+#include "include/RDFNodeAccumulator.h"
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -67,7 +68,54 @@ ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch
     return nodes.back(); 
 }
 
+#if 0 
+//A small helper class which is meant to avoid some of the awkward syntax assocaited with RDataFrame creation. 
+class RDFNodeAccumulator {
+private: 
+    std::vector<ROOT::RDF::RNode> fNodes; 
+public: 
+    RDFNodeAccumulator(ROOT::RDF::RNode start) : fNodes{start} {}; 
+    ~RDFNodeAccumulator() {}; 
 
+    template<typename F> void Define(const char* new_branch, F expression, const vector<string>& inputs) {
+        try {        
+            fNodes.emplace_back( fNodes.back().Define(new_branch, expression, inputs) ); 
+      
+        } catch (const std::exception& e) {
+            Error("RDFNodeAccumulator::Define", "exception caught while trying to define new branch '%s'.\n -- what(): %s", new_branch, e.what()); 
+            fNodes.clear();
+            std::abort(); 
+        }
+    }; 
+
+    //same as above, but this allows passing the new branch name as a std::string
+    template<typename F> void Define(string new_branch, F expression, const vector<string>& inputs) {
+        Define(new_branch.c_str(), expression, inputs); 
+    }
+
+    //same as above, but only define if this column is not yet defined in the dataframe
+    template<typename F> void DefineIfMissing(string new_branch, F expression, const vector<string>& inputs) {
+
+        if (!IsBranchDefined(new_branch)) Define(new_branch, expression, inputs); 
+    }
+
+
+    //check if a branch is defined in the dataframe as it currently exists
+    bool IsBranchDefined(string branch) {
+        for (const string& column : fNodes.back().GetColumnNames()) { if (branch == column) return true; }
+        return false; 
+    }
+    //bool IsBranchDefined(const char* branch) const { string str(branch); return IsBranchDefined(str); }
+
+    ROOT::RDF::RNode& Get() { return fNodes.back(); }
+
+    //assignment operator 
+    ROOT::RDF::RNode& operator=(ROOT::RDF::RNode node) {
+        fNodes.emplace_back(node); 
+        return fNodes.back(); 
+    }
+};
+#endif 
 
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
@@ -116,7 +164,8 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
         "x_sv",
         "y_sv",
         "dxdz_sv",
-        "dydz_sv"
+        "dydz_sv",
+        "dpp_sv"
     }; 
 
     NPolyArray parr_forward = ApexOptics::Parse_NPolyArray_from_file(path_dbfile, branches_sv, 4); 
@@ -161,70 +210,84 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     //Now, we are ready to process the tree using RDataFrame
     ROOT::RDataFrame df(tree_name, path_infile); 
 
-    //probably not the most elegant way to do this, but here we are. 
-    
-    auto df_reco = df 
+    //this is a little helper class which is meant to avoid some of the awkward syntax typically associated with RDataFrames creation. 
+    auto rna = RDFNodeAccumulator(df); 
 
-        .Define("Xfp", [](double x, double y, double dxdz, double dydz)
+    //probably not the most elegant way to do this, but here we are. 
+    rna.Define("Xfp", [](double x, double y, double dxdz, double dydz)
         {
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz }; 
-        }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
+        }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"});
 
-        .Define("Xsv_reco",  [&parr_forward](const Track_t& Xfp)
+    rna.Define("Xsv_reco",  [&parr_forward](const Track_t& Xfp)
         {
             auto Xsv = parr_forward.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});
             return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3] }; 
-        }, {"Xfp"})
+        }, {"Xfp"});
 
-        .Define("Xhcs_reco", [is_RHRS](const Track_t& Xsv)
+    rna.Define("Xhcs_reco", [is_RHRS](const Track_t& Xsv)
         {
             Track_t Xhcs{Xsv}; 
             SCS_to_HCS(Xhcs, is_RHRS); 
             return Xhcs; 
-        }, {"Xsv_reco"})
+        }, {"Xsv_reco"});
 
-        .Define("z_reco_horizontal", [](const Track_t& Xhcs, const TVector3& vtx)
+    rna.Overwrite("z_reco_horizontal", [](const Track_t& Xhcs, const TVector3& vtx)
         {   
             return - ( Xhcs.y - vtx.y() ) / Xhcs.dydz; 
-        }, {"Xhcs_reco", "position_vtx"})
+        }, {"Xhcs_reco", "position_vtx"});
 
-        .Define("z_reco_vertical",   [](const Track_t& Xhcs, const TVector3& vtx)
+    rna.Overwrite("z_reco_vertical",   [](const Track_t& Xhcs, const TVector3& vtx)
         {
             return - ( Xhcs.x - vtx.x() ) / Xhcs.dxdz; 
-        }, {"Xhcs_reco", "position_vtx"})
-
-        .Define("position_vtx_scs", [&HCS_to_SCS](TVector3 vtx_hcs){
+        }, {"Xhcs_reco", "position_vtx"});
+    
+    rna.Overwrite("position_vtx_scs",  [&HCS_to_SCS](TVector3 vtx_hcs)
+        {
             TVector3 vtx_scs = vtx_hcs; 
             HCS_to_SCS(&vtx_scs); 
             return vtx_scs; 
         }, {"position_vtx"}); 
 
-    auto df_out = add_branch_from_Track_t(df_reco, "Xsv_reco", {
+    //check the status of the RDFNodeAccumulator obejct before proceeding
+    if (rna.GetStatus() != RDFNodeAccumulator::kGood) {
+        Error(here, "RDFNodeAccumulator reached error status when defining branches.\n Message: %s", rna.GetErrorMsg().c_str()); 
+        return -1; 
+    }
+
+    rna = add_branch_from_Track_t(rna.Get(), "Xsv_reco", {
         {"reco_x_sv",    &Track_t::x},
         {"reco_y_sv",    &Track_t::y},
         {"reco_dxdz_sv", &Track_t::dxdz},
         {"reco_dydz_sv", &Track_t::dydz}
     }); 
 
+    rna.Overwrite("reco_x_sv", [](double x, const TVector3& vtx){ return x + vtx.x(); }, {"reco_x_sv", "position_vtx_scs"});
+    
+    rna.Overwrite("reco_dxdz_sv", [](double dxdz, const TVector3& vtx){ return dxdz + (vtx.x() /( 0. - vtx.z())); }, {"reco_dxdz_sv", "position_vtx_scs"}); 
+
+    //check the status of the RDFNodeAccumulator obejct before proceeding
+    if (rna.GetStatus() != RDFNodeAccumulator::kGood) {
+        Error(here, "RDFNodeAccumulator reached error status when defining branches.\n Message: %s", rna.GetErrorMsg().c_str()); 
+        return -1; 
+    }
+
     //create both histograms
-    auto hist_xy = df_out
-        
-        //correct for react-vertex position
-        .Define("x_react_vtx_fix", [](double x, TVector3 r){return x + r.x();}, {"reco_x_sv", "position_vtx_scs"})
-        .Define("y_react_vtx_fix", [](double y, TVector3 r){return y + r.y();}, {"reco_y_sv", "position_vtx_scs"})
+    auto hist_xy = rna.Get()
+        .Histo2D({"h_xy",     "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "reco_x_sv", "reco_y_sv");
+    
+    auto hist_angles = rna.Get()
+        .Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "reco_dxdz_sv", "reco_dydz_sv"); 
+    
+    auto hist_z_y = rna.Get()
+        .Histo2D({"h_z_y",    "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "reco_y_sv");
 
-        .Histo2D({"h_xy", "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, 
-                "x_react_vtx_fix", "y_react_vtx_fix");
-    
-    auto hist_angles    
-        = df_out.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "reco_dxdz_sv", "reco_dydz_sv"); 
-    
-    
-    auto hist_y_dydz 
-        = df_out.Histo2D({"h_y_dydz", "y_{sv} vs dy/dz_{sv};y_{sv};dy/dz_{sv}", 200, -0.07, 0.07, 200, -0.035, 0.035}, "reco_y_sv", "reco_dydz_sv");
+    auto hist_z_dydz = rna.Get()
+        .Histo2D({"h_z_dydz", "z_{tg} vs dy/dz_{sv};z_{tg};dy/dz_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "reco_dydz_sv");
 
-    auto hist_z_dydz 
-        = df_out.Histo2D({"h_x_dxdz", "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "reco_y_sv");
+    auto hist_dydz = rna.Get()
+        .Filter([](double dxdz){ return (0.0e-3 < dxdz) && (1.0e-3 > dxdz); }, {"reco_dxdz_sv"})
+        .Histo1D<double>({"h_dydz", "dy/dz_{tg} (horizontal angle);dy/dz_{tg} (rad)", 200, -0.04, 0.03}, "reco_dydz_sv"); 
 
 
     char c_title[255]; 
@@ -233,6 +296,9 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     //set the color pallete
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
+
+    //PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
+    //return 0; 
     
     auto c = new TCanvas("c1", c_title, 1200, 600); 
     c->Divide(2,1, 0.01,0.01); 
@@ -243,8 +309,11 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     auto c1 = new TCanvas("c2", c_title, 1200, 600); 
     c1->Divide(2,1, 0.01,0.01); 
 
-    c1->cd(1); hist_y_dydz->DrawCopy("col2"); 
+    c1->cd(1); hist_z_y->DrawCopy("col2"); 
     c1->cd(2); hist_z_dydz->DrawCopy("col2"); 
+
+    auto c2 = new TCanvas("c3", c_title); 
+    hist_dydz->DrawCopy(); 
 
     return 0; 
 }
