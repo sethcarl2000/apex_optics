@@ -7,6 +7,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 
 #include <TGClient.h>
 #include <TGFrame.h>
@@ -75,8 +76,7 @@ struct SieveHoleData {
         y_fp{shd.y_fp}, dxdz_fp{shd.dxdz_fp}, dydz_fp{shd.dydz_fp},
         x_fp_min{shd.x_fp_min}, x_fp_max{shd.x_fp_max}, 
         is_evaluated{shd.is_evaluated}, 
-        draw_circ{nullptr}, 
-        hole_cut{nullptr} 
+        draw_circ{nullptr}, hole_cut{nullptr} 
         {}; 
 
     ~SieveHoleData() { 
@@ -1607,7 +1607,7 @@ EvaluateCutFrame::~EvaluateCutFrame() {
 }
 //_____________________________________________________________________________________________________________________________________
 
-
+#endif 
 //_____________________________________________________________________________________________________________________________________
 int isolate_sieveholes( const bool is_RHRS, 
                         const char* path_infile,
@@ -1625,9 +1625,14 @@ int isolate_sieveholes( const bool is_RHRS,
                          coord_y, 
                          drawing_option,
                          palette);
+
+    //NPoly poly(4,3); 
+
     return 0; 
 }
 
+#if 0
 ClassImp(EvaluateCutFrame); 
 ClassImp(PickSieveHoleApp); 
 ClassImp(SaveOutputFrame); 
+#endif 
