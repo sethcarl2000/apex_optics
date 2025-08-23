@@ -18,4 +18,11 @@
 #pragma link C++ class PolynomialCut::DBFileException+; 
 #pragma link C++ class PolynomialCutApp+; 
 
+#pragma link C++ class PickSieveHoleApp+; 
+#pragma link C++ class SaveOutputFrame+; 
+#pragma link C++ class EvaluateCutFrame+; 
+#pragma link C++ struct SieveHole+; 
+#pragma link C++ struct FPcoordPolynomial+; 
+#pragma link C++ struct SieveHoleData+; 
+
 #endif 
