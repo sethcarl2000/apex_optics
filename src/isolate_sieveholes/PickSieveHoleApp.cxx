@@ -24,7 +24,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fBranchX(coordname_x),
     fBranchY(coordname_y),
     fPathInfile(path_infile),
-    fDrawingOption{drawing_option},
+    fDrawingOption(drawing_option),
     fPalette{palette}
 {
     fEventType=-1; 
