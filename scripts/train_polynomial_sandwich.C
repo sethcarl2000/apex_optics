@@ -7,6 +7,13 @@
 #include <sstream>
 #include <limits> 
 #include <ROOT/RResultPtr.hxx> 
+#include <NPolyArray.h>
+#include <NPoly.h>
+#include <ROOT/RVec.hxx> 
+#include <RMatrix.h> 
+#include <ROOT/RDataFrame.hxx> 
+#include <ApexOptics.h> 
+#include <TCanvas.h> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -33,7 +40,7 @@ struct NPolyArrayChain {
     }
 
     RMatrix Jacobian(const RVec<double>& X) const { 
-        RMatrix J = RMatrix::Square_identity(arrays[0].Get_DoF_in()); 
+        RMatrix J = RMatrix::Identity(arrays[0].Get_DoF_in()); 
         for (const NPolyArray& array : arrays) {
             auto Ji = std::move(array.Jacobian(X)); 
             J = Ji * J; 
@@ -293,11 +300,11 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     };
 
     //create the 'NPolyArrayChain' which will be the ~actual~ polynomial we want, as well as the 'bread' polynomials on either side
-    NPolyArrayChain *sandwich = new NPolyArrayChain({
+    NPolyArrayChain *sandwich = new NPolyArrayChain{ .arrays={
         Create_Identity_NPolyArray(poly_array.Get_DoF_in(),  input_layer_order), //the input layer 'bread' 
         poly_array, 
         Create_Identity_NPolyArray(poly_array.Get_DoF_out(), output_layer_order) //the output layer 'bread' 
-    }); 
+    }}; 
 
     auto& array_input  = sandwich->arrays[0]; 
     auto& array_output = sandwich->arrays[2]; 
