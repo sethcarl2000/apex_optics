@@ -362,7 +362,7 @@ void RMatrix::Print()
   } 
 }
 //_______________________________________________________________________________
-RMatrix RMatrix::Square_identity(int size) 
+RMatrix RMatrix::Identity(int size) 
 {
   //return a square identity matrix of the given size 
   if (size <= 0 ) {

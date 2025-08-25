@@ -494,7 +494,7 @@ MultiLayerPerceptron::WeightGradient_t MultiLayerPerceptron::Weight_gradient(con
     //we start with the last layer, and recursivley propagate all the way to the first layer. 
     
     //this 'A' matrix will be what we use to back-propagate thru all the layers, starting with the last. 
-    RMatrix A = RMatrix::Square_identity(Get_DoF_out()); 
+    RMatrix A = RMatrix::Identity(Get_DoF_out()); 
 
     int i_elem=0; 
     for (int l=Get_n_layers()-2; l>=0; l--) {

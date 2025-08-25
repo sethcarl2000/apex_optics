@@ -99,7 +99,7 @@ public:
   const ROOT::RVec<double> Data_cpy() const { return fElems; }
 
   //return a sqaure identity matrix
-  static RMatrix Square_identity(int size); 
+  static RMatrix Identity(int size); 
 
   
 private:
