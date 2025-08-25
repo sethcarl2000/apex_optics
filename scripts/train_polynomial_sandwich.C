@@ -14,6 +14,7 @@
 #include <ROOT/RDataFrame.hxx> 
 #include <ApexOptics.h> 
 #include <TCanvas.h> 
+#include <TRandom3.h>
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -92,7 +93,7 @@ void Process_event_range(   ROOT::RVec<double>& dW,
         //check matrix for NaN. this can happen because of the way the jacobian is computed. 
         // if there is a nan-element, then skip this point.
         bool has_nan=false;  
-        for (double &x : J_21.Data()) if (x != x) { has_nan=true; break; }
+        //for (double &x : J_21.Data()) if (x != x) { has_nan=true; break; }
         if (has_nan) continue;  
 
         int i_elem =0;  
@@ -221,6 +222,11 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     }
 
     
+    //add noise to reduce the chances that a 'divide by zero' error is encountered; as some of the sieve-hole data 
+    // has hole positions which are exactly 0. 
+    const double noise_level = 1e-7; 
+    TRandom3 rand; 
+
     //if more training events than this exist, cap them at 'max_events_train' 
     const int n_events_train = min<int>( *df.Count(), max_events_train ); 
 
@@ -239,7 +245,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
 
         auto new_node = input_nodes.back() 
 
-            .Redefine("inputs",  [](RVec<double>& V, double x) { V.push_back(x); return V; }, {"inputs", str.data()}); 
+            .Redefine("inputs",  [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + rand.Gaus()*noise_level); return V; }, {"inputs", str.data()}); 
 
         input_nodes.push_back(new_node); 
     }
@@ -248,7 +254,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         
         auto new_node = input_nodes.back() 
 
-            .Redefine("outputs", [](RVec<double>& V, double x) { V.push_back(x); return V; }, {"outputs", str.data()}); 
+            .Redefine("outputs", [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + rand.Gaus()*noise_level); return V; }, {"outputs", str.data()}); 
 
         input_nodes.push_back(new_node); 
     }
