@@ -22,6 +22,15 @@ NPolyArray::NPolyArray(int _DoF_out, int _DoF_in)
 }
 
 //______________________________________________________________________________________________
+//______________________________________________________________________________________________
+int NPolyArray::Get_nElems() const 
+{
+    //return the number of polynomials of all elements
+    int n_elems=0; 
+    for (const auto& poly : fPolys) n_elems += poly.Get_nElems(); 
+    return n_elems; 
+}
+//______________________________________________________________________________________________
 NPolyArray::NPolyArray(const vector<NPoly>& _polys) 
     : fStatus(NPolyArray::kNot_init)
 {

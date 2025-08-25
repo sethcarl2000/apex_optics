@@ -47,6 +47,8 @@ public:
     const NPoly* Get_poly(int i) const; 
     NPoly* Get_poly(int i); 
 
+    int Get_nElems() const; 
+
     //this symbolically computes the action of feeding the output of one NPolyArray into the input of another ('nesting'). 
     // This way, if an optics model is composed of a 'chain' of NPolyArray's, in which the output of one is fed into the input of the next, 
     // we will be able to symbolically compute that action once, and not have to numerically compute each polynomial in the chain separately.
