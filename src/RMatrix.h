@@ -71,6 +71,9 @@ public:
   //perform matrix multiplication
   RMatrix operator*(RMatrix& rhs); 
 
+  //perform matrix multiplication with rvalue (temporary) operand
+  RMatrix& operator*=(RMatrix&& rhs); 
+
 
 
   

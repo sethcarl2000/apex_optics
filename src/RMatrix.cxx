@@ -15,6 +15,8 @@
 #include <limits> 
 #include <cmath>
 #include <utility> 
+#include <sstream>
+#include <stdexcept> 
 #include "RMatrix.h"
 
 using namespace std;
@@ -188,6 +190,9 @@ vecd RMatrix::operator*(const vecd &rhs) const
   return out; 
 } 
 //_______________________________________________________________________________
+//_______________________________________________________________________________
+
+//_______________________________________________________________________________
 RMatrix RMatrix::operator+(const RMatrix &rhs) const
 {
   //check matrix sizes
@@ -240,6 +245,35 @@ RMatrix RMatrix::operator*(RMatrix& rhs)
   }
 
   return RMatrix(GetNRows(), rhs.GetNCols(), data); 
+}
+//_______________________________________________________________________________
+RMatrix& RMatrix::operator*=(RMatrix&& rhs) 
+{
+  //check matrix sizes
+  if (rhs.GetNRows() != GetNCols()) {
+    ostringstream oss; 
+    oss << "in <RMatirx::operator*=>: rhs n. rows (" << rhs.GetNRows() << ") does not match lhs n. cols (" << GetNCols() << ").";
+    throw invalid_argument(oss.str()); 
+    return *this; 
+  }
+  
+  vecd data(GetNRows() * rhs.GetNCols(), 0.); 
+
+  int i_elem=0; 
+  for (int i=0; i<GetNRows(); i++) {
+    for (int j=0; j<rhs.GetNCols(); j++) {
+      for (int k=0; k<GetNCols(); k++) data[i_elem] += get(i,k) * rhs.get(k,j); 
+      i_elem++; 
+    }
+  }
+  fElems.clear(); 
+  fElems = std::move(data); 
+
+  fnCols = rhs.GetNCols();
+  f_isSquare = (GetNCols() == GetNRows()); 
+  f_n_elems = (int)fElems.size();
+  
+  return *this; 
 }
 //_______________________________________________________________________________
 double RMatrix::Determinant() const
