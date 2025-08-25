@@ -11,6 +11,8 @@
 #include <ROOT/RVec.hxx> 
 #include <ROOT/RResultPtr.hxx>
 #include "RMatrix.h"
+#include <sstream> 
+#include <stdexcept> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -472,9 +474,14 @@ NPolyArray ApexOptics::Parse_NPolyArray_from_file(const char* path_dbfile, const
 
     NPolyArray parr(poly_vec); 
 
-    //If there was a problem while parsing, then set the polyarray's status as failure 
-    if (parse_failure) parr.Set_status(NPolyArray::kError); 
-
+    //If there was a problem while parsing, then throw an exception
+    if (parse_failure) {
+        parr.Set_status(NPolyArray::kError);
+        ostringstream oss;  
+        oss << "in <" << here << ">: unable to parse NPolyArray from file '" << path_dbfile << "'";
+        throw invalid_argument(oss.str());
+        return parr;  
+    }
     return parr; 
 }  
 //__________________________________________________________________________________________________________________
