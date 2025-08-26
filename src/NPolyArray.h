@@ -22,7 +22,7 @@ class NPolyArray : public TObject {
 public: 
     
     //default constructor (NPolys empty-initialized with correct DoF)
-    NPolyArray(int _DoF_out, int _DoF_in);
+    NPolyArray(int _DoF_out=0, int _DoF_in=0);
     
     //constructor with vector of NPoly's (by value)
     NPolyArray(const std::vector<NPoly>& _polys);
