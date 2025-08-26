@@ -6,8 +6,10 @@
 #include <fstream>
 #include <sstream>
 #include <limits> 
+#include <stdexcept> 
 #include <ROOT/RResultPtr.hxx> 
 #include <NPolyArray.h>
+#include <NPolyArrayChain.h> 
 #include <NPoly.h>
 #include <ROOT/RVec.hxx> 
 #include <RMatrix.h> 
@@ -29,27 +31,6 @@ double rv_mag2(const ROOT::RVec<double>& v) {
     return ret; 
 }
 
-struct NPolyArrayChain {
-
-    vector<NPolyArray> arrays; 
-
-    //evaluate all arrays, starting with arrays[0], feeding the input of each one into the next. 
-    RVec<double> Eval(const RVec<double>& X) const { 
-        RVec<double> out{X}; 
-        for (const NPolyArray& array : arrays) out = array.Eval(out);
-        return out;  
-    }
-
-    RMatrix Jacobian(const RVec<double>& X) const { 
-        RMatrix J = RMatrix::Identity(arrays[0].Get_DoF_in()); 
-        for (const NPolyArray& array : arrays) {
-            auto Ji = std::move(array.Jacobian(X)); 
-            J = Ji * J; 
-        };
-        return J; 
-    }
-}; 
-
 //__________________________________________________________________________________________________________________
 //Compute the gradient w/r/t each weight for the mlp (with respect to the given range of elements). 
 void Process_event_range(   ROOT::RVec<double>& dW, 
@@ -68,52 +49,54 @@ void Process_event_range(   ROOT::RVec<double>& dW,
         return; 
     }
 
-    const auto& output_array = chain->arrays[2]; 
-    const auto& input_array  = chain->arrays[0];     
+    const int DoF_out = chain->arrays.back().first.Get_DoF_out(); 
 
-    const size_t DoF_out = output_array.Get_DoF_out(); 
-    const size_t DoF_in  = input_array.Get_DoF_out(); 
+    for (size_t evt=start; evt<end; evt++) {     
 
-    for (size_t i=start; i<end; i++) { 
-        
-        const auto& data = data_vec[i]; 
-        
-        //get the input to the last layer
-        auto X_mid  = chain->arrays[0].Eval( data.inputs ); 
-        auto X_last = chain->arrays[1].Eval( X_mid ); 
-        auto Z_err  = chain->arrays[2].Eval( X_last ) - data.outputs; 
+        const auto& data = data_vec[evt]; 
 
-        
-        //get the product of the jacobian of the last two layers
-        RMatrix J2 = std::move(chain->arrays[2].Jacobian( X_last )); 
-        RMatrix J1 = std::move(chain->arrays[1].Jacobian( X_mid )); 
+        //start with the output layer, and continue from there. 
+        RVec<RVec<double>> X{ data.inputs };  X.reserve(chain->N_arrays()+1);
+        int i=0; 
+        for (const auto& array : chain->arrays) X.push_back( std::move(array.first.Eval(X.back())) ); 
 
-        RMatrix J_21 = std::move( J2 * J1 );
+        //compute the 'error' of the model
+        auto dZ = data.outputs - X.back(); 
 
-        //check matrix for NaN. this can happen because of the way the jacobian is computed. 
-        // if there is a nan-element, then skip this point.
-        bool has_nan=false;  
-        //for (double &x : J_21.Data()) if (x != x) { has_nan=true; break; }
-        if (has_nan) continue;  
+        RMatrix J = RMatrix::Identity(chain->Get_DoF_out()); 
 
-        int i_elem =0;  
+        int i_elem=0; 
 
-        //this is the gradient of the function w/r/t each of the input weights
-        for (int j=0; j<DoF_in; j++) {
+        //now, compute the jacboian for each layer, and the gradient w/r/t the coefficients of each 'output' layer
+        for (int i = chain->N_arrays()-1; i >= 0; i--) {
 
-            for(double weight : input_array.Get_poly(j)->Eval_noCoeff(data.inputs)) {
+            const auto& parr = chain->arrays[i].first;
+            const bool is_modifiable = chain->arrays[i].second;  
 
-                for (int i_out=0; i_out<DoF_out; i_out++) dW[i_elem] += Z_err[i_out] * J_21.get(i_out, j) * weight; 
-                i_elem++; 
-            }
+            const int DoF_array = parr.Get_DoF_out(); 
+
+            //if this is true, that means the elements of this array are 'modifiable', so we will compute the gradient w/r/t them. 
+            if (is_modifiable) {
+
+                for (int j=0; j<parr.Get_DoF_out(); j++) {
+
+                    const NPoly* poly = parr.Get_poly(j); 
+                    
+                    for (double weight : poly->Eval_noCoeff(X[i])) {
+
+                        for (int i_out=0; i_out<DoF_out; i_out++) dW[i_elem] += dZ[i_out] * J.get(i_out, j) * weight; 
+                        i_elem++;  
+                    }
+                }//for (int j=0; j<parr.Get_DoF_out(); j++) 
+            }//if (is_modifiable)
+
+            if (i==0) break;  
+            
+            J *= parr.Jacobian(X[i]); 
         }
-
-        //this is the gradient of the function w/r/t each of the output weights
-        for (int i_out=0; i_out<DoF_out; i_out++) 
-            for (double weight : output_array.Get_poly(i_out)->Eval_noCoeff(X_last)) 
-                dW[i_elem++] += weight * Z_err[i_out]; 
         
-    }//for (size_t i=start; i<end; i++)
+    }
+    
 }
 //__________________________________________________________________________________________________________________
 
@@ -165,27 +148,20 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     const double max_error = 1e3; 
 
 
-    vector<string> branches_output = {
+    vector<string> branches_input = {
         "x_fp",
         "y_fp",
         "dxdz_fp",
         "dydz_fp"
     };
 
-    vector<string> branches_input  = {
+    vector<string> branches_output  = {
         "x_sv",
         "y_sv",
         "dxdz_sv",
         "dydz_sv",
         "dpp_sv"    
     }; 
-
-    //this is the structure of the hidden layers. the eventual network will append an input layer and output layer on either side
-    // of this set of hidden layers. 
-    //
-    // For example: for a network with the structure (4 inputs) => 6 => 6 => (3 outputs), this vector should be: 
-    //  RVec<int> mlp_structure{6,6}; 
-    //
 
     //create the dataframe
     if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
@@ -245,7 +221,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
 
         auto new_node = input_nodes.back() 
 
-            .Redefine("inputs",  [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + rand.Gaus()*noise_level); return V; }, {"inputs", str.data()}); 
+            .Redefine("inputs",  [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + noise_level); return V; }, {"inputs", str.data()}); 
 
         input_nodes.push_back(new_node); 
     }
@@ -254,7 +230,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         
         auto new_node = input_nodes.back() 
 
-            .Redefine("outputs", [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + rand.Gaus()*noise_level); return V; }, {"outputs", str.data()}); 
+            .Redefine("outputs", [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + noise_level); return V; }, {"outputs", str.data()}); 
 
         input_nodes.push_back(new_node); 
     }
@@ -282,45 +258,76 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         return -1; 
     }
 
-
-    //Returns an NPolyArray of the given DoF and oder, with only the 'linear' elements nonzero (in other words, this poly array is the identity matrix). 
-    auto Create_Identity_NPolyArray = [](const int DoF, const int order)
-    {   
-        vector<NPoly> polys; 
-        for (int i=0; i<DoF; i++) {
-
-            NPoly poly(DoF, order); 
-            //set all elements to zero 
-            for (int j=0; j<poly.Get_nElems(); j++) poly.Get_elem(j)->coeff = 0.; 
-
-            //Now, set all 'linear' elments to 1.
-            RVec<int> powers(DoF, 0); 
-            powers[i] = 1; 
-
-            poly.Find_element(powers)->coeff = 1.; 
-
-            polys.push_back(poly); 
-        }
-
-        return NPolyArray(polys); 
-    };
+    
 
     //create the 'NPolyArrayChain' which will be the ~actual~ polynomial we want, as well as the 'bread' polynomials on either side
-    NPolyArrayChain *sandwich = new NPolyArrayChain{ .arrays={
-        Create_Identity_NPolyArray(poly_array.Get_DoF_in(),  input_layer_order), //the input layer 'bread' 
-        poly_array, 
-        Create_Identity_NPolyArray(poly_array.Get_DoF_out(), output_layer_order) //the output layer 'bread' 
-    }}; 
+    NPolyArrayChain *sandwich = new NPolyArrayChain; 
 
-    auto& array_input  = sandwich->arrays[0]; 
-    auto& array_output = sandwich->arrays[2]; 
 
-    const size_t n_elems_input  = array_input .Get_poly(0)->Get_nElems() * array_input .Get_DoF_out(); 
-    const size_t n_elems_output = array_output.Get_poly(0)->Get_nElems() * array_output.Get_DoF_out(); 
+    //add the first layer, before the NPolyArray (which is mutable)
+    //sandwich->AppendArray( Create_Identity_NPolyArray(poly_array.Get_DoF_in(), input_layer_order), true ); 
+
+    //This is where you specify the structure of the NPolyArrayChain that you want to train. 
+    //You have the option of specifying the mutability of each array (whether or not its coefficients will be adjusted)
+    // and you also have the option of adding 'mutable' buffer arrays at each step. 
+
+    //here are some examples: 
+    // 
+    //  auto parr = ApexOptics::Parse_NPolyArray_from_file( path_dbfile, output_branches, input_branches.size() )
+    //
+    //  sandwich->InsertBufferArray( parr.Get_DoF_in() );
+    //
+    //  sandwich->AppendArray( parr, false );
+    //
+    //  sandwich->InsertBufferArray( parr.Get_DoF_out() ); 
+    // 
+    //
+    //Line-by-line, this means:
+    //
+    //  auto parr = ApexOptics::Parse_NPolyArray_from_file( path_dbfile, output_branches, input_branches.size() )
+    // --
+    // -- Create a new NPolyArray object 'parr', which has its elements defined in the file at 'path_dbfile'. 
+    // -- the outputs in that file are labeled by the elements of the vector<string> 'output_branches'.   
+    // -- the 'input DoF' of the polynomial is given by the number of inputs: 'input_branches.size()'. 
+    //
+    //  sandwich->InsertBufferArray( parr.Get_DoF_in() ); 
+    // --
+    // -- Create a 'buffer' polynomial, which is linear-order, with the same number of inputs/outputs (which must match that
+    // -- of the input DoF of our 'parr'. 
+    //
+    //  sandwich->AppendArray( parr, false ); 
+    // --
+    // -- Add our 'parr' which we parsed from the file to the chain of poylnomials. The 'false' argument means that we will not 
+    // -- 'train' the elements polynomial (they will not be modified).
+    //  
+    //  sandwich->InsertBufferArray( parr.Get_DoF_out() ); 
+    // --
+    // -- Add another 'buffer' polynomial 'on top' of our array which we parsed from the file. Like the first buffer polynomial, 
+    // -- this one will have its elements modified by the training process. 
+    //
+
+    const char* path_dbfile_fp_q1 = "data/csv/poly_prod_fp_q1_L_3ord.dat";
+    auto parr_fp_q1 = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_q1, {"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"}, 4); 
+
+    const char* path_dbfile_q1_sv = "data/csv/poly_prod_q1_sv_L_3ord.dat";
+    auto parr_q1_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_q1_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 5); 
+                                                
+   //add the output layer (which is mutable)
+    sandwich->InsertBufferArray( parr_fp_q1.Get_DoF_in() ); 
     
-    const int DoF_in  = poly_array.Get_DoF_in(); 
-    const int DoF_out = poly_array.Get_DoF_out(); 
-            
+    sandwich->AppendArray( parr_fp_q1, NPolyArrayChain::kStatic ); 
+
+    sandwich->InsertBufferArray( parr_q1_sv.Get_DoF_in() ); 
+
+    sandwich->AppendArray( parr_q1_sv, NPolyArrayChain::kStatic ); 
+
+    sandwich->InsertBufferArray( parr_q1_sv.Get_DoF_out() ); 
+
+    
+    const int DoF_in  = sandwich->Get_DoF_in(); 
+    const int DoF_out = sandwich->Get_DoF_out(); 
+
+
     ///////////////////////////////////////////////////////////////////////////////////////
     //  
     //  HYPERPARAMETERS - 
@@ -403,54 +410,86 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     double error = Evaluate_error(sandwich); 
     double last_error = error; 
 
-    //initialize the update-vector
-    RVec<double> dW(n_elems_input + n_elems_output, 0.); 
-    RVec<double> best_weights;
-    
-    for (int i=0; i<DoF_in; i++) 
-        for (int j=0; j<array_input.Get_poly(i)->Get_nElems(); j++) 
-            best_weights.push_back( array_input.Get_poly(i)->Get_elemCoeff(j) ); 
+    printf("starting error: %+.4e\n", error); 
 
-    for (int i=0; i<DoF_out; i++) 
-        for (int j=0; j<array_output.Get_poly(i)->Get_nElems(); j++) 
-            best_weights.push_back( array_output.Get_poly(i)->Get_elemCoeff(j) ); 
-
-    
-    printf("Running in parallel with %i threads...\n\n", (int)n_threads); 
-    
     double best_error  = 1e30; 
     double start_error = error; 
 
-    auto Save_weights = [&best_weights, &best_error, DoF_in, DoF_out, n_elems_input, n_elems_output]
-        (const NPolyArrayChain* chain, double error) 
-    {   
-        const auto& array_input  = chain->arrays[0]; 
-        const auto& array_output = chain->arrays[2]; 
+    const size_t n_parameters = sandwich->Get_nElems_mutable(); 
 
-        if (error < best_error) { 
+    //initialize the update-vector
+    RVec<double> best_parameters(n_parameters, 0.); 
 
-            int i_elem=0; 
+    //__________________________________________________________________________________________________________________
+    auto Save_parameters = [&sandwich,&best_error,&best_parameters](double error) 
+    {
+        if (error >= best_error) return false; 
 
-            for (int i=0; i<DoF_in; i++) 
-                for (int j=0; j<array_input.Get_poly(i)->Get_nElems(); j++) 
-                    best_weights[i_elem++] = array_input.Get_poly(i)->Get_elemCoeff(j); 
+        //this is the best error found so far. 
+        best_error = error; 
 
-            for (int i=0; i<DoF_out; i++) 
-                for (int j=0; j<array_output.Get_poly(i)->Get_nElems(); j++) 
-                    best_weights[i_elem++] = array_output.Get_poly(i)->Get_elemCoeff(j); 
+        //save the current weights as the best yet found
+        int i_elem=0;   
+        for (int i=sandwich->N_arrays()-1; i>=0; i--) { 
+            
+            //check if this array is marked as mutable
+            if (!sandwich->arrays[i].second) continue; 
 
-            best_error = error; 
-            return true; 
+            auto& parr = sandwich->arrays[i].first; 
+
+            for (int j=0; j<parr.Get_DoF_out(); j++) { 
+                
+                auto poly = parr.Get_poly(j); 
+                for (int k=0; k<poly->Get_nElems(); k++) best_parameters[i_elem++] = poly->Get_elem(k)->coeff;
+            } 
+        }//for (int i=sandwich->N_arrays()-1; i>=0; i--)
+
+        return true; 
+    }; 
+    //__________________________________________________________________________________________________________________
+    
+    //__________________________________________________________________________________________________________________
+    auto Set_parameters = [](NPolyArrayChain *chain, const RVec<double>& parameters) 
+    {
+        if (parameters.size() != (size_t)chain->Get_nElems_mutable()) {
+            ostringstream oss; 
+            oss << "in <Set_parameters>: RVec<double> arguemnt (2nd) is wrong size (" << parameters.size() << "), "
+                   "must be size (" << chain->Get_nElems_mutable() << ")";  
+            throw invalid_argument(oss.str()); 
+            return; 
         }
-        return false; 
-    };
 
+        //save the current weights as the best yet found
+        int i_elem=0;   
+        for (int i=chain->N_arrays()-1; i>=0; i--) { 
+            
+            //check if this array is marked as mutable
+            if (!chain->arrays[i].second) continue; 
+
+            auto& parr = chain->arrays[i].first; 
+
+            for (int j=0; j<parr.Get_DoF_out(); j++) { 
+                
+                auto poly = parr.Get_poly(j); 
+                for (int k=0; k<poly->Get_nElems(); k++) poly->Get_elem(k)->coeff = parameters[i_elem++];
+            } 
+        }//for (int i=chain->N_arrays()-1; i>=0; i--)
+    };
+    //__________________________________________________________________________________________________________________
+    
+    
+    //this will be the 'update vector' for each iteration
+    RVec<double> dW( n_parameters, 0. ); 
+
+    printf("Running in parallel with %i threads...\n\n", (int)n_threads); 
+    
+    
     //gradient descent trials. We will try to 'match' the inputs of the  
     for (int i=0; i<n_grad_iterations; i++) {
 
         //create a dW_partial vector for each thread
         RVec<double> dW_partial[n_threads]; 
-        for (size_t t=0; t<n_threads; t++) dW_partial[t] = RVec<double>(n_elems_input + n_elems_output, 0.); 
+        for (size_t t=0; t<n_threads; t++) dW_partial[t] = RVec<double>( n_parameters, 0.); 
 
         //create & launch each thread (thank you to claude for teaching me how to use std::thread!)
         vector<thread> threads; threads.reserve(n_threads); 
@@ -473,16 +512,12 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         dW *= momentum; 
 
         //combine all partial results from each thread 
-        for (size_t t=0; t<n_threads; t++) dW += dW_partial[t] * eta; 
+        for (size_t t=0; t<n_threads; t++) dW += dW_partial[t] * eta / ((double)n_events_train * DoF_out); 
 
-        int i_elem=0; 
-        for (int j=0; j<DoF_in; j++)                    //input layer
-            for (int k=0; k<array_input.Get_poly(j)->Get_nElems(); k++) 
-                array_input .Get_poly(j)->Get_elem(k)->coeff += -dW[i_elem++] / ((double)n_events_train); 
-
-        for (int j=0; j<DoF_out; j++)                   //output layer
-            for (int k=0; k<array_output.Get_poly(j)->Get_nElems(); k++) 
-                array_output.Get_poly(j)->Get_elem(k)->coeff += -dW[i_elem++] / ((double)n_events_train); 
+        //add the parameter updates to the NPolyArrayChain
+        //cout << dW << endl; 
+    
+        *sandwich += dW;  
         
         //compute error with new weights
         error = Evaluate_error(sandwich);
@@ -508,7 +543,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         //update the graph & redraw
         if (i % update_period == 0) {
 
-            Save_weights(sandwich, error); 
+            Save_parameters(error); 
             
             if (i==0) {
                 for (int i=0; i<n_grad_iterations; i++) y_error[i] = log(error)/log(10.);
@@ -541,37 +576,28 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         return 1; 
     }
 
-    Save_weights(sandwich, Evaluate_error(sandwich)); 
+    //perform one last check to see if the final gradient iteration was the best error yet found
+    Save_parameters( Evaluate_error(sandwich) ); 
+
+    //set the parameters of each polynomial to be those of the best-error
+    Set_parameters( sandwich, best_parameters ); 
 
     cout << endl; 
     printf("Best error recorded: %.5e\n", best_error); 
 
-    int i_elem=0; 
-    for (int i=0; i<DoF_in; i++)                    //input layer
-        for (int j=0; j<array_input.Get_poly(i)->Get_nElems(); j++) 
-            array_input.Get_poly(i)->Get_elem(j)->coeff = best_weights.at(i_elem++); 
+    //this saving procedure is for the q1-sv method
+    auto& arr_aggregate = sandwich->arrays[0].first;  
+    for (int i=1; i<sandwich->N_arrays(); i++) arr_aggregate = NPolyArray::Nest( sandwich->arrays[i].first, arr_aggregate ); 
 
-    for (int i=0; i<DoF_out; i++)                   //output layer
-        for (int j=0; j<array_output.Get_poly(i)->Get_nElems(); j++) 
-            array_output.Get_poly(i)->Get_elem(j)->coeff = best_weights.at(i_elem++); 
+    int i=0;
+    map<string, NPoly*> polymap;  
+    for (const auto& str : branches_output) polymap[str] = arr_aggregate.Get_poly(i++); 
 
+    ApexOptics::Create_dbfile_from_polymap(false, string(path_outfile), polymap); 
 
-    cout << "output wedge: " << endl; 
-    for (int i=0; i<DoF_out; i++) {
-        for (int j=0; j<array_output.Get_poly(i)->Get_nElems()-1; j++) {
-            printf(" % .4f", array_output.Get_poly(i)->Get_elemCoeff(j));
-        }
-        printf(" | % .4f\n", array_output.Get_poly(i)->Get_elemCoeff( array_output.Get_poly(i)->Get_nElems()-1) ); 
-    } 
+    return 0; 
 
-    cout << "input wedge: " << endl; 
-    for (int i=0; i<DoF_in; i++) {
-        for (int j=0; j<array_input.Get_poly(i)->Get_nElems()-1; j++) {
-            printf(" % .4f", array_input.Get_poly(i)->Get_elemCoeff(j));
-        }
-        printf(" | % .4f\n", array_input.Get_poly(i)->Get_elemCoeff( array_input.Get_poly(i)->Get_nElems()-1) ); 
-    } 
-
+#if 0 
     cout << "nesting arrays..." << flush; 
 
     //now, actually 'bake' this polynomial, by integrating the padding polynomials we've put on either side. 
@@ -593,4 +619,6 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     ApexOptics::Create_dbfile_from_polymap(false, path_outfile, polymap);
 
     return 0; 
+
+#endif 
 }
