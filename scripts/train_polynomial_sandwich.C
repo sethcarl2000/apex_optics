@@ -16,6 +16,7 @@
 #include <ROOT/RDataFrame.hxx> 
 #include <ApexOptics.h> 
 #include <TCanvas.h> 
+#include <cstdlib> 
 #include <TRandom3.h>
 
 using namespace std; 
@@ -30,6 +31,141 @@ double rv_mag2(const ROOT::RVec<double>& v) {
     for (const double& x : v) ret += x * x; 
     return ret; 
 }
+
+#if 0 
+class NPolyArrayChainFactory {
+private: 
+    
+    const bool is_RHRS{false}; 
+
+    struct ChainLink {
+        NPolyArrayChain::EArrayType type{NPolyArrayChain::kStatic};
+        NPolyArray array{}; 
+        int DoF_in{0}, DoF_out{0}, order{-1};
+        std::string path_infile{""}, path_outfile{""}; 
+        std::vector<std::string> outputs{}; 
+    };
+
+    std::vector<ChainLink> chain_links; 
+
+public: 
+    NPolyArrayChainFactory(const bool _is_RHRS=false) : is_RHRS{_is_RHRS}, arrays{} {};
+    ~NPolyArrayChainFactory() {}; 
+
+    //append an array from a file. 
+    void AppendArray(const char* path_infile, const char* path_outfile,  
+                const std::vector<std::string>& inputs,
+                const std::vector<std::string>& outputs, const bool is_mutable=false) {
+    
+        ChainLink new_link{ 
+            .type = (is_mutable ? NPolyArrayChain::kMutable : NPolyArrayChain::kStatic) 
+        };  
+
+        //try to parse this array. 
+        try { 
+            new_link.array = ApexOptics::Parse_NPolyArray_from_file(path_infile, outputs, inputs.size()); 
+        
+        } catch (const std::exception& e) {
+
+            cerr << "Exception caught in <NPolyArrayChainFactory::AppendArray>, when trying to parse input file.\n what: " 
+                 << e.what() << endl; 
+            std::abort(); 
+            return; 
+        }
+
+        if (!chain_links.empty()) {
+            if (chain_links.back().array.Get_DoF_out() != new_link.array.Get_DoF_in()) return;
+        }
+
+        new_link.DoF_in  = inputs.size(); 
+        new_link.DoF_out = outputs.size(); 
+        new_link.path_infile  = string(path_infile); 
+        new_link.path_outfile = string(path_outfile);  
+        new_link.outputs = outputs; 
+
+        chain_links.emplace_back( new_link ); 
+    } 
+
+    //append a buffer layer. 
+    void AppendBuffer(int order) {
+        
+        //check if there has already been a buffer this is attached to. 
+        ChainLink new_link{ 
+            .type = NPolyArrayChain::kBuffer 
+        }; 
+
+        new_link.order = order; 
+
+        //check if this buffer layer is being added on top of another (not allowed!)
+        if (chain_links.back().type == NPolyArrayChain::kBuffer) {
+
+            throw logic_error("in <NPolyArrayChainFactory::AppendBuffer>: Unable to 'stack' two buffer layers on top of each other.");
+            return; 
+        }
+ 
+        chain_links.emplace_back( new_link ); 
+    }; 
+
+    //create an NPolyArrayChain, with the elements 'booked' with 'AppendBuffer' and 'AppendArray' 
+    NPolyArrayChain CreatePolyArrayChain() {
+
+        //create an empty NPolyArrayChain. 
+        NPolyArrayChain chain; 
+
+        //prepare to nest the polynomials, if applicable
+        for (size_t i=0; i<chain_links.size()-1; i++) { 
+
+            auto& link = chain_links[i]; 
+
+            //if this is a buffer layer
+            if (link.type == NPolyArrayChain::kBuffer) {
+                
+                const int DoF_next = chain_links[i+1].array.Get_DoF_in(); 
+                
+                chain.arrays.emplace_back( NPolyArrayChain::CreateIdentityNPolyArray(DoF_next, link.order), NPolyArrayChain::kBuffer ); 
+            }
+
+            //if this is a static or mutable layer
+            if (link.type == NPolyArrayChain::kMutable || link.type == NPolyArrayChain::kStatic) {
+
+
+            }
+        }
+
+        for (auto& link : chain_links) chain.arrays.emplace_back( link.array, link.type ); 
+    }
+
+    //save the resultant polynomails in their respective output files
+    void SavePolyArrayChain() {
+    
+        if (chain_links.empty()) { return chain; }
+
+        //if there's only one 'link' in the chain, then 
+        if (chain_links.size()<2) {
+            chain.arrays.push_back({ chain_links[0].array, chain_links[0].type }); 
+            return chain; 
+        }
+
+        //prepare to nest the polynomials, if applicable
+        for (size_t i=0; i<chain_links.size()-1; i++) { 
+            
+            //if this layer is a buffer, then nest it with the next
+            if (chain_links[i].type == NPolyArrayChain::kBuffer) 
+                chain_links[i+1].array = NPolyArray::Nest( chain_links[i+1].array, chain_links[i].array ); 
+        
+        }
+    }
+}; 
+#endif 
+
+enum EPolynomialType {
+    kSingle=0,              //single polynomial mapping fp => sv
+    kSingleWithBuffer,      //single polynomial mapping fp => sv, with 'buffer' polynomials on either side
+    kSplit,                 //2 sepearate polyonimals mapping fp => q1, and q1 => sv. 
+    kSplitWithBuffer        //2 sepearate polynomials mapping fp => q1 and q1 =>, with 3 buffer polynomials 
+}; 
+
+#define POLYNOMIAL_TYPE kSplitWithBuffer 
 
 //__________________________________________________________________________________________________________________
 //Compute the gradient w/r/t each weight for the mlp (with respect to the given range of elements). 
@@ -71,7 +207,7 @@ void Process_event_range(   ROOT::RVec<double>& dW,
         for (int i = chain->N_arrays()-1; i >= 0; i--) {
 
             const auto& parr = chain->arrays[i].first;
-            const bool is_modifiable = chain->arrays[i].second;  
+            const bool is_modifiable = (chain->arrays[i].second != NPolyArrayChain::kStatic);  
 
             const int DoF_array = parr.Get_DoF_out(); 
 
@@ -139,9 +275,11 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
                                 const char* tree_name="tracks_fp" )
 {
     const char* const here = "train_polynomial_sandwich"; 
+
+    const bool is_RHRS = false; 
     
     //if there are more training events than this in the 'path_infile' root file, then only use this many. 
-    const int max_events_train = 1e7; 
+    const int max_events_train = 12.5e3; 
 
     //put in a number here which is orders of magnitude larger than the maximum reasonable error you expect. 
     //if the error of any particular iteration exceeds this, then quit. 
@@ -197,16 +335,17 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         return 1; 
     }
 
-    
     //add noise to reduce the chances that a 'divide by zero' error is encountered; as some of the sieve-hole data 
     // has hole positions which are exactly 0. 
     const double noise_level = 1e-7; 
     TRandom3 rand; 
 
+
+
     //if more training events than this exist, cap them at 'max_events_train' 
     const int n_events_train = min<int>( *df.Count(), max_events_train ); 
 
-    printf("Using %i training events\n", n_events_train);
+    printf("Using %i training events\n", n_events_train); 
 
     //now that we know all the columns exist, we can continue; 
     
@@ -221,7 +360,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
 
         auto new_node = input_nodes.back() 
 
-            .Redefine("inputs",  [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + noise_level); return V; }, {"inputs", str.data()}); 
+            .Redefine("inputs",  [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + rand.Gaus()*noise_level); return V; }, {"inputs", str.data()}); 
 
         input_nodes.push_back(new_node); 
     }
@@ -230,7 +369,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         
         auto new_node = input_nodes.back() 
 
-            .Redefine("outputs", [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + noise_level); return V; }, {"outputs", str.data()}); 
+            .Redefine("outputs", [&rand, noise_level](RVec<double>& V, double x) { V.push_back(x + rand.Gaus()*noise_level); return V; }, {"outputs", str.data()}); 
 
         input_nodes.push_back(new_node); 
     }
@@ -306,22 +445,99 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     // -- this one will have its elements modified by the training process. 
     //
 
-    const char* path_dbfile_fp_q1 = "data/csv/poly_prod_fp_q1_L_3ord.dat";
-    auto parr_fp_q1 = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_q1, {"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"}, 4); 
+    const vector<string> branches_sv{
+        "x_sv",
+        "y_sv",
+        "dxdz_sv",
+        "dydz_sv",
+        "dpp_sv"
+    };
 
-    const char* path_dbfile_q1_sv = "data/csv/poly_prod_q1_sv_L_3ord.dat";
-    auto parr_q1_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_q1_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 5); 
-                                                
-   //add the output layer (which is mutable)
-    sandwich->InsertBufferArray( parr_fp_q1.Get_DoF_in() ); 
+    const vector<string> branches_q1{
+        "x_q1",
+        "y_q1",
+        "dxdz_q1",
+        "dydz_q1",
+        "dpp_q1"
+    }; 
+
+    const vector<string> branches_fp{
+        "x_fp",
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp",
+    }; 
     
-    sandwich->AppendArray( parr_fp_q1, NPolyArrayChain::kStatic ); 
+    const char *path_dbfile_fp_sv, *path_dbfile_fp_q1, *path_dbfile_q1_sv; 
+    const char *path_outfile_fp_sv, *path_outfile_fp_q1, *path_outfile_q1_sv; 
+    NPolyArray parr_fp_sv, parr_fp_q1, parr_q1_sv; 
 
-    sandwich->InsertBufferArray( parr_q1_sv.Get_DoF_in() ); 
+    switch (POLYNOMIAL_TYPE) {
 
-    sandwich->AppendArray( parr_q1_sv, NPolyArrayChain::kStatic ); 
+        case kSingle : { 
+            
+            path_dbfile_fp_sv  = "data/csv/poly_prod_fp_sv_L_3ord.dat";
+            path_outfile_fp_sv = "data/csv/poly_prod-trained_fp_sv_L_3ord.dat";
+            parr_fp_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 4); 
 
-    sandwich->InsertBufferArray( parr_q1_sv.Get_DoF_out() ); 
+            sandwich->AppendArray( parr_fp_sv, NPolyArrayChain::kMutable ); 
+            break; 
+        }
+
+        case kSingleWithBuffer : {
+
+            path_dbfile_fp_sv  = "data/csv/poly_prod_fp_sv_L_3ord.dat";
+            path_outfile_fp_sv = "data/csv/poly_prod-trained_fp_sv_L_3ord.dat";
+            parr_fp_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 4); 
+
+            sandwich->InsertBufferArray( parr_fp_sv.Get_DoF_in() ); 
+
+            sandwich->AppendArray( parr_fp_sv, NPolyArrayChain::kStatic ); 
+
+            sandwich->InsertBufferArray( parr_fp_sv.Get_DoF_out() ); 
+            break; 
+        }
+
+        case kSplit : {
+
+            path_dbfile_fp_q1  = "data/csv/poly_prod_fp_q1_L_3ord.dat";
+            path_outfile_fp_q1 = "data/csv/poly_prod-trained_fp_q1_L_3ord.dat";
+            parr_fp_q1 = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_q1, {"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"}, 4); 
+
+            path_dbfile_q1_sv  = "data/csv/poly_prod_q1_sv_L_3ord.dat";
+            path_outfile_q1_sv = "data/csv/poly_prod-trained_q1_sv_L_3ord.dat";
+            parr_q1_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_q1_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 5); 
+                                                        
+            //add the output layer (which is mutable)
+            sandwich->AppendArray( parr_fp_q1, NPolyArrayChain::kMutable ); 
+
+            sandwich->AppendArray( parr_q1_sv, NPolyArrayChain::kMutable ); 
+            break; 
+        }
+        case kSplitWithBuffer : {
+
+            path_dbfile_fp_q1  = "data/csv/poly_prod_fp_q1_L_3ord.dat";
+            path_outfile_fp_q1 = "data/csv/poly_prod-trained_fp_q1_L_3ord.dat";
+            parr_fp_q1 = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_q1, {"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"}, 4); 
+
+            path_dbfile_q1_sv  = "data/csv/poly_prod_q1_sv_L_3ord.dat";
+            path_outfile_q1_sv = "data/csv/poly_prod-trained_q1_sv_L_3ord.dat";
+            parr_q1_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_q1_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 5); 
+                                                        
+            //add the output layer (which is mutable)
+            sandwich->InsertBufferArray( parr_fp_q1.Get_DoF_in() ); 
+            
+            sandwich->AppendArray( parr_fp_q1, NPolyArrayChain::kStatic ); 
+
+            sandwich->InsertBufferArray( parr_q1_sv.Get_DoF_in() ); 
+
+            sandwich->AppendArray( parr_q1_sv, NPolyArrayChain::kStatic ); 
+
+            sandwich->InsertBufferArray( parr_q1_sv.Get_DoF_out() ); 
+            break; 
+        } 
+
+    }
 
     
     const int DoF_in  = sandwich->Get_DoF_in(); 
@@ -433,7 +649,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         for (int i=sandwich->N_arrays()-1; i>=0; i--) { 
             
             //check if this array is marked as mutable
-            if (!sandwich->arrays[i].second) continue; 
+            if (sandwich->arrays[i].second == NPolyArrayChain::kStatic) continue; 
 
             auto& parr = sandwich->arrays[i].first; 
 
@@ -464,7 +680,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         for (int i=chain->N_arrays()-1; i>=0; i--) { 
             
             //check if this array is marked as mutable
-            if (!chain->arrays[i].second) continue; 
+            if (chain->arrays[i].second == NPolyArrayChain::kStatic) continue; 
 
             auto& parr = chain->arrays[i].first; 
 
@@ -585,40 +801,62 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     cout << endl; 
     printf("Best error recorded: %.5e\n", best_error); 
 
-    //this saving procedure is for the q1-sv method
-    auto& arr_aggregate = sandwich->arrays[0].first;  
-    for (int i=1; i<sandwich->N_arrays(); i++) arr_aggregate = NPolyArray::Nest( sandwich->arrays[i].first, arr_aggregate ); 
-
-    int i=0;
     map<string, NPoly*> polymap;  
-    for (const auto& str : branches_output) polymap[str] = arr_aggregate.Get_poly(i++); 
 
-    ApexOptics::Create_dbfile_from_polymap(false, string(path_outfile), polymap); 
 
-    return 0; 
+    switch (POLYNOMIAL_TYPE) { 
 
-#if 0 
-    cout << "nesting arrays..." << flush; 
+        case kSingle : {
 
-    //now, actually 'bake' this polynomial, by integrating the padding polynomials we've put on either side. 
-    auto nested_array = NPolyArray::Nest( array_output, NPolyArray::Nest( poly_array, array_input ) ); 
-    
-    cout << "done." << endl; 
+            map<string,NPoly*> polymap; 
+            int i=0; for (const auto& str : branches_sv) polymap[str] = parr_fp_sv.Get_poly(i++); 
+            
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_fp_sv), polymap ); 
+        }
 
-    //now, save it in a file 
-    map<string, NPoly*> polymap; 
+        case kSingleWithBuffer : {
 
-    int i_pol=0; 
-    for (const auto& str : branches_output) {
+            parr_fp_sv = NPolyArray::Nest( parr_fp_sv, sandwich->arrays[0].first ); 
+            parr_fp_sv = NPolyArray::Nest( sandwich->arrays[2].first, parr_fp_sv ); 
 
-        polymap[str] = nested_array.Get_poly(i_pol++); 
+            map<string,NPoly*> polymap; 
+            int i=0; for (const auto& str : branches_sv) polymap[str] = parr_fp_sv.Get_poly(i++); 
+            
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_fp_sv), polymap ); 
+        }
+
+        case kSplit : {
+
+            map<string,NPoly*> polymap; 
+            int i=0; for (const auto& str : branches_q1) polymap[str] = parr_fp_q1.Get_poly(i++); 
+
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_fp_q1), polymap); 
+
+            polymap.clear(); 
+            i=0; for (const auto& str : branches_sv) polymap[str] = parr_q1_sv.Get_poly(i++); 
+
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_q1_sv), polymap); 
+        }
+
+        case kSplitWithBuffer : {
+
+            parr_fp_q1 = NPolyArray::Nest( parr_fp_q1, sandwich->arrays[0].first ); 
+            
+            map<string,NPoly*> polymap; 
+            int i=0; for (const auto& str : branches_q1) polymap[str] = parr_fp_q1.Get_poly(i++); 
+
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_fp_q1), polymap); 
+
+            parr_q1_sv = NPolyArray::Nest( parr_q1_sv, sandwich->arrays[2].first );
+            parr_q1_sv = NPolyArray::Nest( sandwich->arrays[4].first, parr_q1_sv );
+            
+            polymap.clear(); 
+            i=0; for (const auto& str : branches_sv) polymap[str] = parr_q1_sv.Get_poly(i++); 
+
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_q1_sv), polymap); 
+        }
     }
-
-    printf("\nCreating output file '%s'\n", path_outfile);
-
-    ApexOptics::Create_dbfile_from_polymap(false, path_outfile, polymap);
-
+     
     return 0; 
 
-#endif 
 }
