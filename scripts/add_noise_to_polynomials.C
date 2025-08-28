@@ -3,16 +3,24 @@
 #include <vector> 
 #include <string> 
 #include <map> 
+#include <NPoly.h>
+#include <ApexOptics.h>
+#include <NPolyArrayChain.h> 
+#include <NPolyArray.h> 
+#include <stdexcept> 
+#include <TRandom3.h> 
 
 using namespace std; 
 
-int add_noise_to_polynomials(const bool is_RHRS, const char* path_infile, const char* path_outfile, 
-                            const double noise_mag=1e-3, const int noise_order=1) {
+int add_noise_to_polynomials(   const bool is_RHRS, 
+                                const char* path_infile, 
+                                const char* path_outfile, 
+                                const double noise_mag=1e-3, 
+                                const int noise_order=1     )  {
 
     const char* const here = "add_noise_to_polynomial"; 
-    NPoly dummy(4,2); 
-
-    vector<string> inputs{
+    
+    const vector<string> inputs{
         "x_fp",
         "y_fp",
         "dxdz_fp",
@@ -29,12 +37,17 @@ int add_noise_to_polynomials(const bool is_RHRS, const char* path_infile, const 
     };
     const size_t DoF_out = outputs.size(); 
 
-    NPolyArray poly_array = ApexOptics::Parse_NPolyArray_from_file(path_infile, outputs, (int)inputs.size()); 
+    //try to parse the NPolyArray
+    NPolyArray parr; 
+    try {
 
-    if (poly_array.Get_status() != NPolyArray::kGood) {
-        Error(here, "NPolyArray from file '%s' did not parse successfully", path_infile); 
+        parr = ApexOptics::Parse_NPolyArray_from_file(path_infile, outputs, (int)inputs.size()); 
+    
+    } catch (const std::exception& e) {
+
+        Error(here, "NPolyArray from file '%s' did not parse successfully.\n what(): %s", path_infile, e.what()); 
         return -1; 
-    }
+    } 
 
     //now, add random noise. 
     TRandom3 rand; 
@@ -61,18 +74,14 @@ int add_noise_to_polynomials(const bool is_RHRS, const char* path_infile, const 
     };
 
     //now, sandwich the input polynomial with a random NPolyArray on either side. 
-    auto noisy_array1 = NPolyArray::Nest( poly_array, Create_random_array(DoF_in) ); 
+    auto noisy_array1 = NPolyArray::Nest( parr, Create_random_array(DoF_in) ); 
 
     auto noisy_array = NPolyArray::Nest( Create_random_array(DoF_out), noisy_array1 ); 
 
     //now, save it in a file 
     map<string, NPoly*> polymap; 
 
-    int i_pol=0; 
-    for (const auto& str : outputs) {
-
-        polymap[str] = noisy_array.Get_poly(i_pol++); 
-    }
+    int i_pol=0; for (const auto& str : outputs) polymap[str] = noisy_array.Get_poly(i_pol++); 
 
     ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap);
 
