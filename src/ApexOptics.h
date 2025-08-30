@@ -71,6 +71,20 @@ namespace ApexOptics {
                          _is_RHRS ? 794.609e-3 : 795.766e-3 ); 
     }
 
+    //a simple 'trajectory' object. the four 'geometric' coordinates are default-initialzied to 0., but the
+    // 'dp/p' coordinate is default-initialized to 'nan', to indicate that this field is invalid if it is not defined. 
+    // (for example, in VDC coordinate systems, in which the dp/p momentum coordinate cannot be defined). 
+    struct Trajectory_t {
+        double x{0.}, y{0.}, dxdz{0.}, dydz{0.}; 
+        double dpp{std::numeric_limits<double>::quiet_NaN()}; 
+    }; 
+
+    //converts from the 'Hall coordinate system' to the 'Sieve coordinate system'. 
+    Trajectory_t HCS_to_SCS(const bool is_RHRS, const Trajectory_t traj_hcs); 
+
+    //converts from the 'Seive coordiante system' to the 'Hall coordinate system' 
+    Trajectory_t SCS_to_HCS(const bool is_RHRS, const Trajectory_t traj_scs); 
+
 };
 
 #endif

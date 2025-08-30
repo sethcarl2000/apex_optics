@@ -485,7 +485,69 @@ NPolyArray ApexOptics::Parse_NPolyArray_from_file(const char* path_dbfile, const
     return parr; 
 }  
 //__________________________________________________________________________________________________________________
+ApexOptics::Trajectory_t ApexOptics::HCS_to_SCS(const bool is_RHRS, const ApexOptics::Trajectory_t traj_hcs) 
+{
+    //converts from the 'Hall coordinate system' (HCS) to the 'Sieve coordinate system' (SCS).
+
+    TVector3 dir( traj_hcs.dxdz, traj_hcs.dydz, 1. );
+
+    TVector3 pos( traj_hcs.x, traj_hcs.y, 0. ); 
+
+    pos.RotateY( -ApexOptics::Get_sieve_angle(is_RHRS) ); 
+    pos.RotateZ( TMath::Pi()/2. ); 
+    
+    dir.RotateY( -ApexOptics::Get_sieve_angle(is_RHRS) ); 
+    dir.RotateZ( TMath::Pi()/2. ); 
+    
+    //have the position be relative to the central sieve hole. 
+    pos += -ApexOptics::Get_sieve_pos(is_RHRS);
+
+    //this will be our new trajectory. 
+    Trajectory_t traj_scs{}; 
+    traj_scs.dpp = traj_hcs.dpp; 
+
+    //compute the new slopes
+    traj_scs.dxdz = dir.x() / dir.z(); 
+    traj_scs.dydz = dir.y() / dir.z(); 
+
+    //use these new slopes to project the track onto the z=0 plane in HCS 
+    traj_scs.x    = pos.x()  -  traj_scs.dxdz * pos.z(); 
+    traj_scs.y    = pos.y()  -  traj_scs.dydz * pos.z(); 
+
+    return traj_scs; 
+}
 //__________________________________________________________________________________________________________________
+ApexOptics::Trajectory_t ApexOptics::SCS_to_HCS(const bool is_RHRS, const ApexOptics::Trajectory_t traj_scs) 
+{
+    //converts from the 'Hall coordinate system' (HCS) to the 'Sieve coordinate system' (SCS).
+    //direction (SCS)
+
+    auto dir = TVector3( traj_scs.dxdz, traj_scs.dydz, 1. );
+
+    auto pos = TVector3( traj_scs.x, traj_scs.y, 0. ) + ApexOptics::Get_sieve_pos(is_RHRS); 
+
+    //rotate both the position and the direction
+    dir.RotateZ( -TMath::Pi()/2. ); 
+    dir.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
+
+    pos.RotateZ( -TMath::Pi()/2. ); 
+    pos.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
+
+    //this will be our new trajectory. 
+    Trajectory_t traj_hcs{}; 
+
+    traj_hcs.dpp = traj_scs.dpp; 
+    
+    //compute the new slopes
+    traj_hcs.dxdz = dir.x() / dir.z(); 
+    traj_hcs.dydz = dir.y() / dir.z(); 
+
+    //use these new slopes to project the track onto the z=0 plane in HCS 
+    traj_hcs.x    = pos.x()  -  traj_hcs.dxdz * pos.z(); 
+    traj_hcs.y    = pos.y()  -  traj_hcs.dydz * pos.z(); 
+
+    return traj_hcs; 
+}
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
