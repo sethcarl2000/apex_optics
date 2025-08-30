@@ -228,7 +228,9 @@ int ApexOptics::Create_dbfile_from_mlp(const char* path_dbfile, const MultiLayer
     const char* here = "ApexOptics::Create_dbfile_from_mlp"; 
 
     if (!dbfile.is_open()) {
-        fprintf(stdout, "Error in <%s>: Unable to open file %s", here, path_dbfile); 
+        ostringstream oss; 
+        oss << "in <" << here << ">: Unable to open file" << path_dbfile; 
+        throw invalid_argument(oss.str());  
         return 1; 
     }
 
@@ -392,7 +394,9 @@ int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_
     ifstream dbfile(path_dbfile); 
     
     if (!dbfile.is_open()) {
-        fprintf(stderr, "Error in <%s>: Unable to open db file '%s'\n", here, path_dbfile); 
+        ostringstream oss; 
+        oss << "in <" << here << ">: Unable to open file '" << path_dbfile << "'"; 
+        throw invalid_argument(oss.str()); 
         return -1; 
     }
 
@@ -453,36 +457,32 @@ int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_
 NPolyArray ApexOptics::Parse_NPolyArray_from_file(const char* path_dbfile, const vector<string>& output_names, const int DoF) 
 {
     const char* const here = "ApexOptics::Parse_NPolyArray_from_file";
-
-    bool parse_failure(false); 
+ 
     //parse all relevant polys from file
     vector<NPoly> poly_vec; 
 
-    for (const string& output_branch : output_names) {
+    try {
+        for (const string& output_branch : output_names) {
 
-        NPoly poly(DoF); 
+            NPoly poly(DoF); 
+    
+            ApexOptics::Parse_NPoly_from_file(path_dbfile, output_branch.data(), &poly);        
 
-        ApexOptics::Parse_NPoly_from_file(path_dbfile, output_branch.data(), &poly); 
-
-        if (poly.Get_nElems()==0) {
-            fprintf(stderr, "Warning in <%s>: Poly '%s' did not parse any elements in file '%s'.\n", here, output_branch.data(), path_dbfile);          
-            parse_failure = true; 
+            poly_vec.push_back(poly); 
         }
-
-        poly_vec.push_back(poly); 
-    }
-
-    NPolyArray parr(poly_vec); 
-
-    //If there was a problem while parsing, then throw an exception
-    if (parse_failure) {
-        parr.Set_status(NPolyArray::kError);
+    
+    } catch (const std::exception& e) { //check if an exception has been caught when trying to parse the polynomial from file. 
+        
         ostringstream oss;  
-        oss << "in <" << here << ">: unable to parse NPolyArray from file '" << path_dbfile << "'";
+        oss << "in <" << here << ">: Exception caught trying to parse NPolyArray from file.\n what(): " << e.what(); 
         throw invalid_argument(oss.str());
-        return parr;  
+
+        NPolyArray parr_error;
+        parr_error.Set_status(NPolyArray::kError); 
+        return parr_error;  
     }
-    return parr; 
+
+    return NPolyArray(poly_vec); 
 }  
 //__________________________________________________________________________________________________________________
 ApexOptics::Trajectory_t ApexOptics::HCS_to_SCS(const bool is_RHRS, const ApexOptics::Trajectory_t traj_hcs) 
