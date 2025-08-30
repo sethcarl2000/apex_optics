@@ -233,8 +233,7 @@ NPolyArray NPolyArray::Nest(const NPolyArray& output, const NPolyArray& input)
 //    minimum error value (if it isn't a local, false minima.)
 //  - to use newton's method, we need to compute the Jacobian of our 'F' funciton. this is what 'J' will be. 
 //
-int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, const int n_iterations) const
-//auto find_next_Xsv = [parr, rv_dot, rv_mag, DoF_sv, DoF_fp](RVec<double>& Xfp, RVec<double>& Xsv) const {
+int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, const int n_iterations, const double error_threshold) const
 {   
     if ( (int)X.size() != Get_DoF_in() || (int)Z.size() != Get_DoF_out() ) {
         Error("Iterate_to_root", "input/output vec wrong size; got %i/%i, expected %i/%i.", 
@@ -242,10 +241,14 @@ int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>&
         return -1; 
     }
 
-    for (int i_it=0; i_it<n_iterations; i_it++) {
+    RVec<double> dZ{ Eval(X) - Z }; 
+    
+    double error=0.; for (const double& x : dZ) error += x*x; 
+    error = sqrt(error); 
 
-        //Get the difference between the model's evaluation of Xfp, and the actual value. 
-        RVec<double> dZ{ Eval(X) - Z }; 
+    int i_it=0; 
+
+    while ( error > error_threshold && n_iterations > i_it++ ) {
 
         RMatrix       dGi_dXj     = std::move(Jacobian(X)); 
 
@@ -278,10 +281,21 @@ int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>&
         if (dX.size() != Get_DoF_in())   return i_it; 
         for (double& x : dX) if (x != x) return i_it; 
         
+        //update 'X'
         X += -dX; 
+
+        //re-compute the error. at the start of each loop, we will re-evaluate whether: 
+        // 
+        //      1. the maximum number of iterations has been met/exceeded. 
+        //      2. the new error has falled below the 'error_threshold', at which point the iterations will cease. 
+        //
+        dZ = Eval(X) - Z; 
+        
+        error=0.; for (const double& x : dZ) error += x*x; 
+        error = sqrt(error); 
     }
     
-    return n_iterations; 
+    return i_it; 
 }
 //______________________________________________________________________________________________
 void NPolyArray::Print() const 

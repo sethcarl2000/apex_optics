@@ -65,7 +65,7 @@ public:
     //    minimum error value (if it isn't a local, false minima.)
     //  - to use newton's method, we need to compute the Jacobian of our 'F' funciton. this is what 'J' will be. 
     //
-    int Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, int n_iterations=1) const;
+    int Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, int n_iterations=1, const double error_threshold=-1.) const;
 
 
     enum EStatus { kError=-1, kNot_init=0, kGood=1 }; 
