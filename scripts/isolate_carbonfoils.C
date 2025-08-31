@@ -7,6 +7,14 @@
 #include "TROOT.h"
 #include "TFile.h"
 #include "TTree.h"
+#include <ROOT/RVec.hxx>
+#include <ROOT/RDataFrame.hxx>
+#include <TVector3.h> 
+#include <ApexOptics.h> 
+#include <TSystem.h>
+#include <TParameter.h> 
+#include <PolynomialCut.h> 
+#include <TStyle.h> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -16,7 +24,6 @@ struct Track_t {
     double x,y,dxdz,dydz,dpp; 
 }; 
 
-NPoly dummy; 
 
 //transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
 void SCS_to_HCS(Track_t& track, const bool is_RHRS) 
@@ -80,14 +87,21 @@ const double foil_Z[] = {
      303.70e-3
 };
 
+const double wire_Z[] = {
+    -196.20e-3, 
+       3.80e-3, 
+     203.80e-3 
+}; 
+#define CREATE_NEW_CUT false
+
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_sieve.root",
-                            const char* path_cutfile="data/csv/polycut_L4773_O1.dat",
-                            const char* path_outfile="",
-                            const int   foil_num=0, 
-                            const char* path_dbfile ="data/csv/poly_V123_fp_sv_L_4ord.dat",  
+int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-4773.root",
+                            const char* path_cutfile="data/csv/polycut_L_O1-new.dat",
+                            const char* path_outfile="data/replay/real_L_O1.root",
+                            const int   foil_num=1, 
+                            const char* path_dbfile ="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                             const char* tree_name   ="tracks_fp" ) 
 {
     const char* const here = "test_forward_model"; 
@@ -135,6 +149,7 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_siev
     //try to create the polynomial cut
     auto polycut = new PolynomialCut; 
 
+#if !CREATE_NEW_CUT
     try { 
         polycut->Parse_dbfile(path_cutfile); 
     } 
@@ -144,7 +159,7 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_siev
     }
     const char* cutbranch_x = "z_reco_vertical"; 
     const char* cutbranch_y = "y_sv"; 
-
+#endif 
 
     
     vector<string> branches_sv{
@@ -200,7 +215,7 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_siev
     
     auto df_reco = df 
 
-        .Define("Xfp", [](double x, double y, double dxdz, double dydz)
+        .Define("Xfp",       [](double x, double y, double dxdz, double dydz)
         {
             return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz }; 
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
@@ -228,19 +243,19 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_siev
             return - ( Xhcs.x - vtx.x() ) / Xhcs.dxdz; 
         }, {"Xhcs_reco", "position_vtx"})
 
-        .Define("position_vtx_scs", [&HCS_to_SCS](TVector3 vtx_hcs){
-            TVector3 vtx_scs = vtx_hcs; 
-            HCS_to_SCS(&vtx_scs); 
-            return vtx_scs; 
-        }, {"position_vtx"})
-
         .Redefine("position_vtx", [z_foil](TVector3 vtx)
         {
             vtx[2] = z_foil;
             return vtx; 
+        }, {"position_vtx"})
+        
+        .Define("position_vtx_scs", [&HCS_to_SCS](TVector3 vtx_hcs)
+        {
+            TVector3 vtx_scs = vtx_hcs; 
+            HCS_to_SCS(&vtx_scs); 
+            return vtx_scs; 
         }, {"position_vtx"});
-        
-        
+
 
 
     auto df_out = add_branch_from_Track_t(df_reco, "Xsv_reco", {
@@ -250,44 +265,49 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_siev
         {"dydz_sv", &Track_t::dydz},
         {"dpp_sv",  &Track_t::dpp}
     }) 
+#if CREATE_NEW_CUT //apply the cut only if we aren't creating a new polycut
+    ; 
+#else 
+    .Filter([polycut](double cut_x, double cut_y){ return polycut->IsInside(cut_x, cut_y); }, {cutbranch_x, cutbranch_y});
+#endif
+
+#if !CREATE_NEW_CUT
         //apply polynomial cut
-        .Filter([polycut](double cut_x, double cut_y){ return polycut->IsInside(cut_x, cut_y); }, {cutbranch_x, cutbranch_y}); 
+        df_out 
+        .Snapshot("tracks_fp", path_outfile, {
+            "x_sv",
+            "y_sv",
+            "dxdz_sv",
+            "dydz_sv",
+            "dpp_sv",
 
-    df_out.Snapshot("tracks_fp", path_outfile, {
-        "x_sv",
-        "y_sv",
-        "dxdz_sv",
-        "dydz_sv",
-        "dpp_sv",
+            "x_fp",
+            "y_fp",
+            "dxdz_fp",
+            "dydz_fp",
 
-        "x_fp",
-        "y_fp",
-        "dxdz_fp",
-        "dydz_fp",
-
-        "position_vtx",
-        "position_vtx_scs",
-        "z_reco_vertical",
-    }); 
+            "position_vtx", 
+            "position_vtx_scs"
+        });  
+#endif
 
     //create both histograms
     auto hist_xy = df_out
         //correct for react-vertex position
-        .Define("x_react_vtx_fix", [](double x, TVector3 r){return x + r.x();}, {"x_sv", "position_vtx_scs"})
-        .Define("y_react_vtx_fix", [](double y, TVector3 r){return y + r.y();}, {"y_sv", "position_vtx_scs"})
+        /*.Define("x_react_vtx_fix", [](double x, TVector3 r){return x + r.x();}, {"x_sv", "position_vtx_scs"})
+        .Define("y_react_vtx_fix", [](double y, TVector3 r){return y + r.y();}, {"y_sv", "position_vtx_scs"})*/ 
 
-        .Histo2D({"h_xy", "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, 
-                "x_react_vtx_fix", "y_react_vtx_fix");
+        .Histo2D({"h_xy", "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "x_sv", "y_sv");
     
     auto hist_angles    
         = df_out.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
     
     
     auto hist_z_y 
-        = df_out.Histo2D({"h_z_y", "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "y_sv");
+        = df_out.Histo2D({"h_z_y", "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.45, 0.45, 200, -0.045, 0.045}, "z_reco_vertical", "y_sv");
 
     auto hist_z_dydz 
-        = df_out.Histo2D({"h_z_dydz", "z_{tg} vs dy/dz_{sv};z_{tg};dy/dz_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "dydz_sv");
+        = df_out.Histo2D({"h_z_dydz", "z_{tg} vs dy/dz_{sv};z_{tg};dy/dz_{sv}", 200, -0.4, 0.4, 200, -0.04, 0.04}, "z_reco_vertical", "dydz_sv");
 
 
     char c_title[256]; 
@@ -296,7 +316,13 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_siev
     //set the color pallete
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
-    
+
+#if CREATE_NEW_CUT
+
+    PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
+
+#else 
+
     auto c = new TCanvas("c1", c_title, 1200, 600); 
     c->Divide(2,1, 0.01,0.01); 
 
@@ -309,6 +335,7 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_siev
     c1->cd(1); hist_z_y->DrawCopy("col2"); 
     c1->cd(2); hist_z_dydz->DrawCopy("col2"); 
 
+    
         
     //write 'is_RHRS' parameter 
     auto file = new TFile(path_outfile, "UPDATE"); 
@@ -316,6 +343,7 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_V2_siev
     
     param_is_RHRS->Write(); 
     file->Close();
+#endif 
 
     return 0; 
 }
