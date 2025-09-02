@@ -20,6 +20,7 @@
 #include <string>
 #include <memory>
 #include <map>
+#include <ROOT/RVec.hxx>
 
 namespace ApexOptics {
 
@@ -111,6 +112,12 @@ namespace ApexOptics {
 
     //converts from the 'Seive coordiante system' to the 'Hall coordinate system' 
     Trajectory_t SCS_to_HCS(const bool is_RHRS, const Trajectory_t traj_scs); 
+
+    //quick and dirty (slow) way to convert a Trajectory_t struct to an RVec
+    ROOT::RVec<double> Trajectory_t_to_RVec(Trajectory_t X) noexcept;
+
+    //quick and dirty (slow) way to convert an RVec<double> to a Trajectory_t struct
+    Trajectory_t RVec_to_Trajectory_t(const ROOT::RVec<double>& V); 
 
 };
 

@@ -549,7 +549,29 @@ ApexOptics::Trajectory_t ApexOptics::SCS_to_HCS(const bool is_RHRS, const ApexOp
     return traj_hcs; 
 }
 //__________________________________________________________________________________________________________________
+//if X.dpp is NOT NaN, then it is defined; so add it to the vector. otherwise, don't add it. 
+ROOT::RVec<double> ApexOptics::Trajectory_t_to_RVec(ApexOptics::Trajectory_t X) noexcept {
+    if ( X.dpp == X.dpp ) {
+        return ROOT::RVec<double>{ X.x, X.y, X.dxdz, X.dydz, X.dpp };
+    } else {
+        return ROOT::RVec<double>{ X.x, X.y, X.dxdz, X.dydz };
+    }
+}
 //__________________________________________________________________________________________________________________
+//quick and dirty (slow) way to convert an RVec<double> to a Trajectory_t struct
+ApexOptics::Trajectory_t ApexOptics::RVec_to_Trajectory_t(const ROOT::RVec<double>& V) {
+    switch (V.size()) {
+        case 4 : return Trajectory_t{V[0], V[1], V[2], V[3]};           //dpp is not defined here (==NaN)
+        case 5 : return Trajectory_t{V[0], V[1], V[2], V[3], V[4]};     //dpp IS defined here. 
+        default : {
+            ostringstream oss; 
+            oss << "in <ApexOptics::RVec_to_Trajectory_t>: ROOT::RVec<double> container passed is invalid size (" 
+                << V.size() << "), must be either 4 or 5."; 
+            throw invalid_argument(oss.str());
+            return Trajectory_t{}; 
+        }
+    }
+}
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
