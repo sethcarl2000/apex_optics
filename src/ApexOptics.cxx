@@ -573,6 +573,33 @@ ApexOptics::Trajectory_t ApexOptics::RVec_to_Trajectory_t(const ROOT::RVec<doubl
     }
 }
 //__________________________________________________________________________________________________________________
+TVector3 ApexOptics::HCS_to_SCS(const bool is_RHRS, TVector3 pos) 
+{
+    //converts from the 'Hall coordinate system' (HCS) to the 'Sieve coordinate system' (SCS).
+
+    pos.RotateY( -ApexOptics::Get_sieve_angle(is_RHRS) ); 
+    pos.RotateZ( TMath::Pi()/2. ); 
+    
+    //have the position be relative to the central sieve hole. 
+    pos += -ApexOptics::Get_sieve_pos(is_RHRS);
+
+    return pos; 
+}
+//__________________________________________________________________________________________________________________
+TVector3 ApexOptics::SCS_to_HCS(const bool is_RHRS, TVector3 pos) 
+{
+    //converts from the 'Hall coordinate system' (HCS) to the 'Sieve coordinate system' (SCS).
+    pos += ApexOptics::Get_sieve_pos(is_RHRS);
+
+    pos.RotateZ( -TMath::Pi()/2. ); 
+    pos.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
+    
+    return pos; 
+}
+//__________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________
+//__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________

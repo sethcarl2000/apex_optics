@@ -10,12 +10,12 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "TROOT.h"
+#include <TROOT.h>
 #include <ROOT/RDataFrame.hxx>  
 #include "NPoly.h"
 #include "NPolyArray.h"
 #include "MultiLayerPerceptron.h"
-#include "TVector3.h"
+#include <TVector3.h>
 #include <vector>
 #include <string>
 #include <memory>
@@ -112,6 +112,14 @@ namespace ApexOptics {
 
     //converts from the 'Seive coordiante system' to the 'Hall coordinate system' 
     Trajectory_t SCS_to_HCS(const bool is_RHRS, const Trajectory_t traj_scs); 
+
+    
+    //this translates a DISPLACEMENT in HCS to SCS
+    TVector3 HCS_to_SCS(const bool is_RHRS, TVector3 pos);
+    
+    //this translates a DISPLACEMENT in SCS to HCS
+    TVector3 SCS_to_HCS(const bool is_RHRS, TVector3 dir); 
+
 
     //quick and dirty (slow) way to convert a Trajectory_t struct to an RVec
     ROOT::RVec<double> Trajectory_t_to_RVec(Trajectory_t X) noexcept;
