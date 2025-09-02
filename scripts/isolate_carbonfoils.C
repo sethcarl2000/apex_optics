@@ -21,6 +21,7 @@ using namespace std;
 using namespace ROOT::VecOps; 
 
 using ApexOptics::Trajectory_t; 
+using ApexOptics::OpticsTarget_t; 
 
 
 //_______________________________________________________________________________________________________________________________________________
@@ -48,50 +49,14 @@ ROOT::RDF::RNode add_branch_from_Trajectory_t(ROOT::RDF::RNode df, const char* b
     return nodes.back(); 
 }
 
-struct OpticsTarget {
-    std::string name{"none"}; 
-
-    //initialize all these with default value of 'Nan'. that way, we can check wich coordinates (if any) 
-    // are precisely fixed by this particular target's geometry. 
-    double 
-        x_hcs{std::numeric_limits<double>::quiet_NaN()},
-        y_hcs{std::numeric_limits<double>::quiet_NaN()}, 
-        z_hcs{std::numeric_limits<double>::quiet_NaN()}; 
-
-    bool operator==(const OpticsTarget& rhs) const { return rhs.name == name; } 
-}; 
-
-//create a list of optics targets to pick from.
-
-// We ONLY define the coordinates which are precisely given by the particular target's geometry; 
-// for example, the carbon foil's geometry preceisely gives the z_hcs coordinate, but not X or Y. 
-// and the vertical wires precisely give x_hcs and z_hcs, but not y_hcs. 
-// coordinates which are not excplicitly defined here are left as NaN, so later on we can know 
-// whcih coordinates of the react-vertex are known precisely, and which are not. 
-const std::vector<OpticsTarget> optics_target_list{
-    { .name="none" }, 
-
-    { .name="O1",  .z_hcs=-296.30e-3 },  //carbon foil targets
-    { .name="O2",  .z_hcs=-215.30e-3 },
-    { .name="O3",  .z_hcs=-146.10e-3 },
-    { .name="O4",  .z_hcs= -71.30e-3 },
-    { .name="O5",  .z_hcs=  78.90e-3 },
-    { .name="O6",  .z_hcs= 153.70e-3 },
-    { .name="O7",  .z_hcs= 222.90e-3 },
-    { .name="O8",  .z_hcs= 303.70e-3 },
-
-    { .name="V1",  .x_hcs=-3.23e-3, .z_hcs=-296.30e-3 },  //vertical wire targets
-    { .name="V2",  .x_hcs=-0.72e-3, .z_hcs=-215.30e-3 },
-    { .name="V3",  .x_hcs=+1.73e-3, .z_hcs=-146.10e-3 }
-}; 
 
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
 int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-4773.root",
+                            const char* target_name="none",       
                             const char* path_cutfile="data/csv/polycut_L_O1-new.dat",
                             const char* path_outfile="data/replay/real_L_O1.root",
-                            const char* target_name="none",
                             const char* path_dbfile ="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                             const char* tree_name   ="tracks_fp" ) 
 {
@@ -99,22 +64,15 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
 
     auto infile = new TFile(path_infile, "READ");
     
-    //check to see which optics targets was selected. 
-    const auto it = std::find_if( 
-        optics_target_list.begin(), 
-        optics_target_list.end(), 
-        [target_name](const OpticsTarget& elem){ return elem.name == string(target_name); }
-    ); 
+    OpticsTarget_t target; 
+    try { target = ApexOptics::GetTarget(string(target_name)); } 
 
-    //check if an invalid 'target_name' was passed.
-    if (it == optics_target_list.end()) {
-        Error(here, "target name passed is invalid: '%s'. Check macro source code to see list of valid names.", target_name); 
-        return -1;
+    catch (const std::exception& e) {
+
+        Error(here, "Something went wrong trying to get the target info.\n what(): %s", e.what()); 
+        return -1; 
     }
     
-    //now, we have a valid target to deal with. 
-    const OpticsTarget& target = *it; 
-
     printf("Optics target chosen is '%s'.\n", target.name.c_str()); 
 
     
@@ -225,6 +183,9 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
             return - ( Xhcs.x - vtx.x() ) / Xhcs.dxdz; 
         }, {"Xhcs_reco", "position_vtx"});
 
+    //this is just to keep the 'old' value, to see how good our cut is. 
+    rna.Define("y_vtx", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}); 
+
     rna.Overwrite("position_vtx", [&target](TVector3 vtx)
         {
             //overwrite whichever coordinates are precisely given by this target's geometry. 
@@ -249,6 +210,8 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
         {"dydz_sv", &Trajectory_t::dydz},
         {"dpp_sv",  &Trajectory_t::dpp}
     });  
+
+    auto node_precut = rna.Get(); 
 
     if (!create_new_cut) { 
         rna = rna.Get()
@@ -304,6 +267,12 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
         .Histo2D({"h_z_dydz", "z_{tg} vs dy/dz_{sv};z_{tg};dy/dz_{sv}", 200, -0.4, 0.4, 200, -0.04, 0.04}, "z_reco_vertical", "dydz_sv");
 
 
+    auto hist_y_vtx_precut = node_precut 
+        .Histo1D({"h_all", "All events;y_{hcs} (m);", 200, -3e-3, 8e-3}, "y_vtx"); 
+
+    auto hist_y_vtx_postcut = rna.Get()
+        .Histo1D({"h_cut", "in polynomial cut;y_{hcs} (m);", 200, -3e-3, 8e-3}, "y_vtx"); 
+
     char c_title[256]; 
     sprintf(c_title, "data:'%s', cutfile:'%s'", path_infile, path_cutfile); 
 
@@ -316,6 +285,8 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
         PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
     
     } else {
+
+
 
         auto c = new TCanvas("c1", c_title, 1200, 600); 
         c->Divide(2,1, 0.01,0.01); 
@@ -330,6 +301,20 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
         c1->cd(2); hist_z_dydz->DrawCopy("col2"); 
 
         
+        auto c2 = new TCanvas("c3", c_title); 
+        hist_y_vtx_precut->DrawCopy(); 
+        
+        hist_y_vtx_postcut->SetFillStyle(3004);
+        hist_y_vtx_postcut->SetFillColor(kRed); 
+        hist_y_vtx_postcut->SetLineColor(kRed); 
+
+        hist_y_vtx_postcut->DrawCopy("SAME"); 
+
+        gPad->BuildLegend(); 
+
+
+
+
             
         //write 'is_RHRS' parameter 
         auto file = new TFile(path_outfile, "UPDATE"); 
