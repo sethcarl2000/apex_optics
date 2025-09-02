@@ -6,11 +6,15 @@
 
 #pragma link C++ class NPoly+; 
 #pragma link C++ struct NPoly::NPolyElem+; 
+#pragma link C++ struct ApexOptics::Trajectory_t+; 
+#pragma link C++ struct ApexOptics::OpticsTarget_t+; 
 #pragma link C++ class RMatrix+; 
 #pragma link C++ class NPolyArray+; 
+#pragma link C++ class NPolyArrayChain+; 
 #pragma link C++ class MultiLayerPerceptron+; 
 #pragma link C++ struct MultiLayerPerceptron::WeightGradient_t+; 
 #pragma link C++ struct MultiLayerPerceptron::HessianTensor_t+; 
+
 #pragma link C++ class PolynomialCut+; 
 #pragma link C++ struct PolynomialCut::Segment_t+; 
 #pragma link C++ struct PolynomialCut::Vertex_t+; 

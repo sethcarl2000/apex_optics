@@ -21,6 +21,7 @@
 #include <memory>
 #include <map>
 #include <ROOT/RVec.hxx>
+#include <limits>
 
 namespace ApexOptics {
 
@@ -126,6 +127,27 @@ namespace ApexOptics {
 
     //quick and dirty (slow) way to convert an RVec<double> to a Trajectory_t struct
     Trajectory_t RVec_to_Trajectory_t(const ROOT::RVec<double>& V); 
+
+
+    
+    struct OpticsTarget_t {
+        std::string name{"none"}; 
+
+        //initialize all these with default value of 'Nan'. that way, we can check wich coordinates (if any) 
+        // are precisely fixed by this particular target's geometry. 
+        double 
+            x_hcs{std::numeric_limits<double>::quiet_NaN()},
+            y_hcs{std::numeric_limits<double>::quiet_NaN()}, 
+            z_hcs{std::numeric_limits<double>::quiet_NaN()}; 
+
+        bool operator==(const OpticsTarget_t& rhs) const { return rhs.name == name; } 
+    };  
+
+    //return a copy of a vector which is a list of all optics targets. 
+    const std::vector<OpticsTarget_t> GetTargetList(); 
+
+    //find a target in the list of target names. throws a std::inavlid_argument exception if name is invalid. 
+    const OpticsTarget_t GetTarget(std::string target_name); 
 
 };
 

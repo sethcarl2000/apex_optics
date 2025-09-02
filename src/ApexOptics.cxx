@@ -597,7 +597,53 @@ TVector3 ApexOptics::SCS_to_HCS(const bool is_RHRS, TVector3 pos)
     return pos; 
 }
 //__________________________________________________________________________________________________________________
+const std::vector<ApexOptics::OpticsTarget_t> ApexOptics::GetTargetList() 
+{
+    return std::vector<OpticsTarget_t>{
+        { .name="none" }, 
+
+        { .name="O1",  .z_hcs=-296.30e-3 },  //carbon foil targets (Z is known precisely)
+        { .name="O2",  .z_hcs=-215.30e-3 },
+        { .name="O3",  .z_hcs=-146.10e-3 },
+        { .name="O4",  .z_hcs= -71.30e-3 },
+        { .name="O5",  .z_hcs=  78.90e-3 },
+        { .name="O6",  .z_hcs= 153.70e-3 },
+        { .name="O7",  .z_hcs= 222.90e-3 },
+        { .name="O8",  .z_hcs= 303.70e-3 },
+
+        { .name="V1",  .x_hcs=-3.23e-3, .z_hcs=-296.30e-3 },  //vertical wire targets (X & Z are known precisely)
+        { .name="V2",  .x_hcs=-0.72e-3, .z_hcs=-215.30e-3 },
+        { .name="V3",  .x_hcs=+1.73e-3, .z_hcs=-146.10e-3 },
+
+        { .name="H1",  .y_hcs=-5.60e-3, .z_hcs=-246.25e-3 },  //horiztonal wire targets (Y & Z are known precisely)
+        { .name="H2",  .y_hcs=-0.48e-3, .z_hcs= -96.20e-3 },
+        { .name="H3",  .y_hcs=+4.52e-3, .z_hcs=+103.75e-3 },
+        { .name="H4",  .y_hcs=+9.53e-3, .z_hcs=+253.75e-3 }
+    };
+}
 //__________________________________________________________________________________________________________________
+const ApexOptics::OpticsTarget_t ApexOptics::GetTarget(string target_name) 
+{
+    const auto target_list = GetTargetList(); 
+
+    auto it = std::find_if( target_list.begin(), target_list.end(), 
+        [&target_name](const OpticsTarget_t& elem) {
+            return elem.name == target_name; 
+        }
+    ); 
+
+    //if target was found
+    if (it != target_list.end()) return *it; 
+
+    //if target was NOT found
+    ostringstream oss; 
+    oss << "in <ApexOptics::GetTarget(string)>: input arguement '"<< target_name <<"' is not a valid target name. See ApexOptics::GetTargetList() in ApexOptics.cxx"
+            " for list of valid target names."; 
+
+    throw invalid_argument(oss.str()); 
+    
+    return OpticsTarget_t{ .name="null" }; 
+}
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
