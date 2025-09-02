@@ -4,9 +4,8 @@
 #include <sstream>
 #include <string> 
 #include <map>
-#include "TROOT.h"
-#include "TFile.h"
-#include "TTree.h"
+#include <TFile.h>
+#include <TTree.h>
 #include <ROOT/RVec.hxx>
 #include <ROOT/RDataFrame.hxx>
 #include <TVector3.h> 
@@ -14,44 +13,19 @@
 #include <TSystem.h>
 #include <TParameter.h> 
 #include <PolynomialCut.h> 
-#include <TStyle.h> 
+#include <TStyle.h>
+#include <TCanvas.h> 
+#include "include/RDFNodeAccumulator.h"
 
 using namespace std; 
 using namespace ROOT::VecOps; 
 
+using ApexOptics::Trajectory_t; 
 
-struct Track_t { 
-    double x,y,dxdz,dydz,dpp; 
-}; 
-
-
-//transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
-void SCS_to_HCS(Track_t& track, const bool is_RHRS) 
-{
-    //direction (SCS)
-    auto dir = TVector3( track.dxdz, track.dydz, 1. );
-
-    auto pos = TVector3( track.x, track.y, 0. ) + ApexOptics::Get_sieve_pos(is_RHRS); 
-
-    //rotate both the position and the direction
-    dir.RotateZ( -TMath::Pi()/2. ); 
-    dir.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
-
-    pos.RotateZ( -TMath::Pi()/2. ); 
-    pos.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
-
-    //compute the new slopes
-    track.dxdz = dir.x() / dir.z(); 
-    track.dydz = dir.y() / dir.z(); 
-
-    //use these new slopes to project the track onto the z=0 plane in HCS 
-    track.x = pos.x() - track.dxdz * pos.z(); 
-    track.y = pos.y() - track.dydz * pos.z(); 
-}
 
 //_______________________________________________________________________________________________________________________________________________
-//this is a helper function which automates the creation of branches, which are just members of the Track_t struct. 
-ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch_in, map<string, double Track_t::*> branches)
+//this is a helper function which automates the creation of branches, which are just members of the Trajectory_t struct. 
+ROOT::RDF::RNode add_branch_from_Trajectory_t(ROOT::RDF::RNode df, const char* branch_in, map<string, double Trajectory_t::*> branches)
 {
     const int n_nodes = branches.size() + 1; 
     RVec<ROOT::RDF::RNode> nodes{ df }; 
@@ -62,37 +36,54 @@ ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch
         //name of this output branch
         const char* branch_name = it->first.data(); 
 
-        double Track_t::*coord = it->second; 
+        double Trajectory_t::*coord = it->second; 
 
-        //define a new branch with name 'branch_name' which corresponds to 'Track_t::coord' 
+        //define a new branch with name 'branch_name' which corresponds to 'Trajectory_t::coord' 
         nodes.push_back( nodes.back()
             
-            .Define(branch_name, [coord](const Track_t& track) { return track.*coord; }, {branch_in})
+            .Define(branch_name, [coord](const Trajectory_t& track) { return track.*coord; }, {branch_in})
         ); 
     }
     
     return nodes.back(); 
 }
 
-//z-positions of different optics foils (from apex target schemaitc + survey)
-//units are meters
-const double foil_Z[] = {
-    -296.30e-3,
-    -215.30e-3, 
-    -146.10e-3, 
-     -71.30e-3,
-      78.90e-3,  
-     153.70e-3, 
-     222.90e-3, 
-     303.70e-3
-};
+struct OpticsTarget {
+    std::string name{"none"}; 
 
-const double wire_Z[] = {
-    -196.20e-3, 
-       3.80e-3, 
-     203.80e-3 
+    //initialize all these with default value of 'Nan'. that way, we can check wich coordinates (if any) 
+    // are precisely fixed by this particular target's geometry. 
+    double 
+        x_hcs{std::numeric_limits<double>::quiet_NaN()},
+        y_hcs{std::numeric_limits<double>::quiet_NaN()}, 
+        z_hcs{std::numeric_limits<double>::quiet_NaN()}; 
+
+    bool operator==(const OpticsTarget& rhs) const { return rhs.name == name; } 
 }; 
-#define CREATE_NEW_CUT false
+
+//create a list of optics targets to pick from.
+
+// We ONLY define the coordinates which are precisely given by the particular target's geometry; 
+// for example, the carbon foil's geometry preceisely gives the z_hcs coordinate, but not X or Y. 
+// and the vertical wires precisely give x_hcs and z_hcs, but not y_hcs. 
+// coordinates which are not excplicitly defined here are left as NaN, so later on we can know 
+// whcih coordinates of the react-vertex are known precisely, and which are not. 
+const std::vector<OpticsTarget> optics_target_list{
+    { .name="none" }, 
+
+    { .name="O1",  .z_hcs=-296.30e-3 },  //carbon foil targets
+    { .name="O2",  .z_hcs=-215.30e-3 },
+    { .name="O3",  .z_hcs=-146.10e-3 },
+    { .name="O4",  .z_hcs= -71.30e-3 },
+    { .name="O5",  .z_hcs=  78.90e-3 },
+    { .name="O6",  .z_hcs= 153.70e-3 },
+    { .name="O7",  .z_hcs= 222.90e-3 },
+    { .name="O8",  .z_hcs= 303.70e-3 },
+
+    { .name="V1",  .x_hcs=-3.23e-3, .z_hcs=-296.30e-3 },  //vertical wire targets
+    { .name="V2",  .x_hcs=-0.72e-3, .z_hcs=-215.30e-3 },
+    { .name="V3",  .x_hcs=+1.73e-3, .z_hcs=-146.10e-3 }
+}; 
 
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
@@ -100,20 +91,37 @@ const double wire_Z[] = {
 int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-4773.root",
                             const char* path_cutfile="data/csv/polycut_L_O1-new.dat",
                             const char* path_outfile="data/replay/real_L_O1.root",
-                            const int   foil_num=1, 
+                            const char* target_name="none",
                             const char* path_dbfile ="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                             const char* tree_name   ="tracks_fp" ) 
 {
     const char* const here = "test_forward_model"; 
 
     auto infile = new TFile(path_infile, "READ");
+    
+    //check to see which optics targets was selected. 
+    const auto it = std::find_if( 
+        optics_target_list.begin(), 
+        optics_target_list.end(), 
+        [target_name](const OpticsTarget& elem){ return elem.name == string(target_name); }
+    ); 
 
-    if (foil_num < 1 || foil_num > 8) {
-        Error(here, "invalid foil number '%i', must be [1,8]", foil_num); 
-        return -1; 
+    //check if an invalid 'target_name' was passed.
+    if (it == optics_target_list.end()) {
+        Error(here, "target name passed is invalid: '%s'. Check macro source code to see list of valid names.", target_name); 
+        return -1;
     }
+    
+    //now, we have a valid target to deal with. 
+    const OpticsTarget& target = *it; 
 
-    const double z_foil = foil_Z[foil_num-1]; 
+    printf("Optics target chosen is '%s'.\n", target.name.c_str()); 
+
+    
+    const bool create_new_cut = (target.name == "none"); 
+
+    if (create_new_cut) { cout << "Creating a new polycut." << endl; }
+
 
     //check if we can load the apex optics lib
     if (gSystem->Load("libApexOptics") < 0) {
@@ -149,18 +157,17 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
     //try to create the polynomial cut
     auto polycut = new PolynomialCut; 
 
-#if !CREATE_NEW_CUT
-    try { 
-        polycut->Parse_dbfile(path_cutfile); 
-    } 
-    catch (const PolynomialCut::DBFileException& e) {
-        cerr << "Problem parsing cutfile. Exception:\n" << e.what() << endl;
-        return -1;  
+    if (!create_new_cut) {
+        try { 
+            polycut->Parse_dbfile(path_cutfile); 
+        } 
+        catch (const PolynomialCut::DBFileException& e) {
+            Error(here, "Problem parsing cutfile. Exception:\n %s", e.what());
+            return -1;  
+        }
     }
     const char* cutbranch_x = "z_reco_vertical"; 
     const char* cutbranch_y = "y_sv"; 
-#endif 
-
     
     vector<string> branches_sv{
         "x_sv",
@@ -177,30 +184,6 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
         return -1; 
     }
 
-    //transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
-    auto HCS_to_SCS = [is_RHRS](TVector3 *pos, TVector3 *dir=nullptr) 
-    {
-        //rotate both the position and the direction
-        /*
-        dir.RotateZ( -TMath::Pi()/2. ); 
-        dir.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
-
-        pos.RotateZ( -TMath::Pi()/2. ); 
-        pos.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
-        */ 
-
-        pos->RotateY( -ApexOptics::Get_sieve_angle(is_RHRS) ); 
-        pos->RotateZ( TMath::Pi()/2. ); 
-
-        *pos += - ApexOptics::Get_sieve_pos(is_RHRS);
-        
-        if (dir) {
-            dir->RotateY( -ApexOptics::Get_sieve_angle(is_RHRS) ); 
-            dir->RotateZ( TMath::Pi()/2. ); 
-        }
-        return; 
-    }; 
-
     cout << "parsing done." << endl; 
     //now, we're ready to deal with the data. 
 
@@ -210,104 +193,115 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
 
     //Now, we are ready to process the tree using RDataFrame
     ROOT::RDataFrame df(tree_name, path_infile); 
+    
+    //create the 'RDFNodeAccumulator' object. 
+    RDFNodeAccumulator rna(df); 
 
     //probably not the most elegant way to do this, but here we are. 
     
-    auto df_reco = df 
-
-        .Define("Xfp",       [](double x, double y, double dxdz, double dydz)
+    rna.Define("Xfp",       [](double x, double y, double dxdz, double dydz)
         {
-            return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz }; 
-        }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
+            return Trajectory_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz }; 
+        }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"}); 
 
-        .Define("Xsv_reco",  [&parr_forward](const Track_t& Xfp)
+    rna.Define("Xsv_reco",  [&parr_forward](const Trajectory_t& Xfp)
         {
             auto Xsv = parr_forward.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});
-            return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3] }; 
-        }, {"Xfp"})
+            return Trajectory_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3] }; 
+        }, {"Xfp"}); 
 
-        .Define("Xhcs_reco", [is_RHRS](const Track_t& Xsv)
+    rna.Define("Xhcs_reco", [is_RHRS](const Trajectory_t& Xsv)
         {
-            Track_t Xhcs{Xsv}; 
-            SCS_to_HCS(Xhcs, is_RHRS); 
-            return Xhcs; 
-        }, {"Xsv_reco"})
+            return ApexOptics::SCS_to_HCS(is_RHRS, Xsv); 
+        }, {"Xsv_reco"});
 
-        .Define("z_reco_horizontal", [](const Track_t& Xhcs, const TVector3& vtx)
+    rna.Define("z_reco_horizontal", [](const Trajectory_t& Xhcs, const TVector3& vtx)
         {   
             return - ( Xhcs.y - vtx.y() ) / Xhcs.dydz; 
-        }, {"Xhcs_reco", "position_vtx"})
+        }, {"Xhcs_reco", "position_vtx"});
 
-        .Define("z_reco_vertical",   [](const Track_t& Xhcs, const TVector3& vtx)
+    rna.Define("z_reco_vertical",   [](const Trajectory_t& Xhcs, const TVector3& vtx)
         {
             return - ( Xhcs.x - vtx.x() ) / Xhcs.dxdz; 
-        }, {"Xhcs_reco", "position_vtx"})
+        }, {"Xhcs_reco", "position_vtx"});
 
-        .Redefine("position_vtx", [z_foil](TVector3 vtx)
+    rna.Overwrite("position_vtx", [&target](TVector3 vtx)
         {
-            vtx[2] = z_foil;
+            //overwrite whichever coordinates are precisely given by this target's geometry. 
+            //if any of the target's coordinates are NAN, then they will NOT overwrite that coordinate of the react-vetex. 
+            if (target.x_hcs == target.x_hcs) vtx[0] = target.x_hcs;
+            if (target.y_hcs == target.y_hcs) vtx[1] = target.y_hcs;
+            if (target.z_hcs == target.z_hcs) vtx[2] = target.z_hcs;
+
             return vtx; 
-        }, {"position_vtx"})
+        }, {"position_vtx"}); 
         
-        .Define("position_vtx_scs", [&HCS_to_SCS](TVector3 vtx_hcs)
+    rna.Define("position_vtx_scs", [is_RHRS](TVector3 vtx)
         {
-            TVector3 vtx_scs = vtx_hcs; 
-            HCS_to_SCS(&vtx_scs); 
-            return vtx_scs; 
+            return ApexOptics::HCS_to_SCS(is_RHRS, vtx);
         }, {"position_vtx"});
 
 
+    rna = add_branch_from_Trajectory_t(rna.Get(), "Xsv_reco", {
+        {"x_sv",    &Trajectory_t::x},
+        {"y_sv",    &Trajectory_t::y},
+        {"dxdz_sv", &Trajectory_t::dxdz},
+        {"dydz_sv", &Trajectory_t::dydz},
+        {"dpp_sv",  &Trajectory_t::dpp}
+    });  
 
-    auto df_out = add_branch_from_Track_t(df_reco, "Xsv_reco", {
-        {"x_sv",    &Track_t::x},
-        {"y_sv",    &Track_t::y},
-        {"dxdz_sv", &Track_t::dxdz},
-        {"dydz_sv", &Track_t::dydz},
-        {"dpp_sv",  &Track_t::dpp}
-    }) 
-#if CREATE_NEW_CUT //apply the cut only if we aren't creating a new polycut
-    ; 
-#else 
-    .Filter([polycut](double cut_x, double cut_y){ return polycut->IsInside(cut_x, cut_y); }, {cutbranch_x, cutbranch_y});
-#endif
+    if (!create_new_cut) { 
+        rna = rna.Get()
+            .Filter([polycut](double cut_x, double cut_y)
+            { 
+                return polycut->IsInside(cut_x, cut_y); 
+            }, {cutbranch_x, cutbranch_y}); 
+    }
 
-#if !CREATE_NEW_CUT
-        //apply polynomial cut
-        df_out 
-        .Snapshot("tracks_fp", path_outfile, {
-            "x_sv",
-            "y_sv",
-            "dxdz_sv",
-            "dydz_sv",
-            "dpp_sv",
+    //if we aren't creating a new cut, then let's make a snapshot (create a new ROOT file)
+    if (!create_new_cut) {
+        
+        rna.Get()
+            .Filter([polycut](double cut_x, double cut_y)
+            { 
+                return polycut->IsInside(cut_x, cut_y); 
+            }, {cutbranch_x, cutbranch_y})
 
-            "x_fp",
-            "y_fp",
-            "dxdz_fp",
-            "dydz_fp",
+            .Snapshot("tracks_fp", path_outfile, {
+                "x_sv",
+                "y_sv",
+                "dxdz_sv",
+                "dydz_sv",
+                "dpp_sv",
 
-            "position_vtx", 
-            "position_vtx_scs"
-        });  
-#endif
+                "x_fp",
+                "y_fp",
+                "dxdz_fp",
+                "dydz_fp",
+
+                "position_vtx", 
+                "position_vtx_scs"
+            });              
+    }
+
 
     //create both histograms
-    auto hist_xy = df_out
+    auto hist_xy = rna.Get()
         //correct for react-vertex position
         /*.Define("x_react_vtx_fix", [](double x, TVector3 r){return x + r.x();}, {"x_sv", "position_vtx_scs"})
         .Define("y_react_vtx_fix", [](double y, TVector3 r){return y + r.y();}, {"y_sv", "position_vtx_scs"})*/ 
 
         .Histo2D({"h_xy", "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "x_sv", "y_sv");
     
-    auto hist_angles    
-        = df_out.Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
+    auto hist_angles = rna.Get()
+        .Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "dxdz_sv", "dydz_sv"); 
     
     
-    auto hist_z_y 
-        = df_out.Histo2D({"h_z_y", "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.45, 0.45, 200, -0.045, 0.045}, "z_reco_vertical", "y_sv");
+    auto hist_z_y = rna.Get()
+        .Histo2D({"h_z_y", "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.45, 0.45, 200, -0.045, 0.045}, "z_reco_vertical", "y_sv");
 
-    auto hist_z_dydz 
-        = df_out.Histo2D({"h_z_dydz", "z_{tg} vs dy/dz_{sv};z_{tg};dy/dz_{sv}", 200, -0.4, 0.4, 200, -0.04, 0.04}, "z_reco_vertical", "dydz_sv");
+    auto hist_z_dydz = rna.Get()
+        .Histo2D({"h_z_dydz", "z_{tg} vs dy/dz_{sv};z_{tg};dy/dz_{sv}", 200, -0.4, 0.4, 200, -0.04, 0.04}, "z_reco_vertical", "dydz_sv");
 
 
     char c_title[256]; 
@@ -317,33 +311,32 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
 
-#if CREATE_NEW_CUT
-
-    PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
-
-#else 
-
-    auto c = new TCanvas("c1", c_title, 1200, 600); 
-    c->Divide(2,1, 0.01,0.01); 
-
-    c->cd(1); hist_xy->DrawCopy("col2"); 
-    c->cd(2); hist_angles->DrawCopy("col2");
-    
-    auto c1 = new TCanvas("c2", c_title, 1200, 600); 
-    c1->Divide(2,1, 0.01,0.01); 
-
-    c1->cd(1); hist_z_y->DrawCopy("col2"); 
-    c1->cd(2); hist_z_dydz->DrawCopy("col2"); 
-
-    
+    if (create_new_cut) {
         
-    //write 'is_RHRS' parameter 
-    auto file = new TFile(path_outfile, "UPDATE"); 
-    param_is_RHRS = new TParameter<bool>("is_RHRS", is_RHRS); 
+        PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
     
-    param_is_RHRS->Write(); 
-    file->Close();
-#endif 
+    } else {
 
+        auto c = new TCanvas("c1", c_title, 1200, 600); 
+        c->Divide(2,1, 0.01,0.01); 
+
+        c->cd(1); hist_xy->DrawCopy("col2"); 
+        c->cd(2); hist_angles->DrawCopy("col2");
+        
+        auto c1 = new TCanvas("c2", c_title, 1200, 600); 
+        c1->Divide(2,1, 0.01,0.01); 
+
+        c1->cd(1); hist_z_y->DrawCopy("col2"); 
+        c1->cd(2); hist_z_dydz->DrawCopy("col2"); 
+
+        
+            
+        //write 'is_RHRS' parameter 
+        auto file = new TFile(path_outfile, "UPDATE"); 
+        param_is_RHRS = new TParameter<bool>("is_RHRS", is_RHRS); 
+        
+        param_is_RHRS->Write(); 
+        file->Close();
+    }
     return 0; 
 }
