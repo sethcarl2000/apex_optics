@@ -77,6 +77,33 @@ namespace ApexOptics {
     struct Trajectory_t {
         double x{0.}, y{0.}, dxdz{0.}, dydz{0.}; 
         double dpp{std::numeric_limits<double>::quiet_NaN()}; 
+
+        //addition of two 'Trajectory_t' objects
+        Trajectory_t operator+(const Trajectory_t& rhs) const {
+            return Trajectory_t{
+                x    + rhs.x, 
+                y    + rhs.y, 
+                dxdz + rhs.dxdz, 
+                dydz + rhs.dydz, 
+                dpp  + rhs.dpp
+            }; 
+        }
+
+        //multiplication of two 'Trajectory_t' objects
+        Trajectory_t operator*(double a) const {
+            return Trajectory_t{
+                x       * a, 
+                y       * a, 
+                dxdz    * a, 
+                dydz    * a, 
+                dpp     * a
+            }; 
+        }
+
+        //subtraction of two 'Trajectory_t' objects
+        Trajectory_t operator-(const Trajectory_t& rhs) const {
+            return Trajectory_t{*this} + ( rhs * -1. ); 
+        }
     }; 
 
     //converts from the 'Hall coordinate system' to the 'Sieve coordinate system'. 
