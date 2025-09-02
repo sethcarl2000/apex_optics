@@ -4,48 +4,24 @@
 #include <sstream>
 #include <string> 
 #include <map>
-#include "TROOT.h"
-#include "TFile.h"
-#include "TTree.h"
 #include "include/RDFNodeAccumulator.h"
+#include <TParameter.h>
+#include <ApexOptics.h> 
+#include <TVector3.h> 
+#include <TSystem.h> 
+#include <TStyle.h> 
+#include <TColor.h> 
+#include <TCanvas.h> 
+
 
 using namespace std; 
 using namespace ROOT::VecOps; 
 
-
-struct Track_t { 
-    double x,y,dxdz,dydz,dpp; 
-}; 
-
-NPoly dummy; 
-
-//transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
-void SCS_to_HCS(Track_t& track, const bool is_RHRS) 
-{
-    //direction (SCS)
-    auto dir = TVector3( track.dxdz, track.dydz, 1. );
-
-    auto pos = TVector3( track.x, track.y, 0. ) + ApexOptics::Get_sieve_pos(is_RHRS); 
-
-    //rotate both the position and the direction
-    dir.RotateZ( -TMath::Pi()/2. ); 
-    dir.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
-
-    pos.RotateZ( -TMath::Pi()/2. ); 
-    pos.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
-
-    //compute the new slopes
-    track.dxdz = dir.x() / dir.z(); 
-    track.dydz = dir.y() / dir.z(); 
-
-    //use these new slopes to project the track onto the z=0 plane in HCS 
-    track.x = pos.x() - track.dxdz * pos.z(); 
-    track.y = pos.y() - track.dydz * pos.z(); 
-}
+using ApexOptics::Trajectory_t; 
 
 //_______________________________________________________________________________________________________________________________________________
-//this is a helper function which automates the creation of branches, which are just members of the Track_t struct. 
-ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch_in, map<string, double Track_t::*> branches)
+//this is a helper function which automates the creation of branches, which are just members of the Trajectory_t struct. 
+ROOT::RDF::RNode add_branch_from_Trajectory_t(ROOT::RDF::RNode df, const char* branch_in, map<string, double Trajectory_t::*> branches)
 {
     const int n_nodes = branches.size() + 1; 
     RVec<ROOT::RDF::RNode> nodes{ df }; 
@@ -56,12 +32,12 @@ ROOT::RDF::RNode add_branch_from_Track_t(ROOT::RDF::RNode df, const char* branch
         //name of this output branch
         const char* branch_name = it->first.data(); 
 
-        double Track_t::*coord = it->second; 
+        double Trajectory_t::*coord = it->second; 
 
-        //define a new branch with name 'branch_name' which corresponds to 'Track_t::coord' 
+        //define a new branch with name 'branch_name' which corresponds to 'Trajectory_t::coord' 
         nodes.push_back( nodes.back()
             
-            .Define(branch_name, [coord](const Track_t& track) { return track.*coord; }, {branch_in})
+            .Define(branch_name, [coord](const Trajectory_t& track) { return track.*coord; }, {branch_in})
         ); 
     }
     
@@ -216,28 +192,27 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     //probably not the most elegant way to do this, but here we are. 
     rna.Define("Xfp", [](double x, double y, double dxdz, double dydz)
         {
-            return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz }; 
+            return Trajectory_t{ x, y, dxdz, dydz };
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"});
 
-    rna.Define("Xsv_reco",  [&parr_forward](const Track_t& Xfp)
+    rna.Define("Xsv_reco",  [&parr_forward](const Trajectory_t& Xfp)
         {
-            auto Xsv = parr_forward.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});
-            return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3] }; 
+            return ApexOptics::RVec_to_Trajectory_t(
+                parr_forward.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz})
+            ); 
         }, {"Xfp"});
 
-    rna.Define("Xhcs_reco", [is_RHRS](const Track_t& Xsv)
+    rna.Define("Xhcs_reco", [is_RHRS](const Trajectory_t& Xsv)
         {
-            Track_t Xhcs{Xsv}; 
-            SCS_to_HCS(Xhcs, is_RHRS); 
-            return Xhcs; 
+            return ApexOptics::SCS_to_HCS(is_RHRS, Xsv); 
         }, {"Xsv_reco"});
 
-    rna.Overwrite("z_reco_horizontal", [](const Track_t& Xhcs, const TVector3& vtx)
+    rna.Overwrite("z_reco_horizontal", [](const Trajectory_t& Xhcs, const TVector3& vtx)
         {   
             return - ( Xhcs.y - vtx.y() ) / Xhcs.dydz; 
         }, {"Xhcs_reco", "position_vtx"});
 
-    rna.Overwrite("z_reco_vertical",   [](const Track_t& Xhcs, const TVector3& vtx)
+    rna.Overwrite("z_reco_vertical",   [](const Trajectory_t& Xhcs, const TVector3& vtx)
         {
             return - ( Xhcs.x - vtx.x() ) / Xhcs.dxdz; 
         }, {"Xhcs_reco", "position_vtx"});
@@ -255,11 +230,11 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
         return -1; 
     }
 
-    rna = add_branch_from_Track_t(rna.Get(), "Xsv_reco", {
-        {"reco_x_sv",    &Track_t::x},
-        {"reco_y_sv",    &Track_t::y},
-        {"reco_dxdz_sv", &Track_t::dxdz},
-        {"reco_dydz_sv", &Track_t::dydz}
+    rna = add_branch_from_Trajectory_t(rna.Get(), "Xsv_reco", {
+        {"reco_x_sv",    &Trajectory_t::x},
+        {"reco_y_sv",    &Trajectory_t::y},
+        {"reco_dxdz_sv", &Trajectory_t::dxdz},
+        {"reco_dydz_sv", &Trajectory_t::dydz}
     }); 
 
     rna.Overwrite("reco_x_sv", [](double x, const TVector3& vtx){ return x + vtx.x(); }, {"reco_x_sv", "position_vtx_scs"});
@@ -289,6 +264,12 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
         .Filter([](double dxdz){ return (0.0e-3 < dxdz) && (1.0e-3 > dxdz); }, {"reco_dxdz_sv"})
         .Histo1D<double>({"h_dydz", "dy/dz_{tg} (horizontal angle);dy/dz_{tg} (rad)", 200, -0.04, 0.03}, "reco_dydz_sv"); 
 
+
+    auto hist_z_v = rna.Get()
+        .Histo1D<double>({"h_z_vert", "z_{tg} vertical plane;z_{tg};", 200, -0.4, 0.4}, "z_reco_vertical");
+
+    auto hist_z_h = rna.Get()
+        .Histo1D<double>({"h_z_horiz", "z_{tg} horizontal plane;z_{tg};", 200, -0.4, 0.4}, "z_reco_horizontal");
 
     char c_title[255]; 
     sprintf(c_title, "data:'%s', db:'%s'", path_infile, path_dbfile); 
