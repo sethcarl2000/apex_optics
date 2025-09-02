@@ -1,52 +1,29 @@
-#include "TROOT.h"
-#include <cstdio> 
 
+#include <cstdio> 
+#include <ROOT/RVec.hxx>
+#include <vector>
+#include <ROOT/RDataFrame.hxx>
+#include <NPoly.h>
+#include <NPolyArray.h>
+#include <ApexOptics.h> 
+#include <TSystem.h> 
+#include <TParameter.h> 
+#include <TRandom.h> 
+#include <TCanvas.h> 
+#include <TStyle.h>
+#include <TColor.h> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
 
-struct Track_t {
-    double x,y,dxdz,dydz,dpp; 
-
-    //implicit conversion from this type to RVec<double> 
-    explicit operator RVec<double>() const { return {x,y,dxdz,dydz,dpp}; }  
-    
-    Track_t operator-(const Track_t& rhs) const {   
-        return Track_t{
-            .x      = x     - rhs.x,
-            .y      = y     - rhs.y, 
-            .dxdz   = dxdz  - rhs.dxdz,
-            .dydz   = dydz  - rhs.dydz,
-            .dpp    = dpp   - rhs.dpp
-        }; 
-    }; 
-
-    Track_t operator+(const Track_t& rhs) const {   
-        return Track_t{
-            .x      = x     + rhs.x,
-            .y      = y     + rhs.y, 
-            .dxdz   = dxdz  + rhs.dxdz,
-            .dydz   = dydz  + rhs.dydz,
-            .dpp    = dpp   + rhs.dpp
-        }; 
-    }; 
+using ApexOptics::Trajectory_t; 
 
 
-    Track_t operator*(double mult) const {   
-        return Track_t{
-            .x      = x     * mult,
-            .y      = y     * mult, 
-            .dxdz   = dxdz  * mult,
-            .dydz   = dydz  * mult,
-            .dpp    = dpp   * mult
-        }; 
-    };
 
-};
 
 class TrajectoryCollection : public TObject {
 public: 
-    TrajectoryCollection(const ROOT::RVec<Track_t>& _trajectories) 
+    TrajectoryCollection(const ROOT::RVec<Trajectory_t>& _trajectories) 
         : fN_elems{(int)_trajectories.size()}, fTrajectories{_trajectories} {
 
         dx = ((double)fN_elems-1); 
@@ -54,33 +31,33 @@ public:
     
     ~TrajectoryCollection() {}; 
 
-    Track_t Get(double idx) const {
+    Trajectory_t Get(double idx) const {
         if (idx >= 1.00 || idx < 0.) { Error("Get", "Invalid index given: %f, must be [0,1).", idx);
-            return Track_t{};
+            return Trajectory_t{};
         } 
 
         double remainder = dx * idx; 
         int index = (int)remainder; 
         remainder += -1.*(double)index; 
 
-        const Track_t & t1 = fTrajectories[index+1]; 
-        const Track_t & t0 = fTrajectories[index]; 
+        const Trajectory_t & t1 = fTrajectories[index+1]; 
+        const Trajectory_t & t0 = fTrajectories[index]; 
 
         return t0 + ((t1 - t0) * remainder);  
     }; 
 
 private:    
     int fN_elems; 
-    RVec<Track_t> fTrajectories; 
+    RVec<Trajectory_t> fTrajectories; 
 
     double dx; 
 };
 
 //_______________________________________________________________________________________________________________________________________________
-//this is a helper function which automates the creation of branches, which are just members of the Track_t struct. 
-void add_branch_from_Track_t(   std::vector<ROOT::RDF::RNode>& df_nodes, 
+//this is a helper function which automates the creation of branches, which are just members of the Trajectory_t struct. 
+void add_branch_from_Trajectory_t(   std::vector<ROOT::RDF::RNode>& df_nodes, 
                                 const char* branch_in, 
-                                map<string, double Track_t::*> branches )
+                                map<string, double Trajectory_t::*> branches )
 {
     const int n_nodes = branches.size() + 1; 
     
@@ -89,12 +66,12 @@ void add_branch_from_Track_t(   std::vector<ROOT::RDF::RNode>& df_nodes,
         //name of this output branch
         const char* branch_name = it->first.data(); 
 
-        double Track_t::*coord = it->second; 
+        double Trajectory_t::*coord = it->second; 
 
-        //define a new branch with name 'branch_name' which corresponds to 'Track_t::coord' 
+        //define a new branch with name 'branch_name' which corresponds to 'Trajectory_t::coord' 
         auto new_node = df_nodes.back()
 
-            .Define(branch_name, [coord](const Track_t& track) { return track.*coord; }, {branch_in}); 
+            .Define(branch_name, [coord](const Trajectory_t& track) { return track.*coord; }, {branch_in}); 
 
         df_nodes.push_back(new_node); 
     }
@@ -126,30 +103,6 @@ NPolyArray Parse_NPolyArray_from_file(const char* path_dbfile, vector<string> ou
 
     return NPolyArray(poly_vec); 
 }   
-
-//transform coordinates from Sieve Coordinate System (SCS) to Hall coordinate system (HCS)
-void SCS_to_HCS(Track_t& track, const bool is_RHRS) 
-{
-    //direction (SCS)
-    auto dir = TVector3( track.dxdz, track.dydz, 1. );
-
-    auto pos = TVector3( track.x, track.y, 0. ) + ApexOptics::Get_sieve_pos(is_RHRS); 
-
-    //rotate both the position and the direction
-    dir.RotateZ( -TMath::Pi()/2. ); 
-    dir.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
-
-    pos.RotateZ( -TMath::Pi()/2. ); 
-    pos.RotateY( ApexOptics::Get_sieve_angle(is_RHRS) ); 
-
-    //compute the new slopes
-    track.dxdz = dir.x() / dir.z(); 
-    track.dydz = dir.y() / dir.z(); 
-
-    //use these new slopes to project the track onto the z=0 plane in HCS 
-    track.x = pos.x() - track.dxdz * pos.z(); 
-    track.y = pos.y() - track.dydz * pos.z(); 
-}
 
 //minimum dist between skew lines in 3d space. 
 // if the first line is defiend as vec{a1} + t * vec{s1}
@@ -261,7 +214,8 @@ int newton_iteration_test(  const char* path_infile="",
     //This is the poly-array which gives us a 'starting point' to use
     //const char* path_db_fp_sv = "data/csv/db_center_fp_sv_L_3ord.dat"; 
     //const char* path_db_fp_sv = "data/csv/poly_center_fp_sv_L_3ord.dat"; 
-    const char* path_db_fp_sv = "data/csv/poly_prod_fp_sv_L_3ord.dat";
+    //const char* path_db_fp_sv = "data/csv/poly_prod_fp_sv_L_3ord.dat";
+    const char* path_db_fp_sv = "data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat"; 
     NPolyArray poly_array_fp_sv = Parse_NPolyArray_from_file(path_db_fp_sv, branches_sv, DoF_fp); 
 
     //check if NPolyArray parsed successfully
@@ -326,11 +280,11 @@ int newton_iteration_test(  const char* path_infile="",
                                 parr, 
                                 DoF_fp, 
                                 DoF_sv, 
-                                &rv_mag ](const Track_t& Xfp, const Track_t& Xsv) 
+                                &rv_mag ](const Trajectory_t& Xfp, const Trajectory_t& Xsv) 
     {
         RVec<double> Xfp_rv{ Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz }; 
 
-        auto Get_next_trajectory = [parr, trajectory_spacing, &rv_mag, &Xfp_rv](RVec<Track_t>* t_vec, RVec<double>& Xsv, double oreintation)
+        auto Get_next_trajectory = [parr, trajectory_spacing, &rv_mag, &Xfp_rv](RVec<Trajectory_t>* t_vec, RVec<double>& Xsv, double oreintation)
         {
             RVec<double> J_arr = parr->Jacobian(Xsv).Data(); 
             int i_elem=0; 
@@ -379,7 +333,7 @@ int newton_iteration_test(  const char* path_infile="",
         RVec<double> Xsv_rv{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp };
 
         ///get 'forward' trajectories
-        RVec<Track_t> traj; traj.reserve(n_trajectories);  
+        RVec<Trajectory_t> traj; traj.reserve(n_trajectories);  
         int i_traj=0; 
         while ( ++i_traj < n_trajectories ) {
             if (Get_next_trajectory(&traj, Xsv_rv, 1. ) != 1) break; 
@@ -387,14 +341,14 @@ int newton_iteration_test(  const char* path_infile="",
 
         ///get 'backward' trajectories
         Xsv_rv = RVec<double>{ Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp }; 
-        RVec<Track_t> back_traj; back_traj.reserve(n_trajectories); 
+        RVec<Trajectory_t> back_traj; back_traj.reserve(n_trajectories); 
         
         i_traj=0;
         while ( ++i_traj < n_trajectories ) {
             if (Get_next_trajectory(&back_traj, Xsv_rv, -1.) != 1) break; 
         }
 
-        RVec<Track_t> trajectories; 
+        RVec<Trajectory_t> trajectories; 
         trajectories.reserve(traj.size() + back_traj.size() + 1); 
 
         //add the 'back aspect' tracks
@@ -423,51 +377,51 @@ int newton_iteration_test(  const char* path_infile="",
 #ifdef EVENT_RANGE
         .Range(EVENT_RANGE)
 #endif 
-        //define the Track_t structs that we will need to use for the newton iteration
+        //define the Trajectory_t structs that we will need to use for the newton iteration
         .Define("Xfp", [](double x, double y, double dxdz, double dydz)
         {
-            return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=0. };  
+            return Trajectory_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=0. };  
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"})
 
 #if MONTE_CARLO_DATA
         .Define("Xsv", [](double x, double y, double dxdz, double dydz, double dpp)
         {
-            return Track_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=dpp };  
+            return Trajectory_t{ .x=x, .y=y, .dxdz=dxdz, .dydz=dydz, .dpp=dpp };  
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"})
 #endif 
 
-        .Define("Xsv_fwd_model", [parr_forward](Track_t& Xfp)
+        .Define("Xsv_fwd_model", [parr_forward](Trajectory_t& Xfp)
         {
             auto Xsv = parr_forward->Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz});
-            return Track_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3], .dpp=Xsv[4] };  
+            return Trajectory_t{ .x=Xsv[0], .y=Xsv[1], .dxdz=Xsv[2], .dydz=Xsv[3], .dpp=Xsv[4] };  
         }, {"Xfp"})
 
-        .Define("Xfp_fwd_model", [parr](const Track_t& Xsv, const Track_t& Xfp_actual)
+        .Define("Xfp_fwd_model", [parr](const Trajectory_t& Xsv, const Trajectory_t& Xfp_actual)
         {
             RVec<double> Xfp = parr->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp});
 
-            return Track_t{ .x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3] }; 
+            return Trajectory_t{ .x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3] }; 
 
         }, {"Xsv_fwd_model", "Xfp"})
 
 
-        .Define("Xfp_fwd_model_error", [parr](const Track_t& Xsv, const Track_t& Xfp_actual)
+        .Define("Xfp_fwd_model_error", [parr](const Trajectory_t& Xsv, const Trajectory_t& Xfp_actual)
         {
             RVec<double> Xfp = parr->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp}) 
                                 - RVec<double>{Xfp_actual.x, Xfp_actual.y, Xfp_actual.dxdz, Xfp_actual.dydz};
 
-            return Track_t{ .x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3] }; 
+            return ApexOptics::RVec_to_Trajectory_t(Xfp); 
 
         }, {"Xsv_fwd_model", "Xfp"})
 
-        .Define("Xsv_first_guess", [parr](const Track_t& Xfp, const Track_t& Xsv_fwd_model)
+        .Define("Xsv_first_guess", [parr](const Trajectory_t& Xfp, const Trajectory_t& Xsv_fwd_model)
         {
             RVec<double> Xfp_v{Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}; 
-            auto Xsv = (RVec<double>)Xsv_fwd_model; 
+            auto Xsv = ApexOptics::Trajectory_t_to_RVec(Xsv_fwd_model); 
 
             parr->Iterate_to_root(Xsv, Xfp_v, 8);
 
-            return Track_t{
+            return Trajectory_t{
                 .x      = Xsv[0],
                 .y      = Xsv[1],
                 .dxdz   = Xsv[2],
@@ -477,7 +431,7 @@ int newton_iteration_test(  const char* path_infile="",
 
         }, {"Xfp", "Xsv_fwd_model"})
 
-        .Define("Xsv_trajectories",     [&Find_trajectories](const Track_t& Xfp, const Track_t& Xsv)
+        .Define("Xsv_trajectories",     [&Find_trajectories](const Trajectory_t& Xfp, const Trajectory_t& Xsv)
         {
             return Find_trajectories(Xfp, Xsv); 
 
@@ -501,9 +455,9 @@ int newton_iteration_test(  const char* path_infile="",
 
         .Define("Xsv_best",     [ is_RHRS,
                                   vertex_uncertainty_x,
-                                  vertex_uncertainty_y ](const RVec<Track_t>& traj, TVector3 vtx)
+                                  vertex_uncertainty_y ](const RVec<Trajectory_t>& traj, TVector3 vtx)
         {
-            const Track_t *Xsv_best = nullptr;
+            const Trajectory_t *Xsv_best = nullptr;
             double dist_best = 1e30; 
 
             double vx = vtx.x();
@@ -513,11 +467,11 @@ int newton_iteration_test(  const char* path_infile="",
             TVector3 beam_point(0., 0., 0.); 
 
             //look for the best track
-            for (const Track_t& track_scs : traj) {
+            for (const Trajectory_t& track_scs : traj) {
                 
-                Track_t track_hcs{track_scs}; 
+                Trajectory_t track_hcs{track_scs}; 
 
-                SCS_to_HCS(track_hcs, is_RHRS); 
+                ApexOptics::SCS_to_HCS(is_RHRS, track_hcs); 
                 
                 TVector3 track_ray( 
                     track_hcs.dxdz / vertex_uncertainty_x,
@@ -540,56 +494,52 @@ int newton_iteration_test(  const char* path_infile="",
             }
 
             if (!Xsv_best) {
-                Error("Define(Xsv_best)", "No good sieve coord found!"); return Track_t{}; 
+                Error("Define(Xsv_best)", "No good sieve coord found!"); return Trajectory_t{}; 
             }
 
             return *Xsv_best; 
 
         }, {"Xsv_trajectories", "position_vtx_with_error"})
 
-        .Define("n_trajectories", [](const RVec<Track_t>& traj){ return (int)traj.size(); }, {"Xsv_trajectories"})
+        .Define("n_trajectories", [](const RVec<Trajectory_t>& traj){ return (int)traj.size(); }, {"Xsv_trajectories"})
 
-        .Define("Xfp_model",  [parr](const Track_t&Xsv)
+        .Define("Xfp_model",  [parr](const Trajectory_t&Xsv)
         {
             auto Xfp = parr->Eval({Xsv.x, Xsv.y, Xsv.dxdz, Xsv.dydz, Xsv.dpp});
-            return Track_t{.x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3], .dpp=Xfp[4]}; 
+            return Trajectory_t{.x=Xfp[0], .y=Xfp[1], .dxdz=Xfp[2], .dydz=Xfp[3], .dpp=Xfp[4]}; 
 
         }, {"Xsv_best"})   
 
-        .Define("err_x_fp",     [](Track_t& Xfp, double x){ return (Xfp.x-x)*1e3; }, {"Xfp_model", "x_fp"})
-        .Define("err_y_fp",     [](Track_t& Xfp, double x){ return (Xfp.y-x)*1e3; }, {"Xfp_model", "y_fp"})
-        .Define("err_dxdz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dxdz-x)*1e3; }, {"Xfp_model", "dxdz_fp"})
-        .Define("err_dydz_fp",  [](Track_t& Xfp, double x){ return (Xfp.dydz-x)*1e3; }, {"Xfp_model", "dydz_fp"})
+        .Define("err_x_fp",     [](Trajectory_t& Xfp, double x){ return (Xfp.x-x)*1e3; }, {"Xfp_model", "x_fp"})
+        .Define("err_y_fp",     [](Trajectory_t& Xfp, double x){ return (Xfp.y-x)*1e3; }, {"Xfp_model", "y_fp"})
+        .Define("err_dxdz_fp",  [](Trajectory_t& Xfp, double x){ return (Xfp.dxdz-x)*1e3; }, {"Xfp_model", "dxdz_fp"})
+        .Define("err_dydz_fp",  [](Trajectory_t& Xfp, double x){ return (Xfp.dydz-x)*1e3; }, {"Xfp_model", "dydz_fp"})
 
 #if MONTE_CARLO_DATA
-        .Define("Xsv_error", [](const Track_t& Xsv_mod, const Track_t& Xsv)
+        .Define("Xsv_error", [](const Trajectory_t& Xsv_mod, const Trajectory_t& Xsv)
         {   
             return (Xsv_mod - Xsv) * 1e3; 
         }, {"Xsv_best", "Xsv"})
 #endif 
 
-        .Define("Xhcs", [is_RHRS](const Track_t& Xsv)
+        .Define("Xhcs", [is_RHRS](const Trajectory_t& Xsv)
         {
-            Track_t Xhcs{Xsv};
-            SCS_to_HCS(Xhcs, is_RHRS);
-            return Xhcs;
+            return ApexOptics::SCS_to_HCS(is_RHRS, Xsv);
         }, {"Xsv_best"}) 
 
-        .Define("Xhcs_first_guess", [is_RHRS](const Track_t& Xsv)
+        .Define("Xhcs_first_guess", [is_RHRS](const Trajectory_t& Xsv)
         {
-            Track_t Xhcs{Xsv};
-            SCS_to_HCS(Xhcs, is_RHRS);
-            return Xhcs;
+            return ApexOptics::SCS_to_HCS(is_RHRS, Xsv); 
         }, {"Xsv_first_guess"})
 
         //compute the error projection of the 'best' trajectory onto the y-z plane in HCS
-        .Define("z_hcs_projection_vertical",   [](const Track_t& Xhcs, TVector3 vtx_reco)
+        .Define("z_hcs_projection_vertical",   [](const Trajectory_t& Xhcs, TVector3 vtx_reco)
         {
             return ((vtx_reco.x() - Xhcs.x) / Xhcs.dxdz )*1e3;  
         }, {"Xhcs", "position_vtx_with_error"})
 
         //compute the error projection of the 'best' trajectory onto the x-z plane in HCS
-        .Define("z_hcs_projection_horizontal", [](const Track_t& Xhcs, TVector3 vtx_reco)
+        .Define("z_hcs_projection_horizontal", [](const Trajectory_t& Xhcs, TVector3 vtx_reco)
         {
             return ((vtx_reco.y() - Xhcs.y) / Xhcs.dydz )*1e3;  
         }, {"Xhcs", "position_vtx_with_error"}); 
@@ -598,52 +548,52 @@ int newton_iteration_test(  const char* path_infile="",
 
     vector<ROOT::RDF::RNode> output_nodes{ df_proc };  
 
-    add_branch_from_Track_t( output_nodes, "Xhcs", {
-        {"x_hcs",       &Track_t::x},
-        {"y_hcs",       &Track_t::y},
-        {"dxdz_hcs",    &Track_t::dxdz},
-        {"dydz_hcs",    &Track_t::dydz},
-        {"dpp_hcs",     &Track_t::dpp}
+    add_branch_from_Trajectory_t( output_nodes, "Xhcs", {
+        {"x_hcs",       &Trajectory_t::x},
+        {"y_hcs",       &Trajectory_t::y},
+        {"dxdz_hcs",    &Trajectory_t::dxdz},
+        {"dydz_hcs",    &Trajectory_t::dydz},
+        {"dpp_hcs",     &Trajectory_t::dpp}
     }); 
 
-    add_branch_from_Track_t( output_nodes, "Xsv_first_guess", {
-        {"x_sv_fg",       &Track_t::x},
-        {"y_sv_fg",       &Track_t::y},
-        {"dxdz_sv_fg",    &Track_t::dxdz},
-        {"dydz_sv_fg",    &Track_t::dydz},
-        {"dpp_sv_fg",     &Track_t::dpp}
+    add_branch_from_Trajectory_t( output_nodes, "Xsv_fwd_model", {
+        {"x_sv_fg",       &Trajectory_t::x},
+        {"y_sv_fg",       &Trajectory_t::y},
+        {"dxdz_sv_fg",    &Trajectory_t::dxdz},
+        {"dydz_sv_fg",    &Trajectory_t::dydz},
+        {"dpp_sv_fg",     &Trajectory_t::dpp}
     }); 
 
-    add_branch_from_Track_t( output_nodes, "Xsv_best", {
-        {"reco_x_sv",      &Track_t::x},
-        {"reco_y_sv",      &Track_t::y},
-        {"reco_dxdz_sv",   &Track_t::dxdz},
-        {"reco_dydz_sv",   &Track_t::dydz},
-        {"reco_dpp_sv",    &Track_t::dpp}
+    add_branch_from_Trajectory_t( output_nodes, "Xsv_best", {
+        {"reco_x_sv",      &Trajectory_t::x},
+        {"reco_y_sv",      &Trajectory_t::y},
+        {"reco_dxdz_sv",   &Trajectory_t::dxdz},
+        {"reco_dydz_sv",   &Trajectory_t::dydz},
+        {"reco_dpp_sv",    &Trajectory_t::dpp}
     }); 
 
 #if MONTE_CARLO_DATA
-    add_branch_from_Track_t( output_nodes, "Xsv_error", {
-        {"err_x_sv",       &Track_t::x},
-        {"err_y_sv",       &Track_t::y},
-        {"err_dxdz_sv",    &Track_t::dxdz},
-        {"err_dydz_sv",    &Track_t::dydz},
-        {"err_dpp_sv",     &Track_t::dpp}
+    add_branch_from_Trajectory_t( output_nodes, "Xsv_error", {
+        {"err_x_sv",       &Trajectory_t::x},
+        {"err_y_sv",       &Trajectory_t::y},
+        {"err_dxdz_sv",    &Trajectory_t::dxdz},
+        {"err_dydz_sv",    &Trajectory_t::dydz},
+        {"err_dpp_sv",     &Trajectory_t::dpp}
     }); 
 #endif 
 
-    add_branch_from_Track_t( output_nodes, "Xfp_fwd_model_error", {
-        {"err_fwd_x_fp",      &Track_t::x},
-        {"err_fwd_y_fp",      &Track_t::y},
-        {"err_fwd_dxdz_fp",   &Track_t::dxdz},
-        {"err_fwd_dydz_fp",   &Track_t::dydz}
+    add_branch_from_Trajectory_t( output_nodes, "Xfp_fwd_model_error", {
+        {"err_fwd_x_fp",      &Trajectory_t::x},
+        {"err_fwd_y_fp",      &Trajectory_t::y},
+        {"err_fwd_dxdz_fp",   &Trajectory_t::dxdz},
+        {"err_fwd_dydz_fp",   &Trajectory_t::dydz}
     });
 
-    add_branch_from_Track_t( output_nodes, "Xfp_fwd_model", {
-        {"fwd_x_fp",      &Track_t::x},
-        {"fwd_y_fp",      &Track_t::y},
-        {"fwd_dxdz_fp",   &Track_t::dxdz},
-        {"fwd_dydz_fp",   &Track_t::dydz}
+    add_branch_from_Trajectory_t( output_nodes, "Xfp_fwd_model", {
+        {"fwd_x_fp",      &Trajectory_t::x},
+        {"fwd_y_fp",      &Trajectory_t::y},
+        {"fwd_dxdz_fp",   &Trajectory_t::dxdz},
+        {"fwd_dydz_fp",   &Trajectory_t::dydz}
     });
 
 
@@ -655,10 +605,10 @@ int newton_iteration_test(  const char* path_infile="",
     
     //histograms to measure sieve-coordinate errors
     auto h_xy_sieve         = df_output
-        .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (best fit);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
+        .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (best fit);dx/dz_sv;dy/dz_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
 
     auto h_xy_sieve_fg      = df_output
-        .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (first guess);x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "x_sv_fg", "y_sv_fg"); 
+        .Histo2D<double>({"h_xy_sieve", "Sieve coordinates (first guess);dx/dzx_sv;dy/dz_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "dxdz_sv_fg", "dydz_sv_fg"); 
 
     auto h_xy_hcs           = df_output
         .Histo2D<double>({"h_xy_hcs", "Projection of sieve-coords onto z_HCS=0;x_hcs;y_hcs", 250, -25e-3,25e-3, 250, -25e-3,25e-3}, "x_hcs", "y_hcs"); 
