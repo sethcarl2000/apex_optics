@@ -147,8 +147,10 @@ namespace ApexOptics {
     const std::vector<OpticsTarget_t> GetTargetList(); 
 
     //find a target in the list of target names. throws a std::inavlid_argument exception if name is invalid. 
-    const OpticsTarget_t GetTarget(std::string target_name); 
+    OpticsTarget_t GetTarget(std::string target_name); 
 
+    //find a target in the list of target names. throws a std::inavlid_argument exception if name is invalid. 
+    OpticsTarget_t GetTarget(const char* target_name);
 };
 
 #endif

@@ -602,18 +602,18 @@ const std::vector<ApexOptics::OpticsTarget_t> ApexOptics::GetTargetList()
     return std::vector<OpticsTarget_t>{
         { .name="none" }, 
 
-        { .name="O1",  .z_hcs=-296.30e-3 },  //carbon foil targets (Z is known precisely)
+        { .name="O1",  .z_hcs=-296.30e-3 },     //carbon foil targets (Z is known precisely)
         { .name="O2",  .z_hcs=-215.30e-3 },
         { .name="O3",  .z_hcs=-146.10e-3 },
-        { .name="O4",  .z_hcs= -71.30e-3 },
+        { .name="O4",  .z_hcs= -71.30e-3 }, 
         { .name="O5",  .z_hcs=  78.90e-3 },
         { .name="O6",  .z_hcs= 153.70e-3 },
         { .name="O7",  .z_hcs= 222.90e-3 },
         { .name="O8",  .z_hcs= 303.70e-3 },
 
-        { .name="V1",  .x_hcs=-3.23e-3, .z_hcs=-296.30e-3 },  //vertical wire targets (X & Z are known precisely)
-        { .name="V2",  .x_hcs=-0.72e-3, .z_hcs=-215.30e-3 },
-        { .name="V3",  .x_hcs=+1.73e-3, .z_hcs=-146.10e-3 },
+        { .name="V1",  .x_hcs=-3.23e-3, .z_hcs=-196.20e-3 },  //vertical wire targets (X & Z are known precisely)
+        { .name="V2",  .x_hcs=-0.72e-3, .z_hcs=  +3.80e-3 },
+        { .name="V3",  .x_hcs=+1.73e-3, .z_hcs=+203.80e-3 },
 
         { .name="H1",  .y_hcs=-5.60e-3, .z_hcs=-246.25e-3 },  //horiztonal wire targets (Y & Z are known precisely)
         { .name="H2",  .y_hcs=-0.48e-3, .z_hcs= -96.20e-3 },
@@ -622,7 +622,7 @@ const std::vector<ApexOptics::OpticsTarget_t> ApexOptics::GetTargetList()
     };
 }
 //__________________________________________________________________________________________________________________
-const ApexOptics::OpticsTarget_t ApexOptics::GetTarget(string target_name) 
+ApexOptics::OpticsTarget_t ApexOptics::GetTarget(string target_name) 
 {
     const auto target_list = GetTargetList(); 
 
@@ -632,8 +632,8 @@ const ApexOptics::OpticsTarget_t ApexOptics::GetTarget(string target_name)
         }
     ); 
 
-    //if target was found
-    if (it != target_list.end()) return *it; 
+    //if target was found, return a copy of this target. 
+    if (it != target_list.end()) return OpticsTarget_t{*it}; 
 
     //if target was NOT found
     ostringstream oss; 
@@ -645,6 +645,12 @@ const ApexOptics::OpticsTarget_t ApexOptics::GetTarget(string target_name)
     return OpticsTarget_t{ .name="null" }; 
 }
 //__________________________________________________________________________________________________________________
+ApexOptics::OpticsTarget_t ApexOptics::GetTarget(const char* target_name)
+{   
+    string inp(target_name); 
+    return GetTarget(inp); 
+}
+
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
 //__________________________________________________________________________________________________________________
