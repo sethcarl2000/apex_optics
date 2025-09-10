@@ -27,6 +27,7 @@ set(sources
     ApexOptics.cxx 
     RMatrix.cxx 
     NPolyArray.cxx
+    NPolyArrayChain.cxx
     MultiLayerPerceptron.cxx
     PolynomialCut.cxx
     PolynomialCutApp.cxx
@@ -41,6 +42,7 @@ set(headers
     ApexOptics.h 
     RMatrix.h 
     NPolyArray.h
+    NPolyArrayChain.h
     MultiLayerPerceptron.h
     PolynomialCut.h 
     PolynomialCutApp.h 
@@ -48,6 +50,7 @@ set(headers
     isolate_sieveholes/PickSieveHoleApp.h
     isolate_sieveholes/SaveOutputFrame.h
     isolate_sieveholes/EvaluateCutFrame.h
+
 )
 
 #---------------------------------------------------------
