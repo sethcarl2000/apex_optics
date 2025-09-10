@@ -89,9 +89,11 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V2_sieve.roo
     delete infile; 
 
     //where the NPolyArray '.dat' files are stored 
-    const char* path_NPolyArray_fp_fpmc = "data/csv/poly_fp_fp-mc_L_3ord.dat"; 
+    const char* path_NPolyArray_fp_fpmc = "data/csv/poly_fp_fp-mc_L_5ord.dat"; 
     const char* path_NPolyArray_fp_q1   = "data/csv/poly_prod_fp_q1_L_6ord.dat"; 
     const char* path_NPolyArray_q1_sv   = "data/csv/poly_prod_q1_sv_L_6ord.dat"; 
+
+    const char* path_NPolyArray_fp_sv   = "data/csv/poly_prod_fp_sv_L_6ord.dat"; 
 
     const vector<string> branches_fp{
         "x_fp", "y_fp", "dxdz_fp", "dydz_fp"
@@ -118,7 +120,7 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V2_sieve.roo
             ApexOptics::Parse_NPolyArray_from_file(path_NPolyArray_fp_fpmc, branches_fp_mc, 4)
         );
 
-        //maps from fp-coords to q1-coords 
+        /*//maps from fp-coords to q1-coords 
         chain.AppendArray( 
             ApexOptics::Parse_NPolyArray_from_file(path_NPolyArray_fp_q1, branches_q1, 4)
         ); 
@@ -126,6 +128,10 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V2_sieve.roo
         //maps from q1-coords to sv-coords
         chain.AppendArray( 
             ApexOptics::Parse_NPolyArray_from_file(path_NPolyArray_q1_sv, branches_sv, 5)
+        );*/
+        
+        chain.AppendArray( 
+            ApexOptics::Parse_NPolyArray_from_file(path_NPolyArray_fp_sv, branches_sv, 4)
         ); 
     
     } catch (const std::exception& e) {
