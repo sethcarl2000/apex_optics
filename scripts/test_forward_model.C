@@ -97,7 +97,7 @@ public:
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
 int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.root",
-                        const char* path_dbfile="data/csv/db_real_fp_sv_v2_L_2ord.dat",  
+                        const char* path_dbfile="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                         const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "test_forward_model"; 
