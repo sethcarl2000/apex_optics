@@ -5,6 +5,7 @@
 #include <string> 
 #include <vector> 
 #include <map>
+#include <utility> 
 #include "include/RDFNodeAccumulator.h"
 #include <TParameter.h>
 #include <ApexOptics.h> 
@@ -46,10 +47,20 @@ ROOT::RDF::RNode add_branch_from_Trajectory_t(ROOT::RDF::RNode df, const char* b
     return nodes.back(); 
 }
 
+const vector<string> branches_sv{"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"};
+const vector<string> branches_q1{"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"};
+const vector<string> branches_fp{"x_fp","y_fp","dxdz_fp","dydz_fp"};
+
+const vector<string> branches_fwd_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"};
+const vector<string> branches_fwd_fp{"fwd_x_fp","fwd_y_fp","fwd_dxdz_fp","fwd_dydz_fp"};
+
+const vector<string> branches_rev_sv{"fwd_x_sv","fwd_y_sv","fwd_dxdz_sv","fwd_dydz_sv","fwd_dpp_sv"};
+const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"};
+
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_forward_chain( const char* path_infile="data/replay/real_L_V2_sieve.root",
+int test_forward_chain( const char* path_infile="data/replay/real_L_V1.root",
                         const char* path_dbfile="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                         const char* tree_name="tracks_fp" ) 
 {
@@ -88,52 +99,54 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V2_sieve.roo
     infile->Close(); 
     delete infile; 
 
-    //where the NPolyArray '.dat' files are stored 
-    const char* path_NPolyArray_fp_fpmc = "data/csv/poly_fp_fp-mc_L_5ord.dat"; 
-    const char* path_NPolyArray_fp_q1   = "data/csv/poly_prod_fp_q1_L_6ord.dat"; 
-    const char* path_NPolyArray_q1_sv   = "data/csv/poly_prod_q1_sv_L_6ord.dat"; 
 
-    const char* path_NPolyArray_fp_sv   = "data/csv/poly_prod_fp_sv_L_6ord.dat"; 
 
-    const vector<string> branches_fp{
-        "x_fp", "y_fp", "dxdz_fp", "dydz_fp"
+    //in the syntax below, an '<=' arrow represents an input or output of a polynomial. 
+    // if a polynomial is written '[Poly]' then it is trained soley on monte-carlo data. 
+    // if a polynomial is written '_Poly_', then it is trained on real data, which is fed into monte-carlo polynomials 
+    //      (in order to reconstruct XQ1).
+    // uncomment whichever configuration you want to use. 
+    // 
+
+    struct NPolyArrayConstructor_t { string path{}; vector<string> coords{}; int input_DoF{0}; }; 
+
+    const vector<NPolyArrayConstructor_t> path_and_coords{
+
+        /*/ sv <= [Poly] <= fp-fwd <= _Poly_ <= fp
+        {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
+        {"data/csv/poly_prod_fp_sv_L_4ord.dat",     branches_sv,     4} //*/ 
+
+        /*/ sv <= [Poly] q1 <= [Poly] <= fp-fwd <= _Poly_ <= fp 
+        {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
+        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4},
+        {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
+
+        /*/ sv <= [Poly] q1-fwd <= _Poly_ <= fp 
+        {"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
+        {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
+
+        /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
+        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
+        {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
+
     }; 
 
-    const vector<string> branches_fp_mc{
-        "reco_x_fp", "reco_y_fp", "reco_dxdz_fp", "reco_dydz_fp"
-    }; 
-
-    const vector<string> branches_q1{
-        "x_q1", "y_q1", "dxdz_q1", "dydz_q1", "dpp_q1"
-    }; 
-
-    const vector<string> branches_sv{
-        "x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"
-    }; 
+    
 
     NPolyArrayChain chain; 
     
     //try to parse all polys from files
     try {
-        //maps from 'real' fp-coords to 'monte-carlo' fp-coords
-        chain.AppendArray( 
-            ApexOptics::Parse_NPolyArray_from_file(path_NPolyArray_fp_fpmc, branches_fp_mc, 4)
-        );
-
-        /*//maps from fp-coords to q1-coords 
-        chain.AppendArray( 
-            ApexOptics::Parse_NPolyArray_from_file(path_NPolyArray_fp_q1, branches_q1, 4)
-        ); 
-
-        //maps from q1-coords to sv-coords
-        chain.AppendArray( 
-            ApexOptics::Parse_NPolyArray_from_file(path_NPolyArray_q1_sv, branches_sv, 5)
-        );*/
         
-        chain.AppendArray( 
-            ApexOptics::Parse_NPolyArray_from_file(path_NPolyArray_fp_sv, branches_sv, 4)
-        ); 
-    
+        for (const auto& path_and_coord : path_and_coords) {
+
+            const char* path  = path_and_coord.path.c_str(); 
+            const auto  coord = path_and_coord.coords;
+            const int   DoF   = path_and_coord.input_DoF;  
+
+            chain.AppendArray( ApexOptics::Parse_NPolyArray_from_file(path, coord, DoF) ); 
+        }
+
     } catch (const std::exception& e) {
 
         Error(here, "Something went wrong parsing one of the NPolyArrays.\n what(): %s", e.what()); 
