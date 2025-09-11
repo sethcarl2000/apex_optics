@@ -3,9 +3,13 @@
 #include <map>
 #include <fstream>
 #include <iomanip> 
-#include "TFile.h"
-#include "TVector3.h"
-#include "TParameter.h"
+#include <TFile.h>
+#include <TVector3.h>
+#include <TParameter.h>
+#include <TSystem.h> 
+#include <memory> 
+#include <ROOT/RDataFrame.hxx>
+#include <ApexOptics.h> 
 
 
 using namespace std; 
@@ -13,14 +17,17 @@ using namespace std;
 struct Track_t {
     double x,y,dxdz,dydz,dpp; 
 };
+//sieve coords  {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}
+//q1 coords     {"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"}
+//fp coords     {"x_fp","y_fp","dxdz_fp","dydz_fp"}
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 //if you want to avoid creating (or overwriting) a db-file, just enter "" as the db-file name, and only the histograms will be drawn instead. 
-int create_NPolyArray_fit(  const int poly_order=2,
-                            const char* path_infile="",
-                            const char* stem_outfile="",  
-                            const vector<string> inputs = {},
-                            const vector<string> outputs = {}, 
+int create_NPolyArray_fit(  const int poly_order=4,
+                            const char* path_infile ="data/sieve_holes/fits_L_allWiresAndFoils_MCmodel.root",
+                            const char* stem_outfile="data/csv/poly_fits_q1-rev_sv_L_4ord.dat",  
+                            const vector<string> inputs  = {"rev_x_q1","rev_y_q1","rev_dxdz_q1","rev_dydz_q1","rev_dpp_q1"},
+                            const vector<string> outputs = {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 
                             const char* tree_name="tracks_fp" ) 
 {
     const char* const here = "fit_points_mc_forward"; 
@@ -83,6 +90,7 @@ int create_NPolyArray_fit(  const int poly_order=2,
 
     //create the output file ___________________________________________
     if (path_outfile != "") {
+        
         cout << "Creating dbfiles for polynomials..." << flush; 
         
         ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
