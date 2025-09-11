@@ -38,10 +38,40 @@ void NPolyArrayChain::InsertBufferArray( const int DoF, const int order ) {
 }
 //____________________________________________________________________________________________________________________________
 //evaluate all arrays, starting with arrays[0], feeding the input of each one into the next. 
-RVec<double> NPolyArrayChain::Eval(const RVec<double>& X) const { 
+RVec<double> NPolyArrayChain::Eval(const RVec<double>& X) const 
+{ 
     RVec<double> out{X}; 
     for (const auto& array : arrays) out = std::move( array.first.Eval(out) );
     return out;  
+}
+//____________________________________________________________________________________________________________________________
+//evaluate all arrays, starting with arrays[0], feeding the input of each one into the next. 
+RMatrix NPolyArrayChain::Jacobian(const RVec<double>& X) const 
+{
+    RVec<double> out = X; 
+
+    if (X.size() != (size_t)arrays.front().first.Get_DoF_in()) {
+        ostringstream oss; 
+        oss << "in <NPolyArrayChain::Jacobian>: input RVec is wrong size (" 
+            << X.size() << "). should be (" << arrays.front().first.Get_DoF_in() << ")"; 
+        throw invalid_argument(oss.str()); 
+        return RMatrix(); 
+    } 
+
+    RMatrix J = RMatrix::Identity(X.size()); 
+    
+    for (size_t i=0; i<arrays.size(); i++) {
+
+        RMatrix&& J_next = arrays[i].first.Jacobian(out); 
+
+        J = J_next * J; 
+
+        if (i>=arrays.size()-1) break; 
+        
+        out = arrays[i].first.Eval(out); 
+    }
+
+    return J; 
 }
 //____________________________________________________________________________________________________________________________
 int NPolyArrayChain::Get_nElems_mutable() const {

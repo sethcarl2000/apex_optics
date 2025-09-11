@@ -12,6 +12,7 @@
 #include "NPolyArray.h"
 #include <utility> 
 #include <ROOT/RVec.hxx> 
+#include <RMatrix.h> 
 
 
 class NPolyArrayChain {
@@ -36,6 +37,7 @@ public:
 
     //evaluate all arrays, starting with arrays[0], feeding the input of each one into the next. 
     ROOT::RVec<double> Eval(const ROOT::RVec<double>& X) const;
+    RMatrix Jacobian(const ROOT::RVec<double>& X) const; 
 
     int Get_DoF_in()  const { return arrays.front().first.Get_DoF_in(); }
     int Get_DoF_out() const { return arrays.back().first.Get_DoF_out(); }
