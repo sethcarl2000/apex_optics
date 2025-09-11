@@ -20,26 +20,9 @@ using namespace std;
 using namespace ROOT::VecOps; 
 
 using ApexOptics::Trajectory_t; 
+using ApexOptics::OpticsTarget_t; 
 
-Trajectory_t RVec_to_Trajectory_t(const RVec<double>& v){
-    
-    //check if input vector is right size. 
-    if (!(v.size() == 4 || v.size() == 5)) {
-        ostringstream oss; 
-        oss << "in <RVec_to_Trajectory_t>: vector given is wrong size (" << v.size() << "), "
-               " must be either 4 or 5."; 
-        throw invalid_argument(oss.str()); 
-        return Trajectory_t{}; 
-    }
-
-    return Trajectory_t{
-        .x=v[0], 
-        .y=v[1], 
-        .dxdz=v[2],
-        .dydz=v[3],
-        .dpp= (v.size() == 4 ? std::numeric_limits<double>::quiet_NaN() : v[4])
-    }; 
-}
+using ApexOptics::RVec_to_Trajectory_t; 
 
 //compute the magnitude of a ROOT::RVec<double> vector. 
 double rvec_mag(const RVec<double>& v) {
@@ -48,11 +31,22 @@ double rvec_mag(const RVec<double>& v) {
     return sqrt(err); 
 }
 
-int draw_trajectory_fan()
+#define VWIRE 1
+
+int draw_trajectory_fan(const string target_name = "V2", const bool is_RHRS=false)
 {
     const char* const here = "draw_trajectory_fan"; 
 
-    const bool is_RHRS = false; 
+    OpticsTarget_t target; 
+    try { 
+    
+        target = ApexOptics::GetTarget(target_name); 
+    
+    } catch (const std::exception& e) {
+
+        Error(here, "Something went wrong trying to get the target info.\n what(): %s", e.what()); 
+        return -1; 
+    }
 
     const vector<string> branches_sv{
         "x_sv",
@@ -108,36 +102,82 @@ int draw_trajectory_fan()
             .dpp  = dpp
         }; 
     }; 
-    
-    TVector3 react_vtx_center(0.0007, 0., 0.0088); 
 
     const double center_dpp = +0.000; 
 
-    vector<Trajectory_t> test_trajectories{
+    if (target_name == "none") target = ApexOptics::GetTarget("V2"); 
 
-        Generate_test_trajectory(react_vtx_center, -0.025, -0.025, center_dpp),     //lower row
-        Generate_test_trajectory(react_vtx_center,  0.000, -0.025, center_dpp),
-        Generate_test_trajectory(react_vtx_center, +0.025, -0.025, center_dpp),
+    vector<Trajectory_t> test_trajectories{};
 
-        Generate_test_trajectory(react_vtx_center, -0.025, -0.015, center_dpp),     //middle row
-        Generate_test_trajectory(react_vtx_center,  0.000, -0.015, center_dpp),
-        Generate_test_trajectory(react_vtx_center, +0.025, -0.015, center_dpp),
+    TVector3 react_vtx_center(
+        target.x_hcs,
+        0.,
+        target.z_hcs
+    ); 
 
-        Generate_test_trajectory(react_vtx_center, -0.025, -0.005, center_dpp),     //upper row
-        Generate_test_trajectory(react_vtx_center,  0.000, -0.005, center_dpp),
-        Generate_test_trajectory(react_vtx_center, +0.025, -0.005, center_dpp)
-    }; 
+    if (target.name == "V1") {
+
+        //V1-wire coords 
+        test_trajectories = vector<Trajectory_t>{
+            Generate_test_trajectory(react_vtx_center, -0.025, -0.0200, center_dpp),     //lower row
+            Generate_test_trajectory(react_vtx_center,  0.000, -0.0200, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.025, -0.0200, center_dpp),
+
+            Generate_test_trajectory(react_vtx_center, -0.025, -0.0075, center_dpp),     //middle row
+            Generate_test_trajectory(react_vtx_center,  0.000, -0.0075, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.025, -0.0075, center_dpp),
+
+            Generate_test_trajectory(react_vtx_center, -0.025, +0.0050, center_dpp),     //upper row
+            Generate_test_trajectory(react_vtx_center,  0.000, +0.0050, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.025, +0.0050, center_dpp)
+        };
+    }
+
+    if (target.name == "V2") {
+
+        //V2-wire coords 
+        test_trajectories = vector<Trajectory_t>{
+            Generate_test_trajectory(react_vtx_center, -0.025, -0.025, center_dpp),     //lower row
+            Generate_test_trajectory(react_vtx_center,  0.000, -0.025, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.025, -0.025, center_dpp),
+
+            Generate_test_trajectory(react_vtx_center, -0.025, -0.015, center_dpp),     //middle row
+            Generate_test_trajectory(react_vtx_center,  0.000, -0.015, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.025, -0.015, center_dpp),
+
+            Generate_test_trajectory(react_vtx_center, -0.025, -0.005, center_dpp),     //upper row
+            Generate_test_trajectory(react_vtx_center,  0.000, -0.005, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.025, -0.005, center_dpp)
+        }; 
+    }
+
+    if (target.name == "V3") {
+
+        //V3-wire coords
+        test_trajectories = vector<Trajectory_t>{
+            Generate_test_trajectory(react_vtx_center, -0.020, -0.035, center_dpp),     //lower row
+            Generate_test_trajectory(react_vtx_center,  0.000, -0.035, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.020, -0.035, center_dpp),
+
+            Generate_test_trajectory(react_vtx_center, -0.020, -0.025, center_dpp),     //middle row
+            Generate_test_trajectory(react_vtx_center,  0.000, -0.025, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.020, -0.025, center_dpp),
+
+            Generate_test_trajectory(react_vtx_center, -0.020, -0.015, center_dpp),     //upper row
+            Generate_test_trajectory(react_vtx_center,  0.000, -0.015, center_dpp),
+            Generate_test_trajectory(react_vtx_center, +0.020, -0.015, center_dpp)
+        };
+    } 
 
     //the max +/- level of dp/p to search. 
-    const double dpp_search_range = 0.5e-3; 
+    const double dpp_search_range = 0.50e-3; 
 
     //double this number +1 is the nubmer of 'trajectory points' to draw
     const size_t half_trajectory_points = 20; 
 
-
     //set up & draw the histogram
-    auto hist_x_y   = new TH2D("h_xy",   "x_{sv} vs y_{sv}",         300, -0.04, 0.04, 300, -0.04, 0.01); 
-    auto hist_dx_dy = new TH2D("h_dxdy", "dx/dz_{sv} vs dy/dz_{sv}", 300, -0.04, 0.04, 300, -0.04, 0.01); 
+    auto hist_x_y   = new TH2D("h_xy",   "x_{sv} vs y_{sv}",         300, -0.04, 0.04, 300, -0.04, 0.03); 
+    auto hist_dx_dy = new TH2D("h_dxdy", "dx/dz_{sv} vs dy/dz_{sv}", 300, -0.04, 0.04, 300, -0.04, 0.03); 
 
     auto canvas = new TCanvas("c", Form("trajectories; dpp = % .4f +/- %.4f", center_dpp, dpp_search_range), 1400, 600); 
     canvas->Divide(2,1, 0.01,0.01); 
