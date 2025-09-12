@@ -15,6 +15,7 @@
 #include <TColor.h> 
 #include <TCanvas.h> 
 #include <NPolyArrayChain.h> 
+#include <limits> 
 
 
 using namespace std; 
@@ -60,7 +61,7 @@ const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dy
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_forward_chain( const char* path_infile="data/replay/real_L_V1.root",
+int test_forward_chain( const char* path_infile="data/replay/real_L_V2.root",
                         const char* path_dbfile="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                         const char* tree_name="tracks_fp" ) 
 {
@@ -110,7 +111,10 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V1.root",
 
     struct NPolyArrayConstructor_t { string path{}; vector<string> coords{}; int input_DoF{0}; }; 
 
-    const vector<NPolyArrayConstructor_t> path_and_coords{
+    const vector<NPolyArrayConstructor_t> path_and_coords_rev{
+
+        /*/ sv <= [Poly] <= fp
+        {"data/csv/poly_prod_fp_sv_L_4ord.dat", branches_sv, 4} //*/ 
 
         /*/ sv <= [Poly] <= fp-fwd <= _Poly_ <= fp
         {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
@@ -121,30 +125,54 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V1.root",
         {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4},
         {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
 
-        /*/ sv <= [Poly] q1-fwd <= _Poly_ <= fp 
+        // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
         {"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
         {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
 
         /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
         {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
         {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
-
     }; 
 
-    
+    const vector<NPolyArrayConstructor_t> path_and_coords_fwd{
 
-    NPolyArrayChain chain; 
+        /*/ sv => [Poly] => fp
+        {"data/csv/poly_fits_sv_fp_L_2ord.dat", branches_fp, 5} //*/ 
+
+        // sv => _Poly_ => fp
+        {"data/csv/poly_fits_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
+
+        /*/ sv => [Poly] q1-fwd => _Poly_ => fp 
+        {"data/csv/poly_prod_sv_q1_L_3ord.dat",     branches_q1, 5},
+        {"data/csv/poly_fits_q1-fwd_fp_L_2ord.dat", branches_fp, 5} //*/ 
+
+        /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
+        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
+        {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
+    };
+
+
+    NPolyArrayChain chain_rev, chain_fwd; 
     
     //try to parse all polys from files
     try {
         
-        for (const auto& path_and_coord : path_and_coords) {
+        for (const auto& path_and_coord : path_and_coords_rev) {
 
             const char* path  = path_and_coord.path.c_str(); 
             const auto  coord = path_and_coord.coords;
             const int   DoF   = path_and_coord.input_DoF;  
 
-            chain.AppendArray( ApexOptics::Parse_NPolyArray_from_file(path, coord, DoF) ); 
+            chain_rev.AppendArray( ApexOptics::Parse_NPolyArray_from_file(path, coord, DoF) ); 
+        }
+
+        for (const auto& path_and_coord : path_and_coords_fwd) {
+
+            const char* path  = path_and_coord.path.c_str(); 
+            const auto  coord = path_and_coord.coords;
+            const int   DoF   = path_and_coord.input_DoF;  
+
+            chain_fwd.AppendArray( ApexOptics::Parse_NPolyArray_from_file(path, coord, DoF) ); 
         }
 
     } catch (const std::exception& e) {
@@ -181,18 +209,76 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V1.root",
             return Trajectory_t{ x, y, dxdz, dydz };
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"});
 
-    rna.Define("Xsv_reco",  [&chain](const Trajectory_t& Xfp)
+    //reconstruct 'Xsv' using the 'fp=>sv' chain 
+    rna.Define("Xsv_first_guess",  [&chain_rev](const Trajectory_t& Xfp)
         {
             RVec<double>&& Xfp_rvec = ApexOptics::Trajectory_t_to_RVec(Xfp); 
 
-            RVec<double>&& Xsv_rvec = chain.Eval(Xfp_rvec); 
+            RVec<double>&& Xsv_rvec = chain_rev.Eval(Xfp_rvec); 
 
             return ApexOptics::RVec_to_Trajectory_t(Xsv_rvec); 
         }, {"Xfp"});
 
+    //now, use the 'sv=>fp' model to determine where the 'wiggle room' is in dp/p 
+    const double d_dpp = 1e-3; 
+    rna.Define("dXsv", [&chain_fwd, d_dpp](const Trajectory_t& Xsv)
+        {
+            //the jacobian of the fwd-model
+            RMatrix&& J = chain_fwd.Jacobian( ApexOptics::Trajectory_t_to_RVec(Xsv) ); 
+
+            RMatrix Ji(4,4, {
+                J.get(0,0), J.get(0,1), J.get(0,2), J.get(0,3), 
+                J.get(1,0), J.get(1,1), J.get(1,2), J.get(1,3), 
+                J.get(2,0), J.get(2,1), J.get(2,2), J.get(2,3), 
+                J.get(3,0), J.get(3,1), J.get(3,2), J.get(3,3)
+            }); 
+
+            Ji.Set_report_singular(false);
+            
+            RVec<double> J4{ 
+                J.get(0,4), 
+                J.get(1,4), 
+                J.get(2,4), 
+                J.get(3,4) 
+            }; 
+
+            RVec<double>&& dX = Ji.Solve( J4*(-1.) ); 
+            
+            //check for NaN / invalid result 
+            if (dX.size() != 4)                return Trajectory_t{numeric_limits<double>::quiet_NaN()}; 
+            for (double& x : dX) { if (x != x) return Trajectory_t{numeric_limits<double>::quiet_NaN()}; } 
+
+            dX.push_back( 1. ); 
+
+            return ApexOptics::RVec_to_Trajectory_t( dX ); 
+
+        }, {"Xsv_first_guess"}); 
+
+    rna.Define("dp", [is_RHRS, d_dpp](Trajectory_t Xsv, Trajectory_t dXsv, TVector3 vtx) 
+        {
+            //first, let's reconstruct the vectors in the HCS
+            Trajectory_t Xhcs    = ApexOptics::SCS_to_HCS(is_RHRS, Xsv); 
+            Trajectory_t Xhcs_dp = ApexOptics::SCS_to_HCS(is_RHRS, Xsv + dXsv); 
+
+            double y0 = Xhcs.y    + (Xhcs.dydz    * vtx.z()); 
+            double y1 = Xhcs_dp.y + (Xhcs_dp.dydz * vtx.z()); 
+            
+            // y_vtx = y0 + (y1 - y0) * dp; 
+            
+            return ( vtx.y() - y0 )/( y1 - y0 ); 
+
+        }, {"Xsv_first_guess", "dXsv", "position_vtx"});
+    
+    rna.Define("Xsv_reco", [](Trajectory_t Xsv, Trajectory_t dXsv, double dp)
+        {
+            return Xsv + ( dXsv * dp ); 
+
+        }, {"Xsv_first_guess", "dXsv", "dp"}); 
+
     rna.Define("Xhcs_reco", [is_RHRS](const Trajectory_t& Xsv)
         {
             return ApexOptics::SCS_to_HCS(is_RHRS, Xsv); 
+        
         }, {"Xsv_reco"});
 
     rna.Overwrite("z_reco_horizontal", [](const Trajectory_t& Xhcs, const TVector3& vtx)
@@ -218,6 +304,13 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V1.root",
         {"reco_dydz_sv", &Trajectory_t::dydz}
     }); 
 
+    rna = add_branch_from_Trajectory_t(rna.Get(), "Xsv_first_guess", {
+        {"fg_x_sv",    &Trajectory_t::x},
+        {"fg_y_sv",    &Trajectory_t::y},
+        {"fg_dxdz_sv", &Trajectory_t::dxdz},
+        {"fg_dydz_sv", &Trajectory_t::dydz}
+    }); 
+
     //check the status of the RDFNodeAccumulator obejct before proceeding
     if (rna.GetStatus() != RDFNodeAccumulator::kGood) {
         Error(here, "RDFNodeAccumulator reached error status when defining branches.\n Message: %s", rna.GetErrorMsg().c_str()); 
@@ -226,27 +319,18 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V1.root",
 
     //create both histograms
     auto hist_xy = rna.Get()
-        .Histo2D({"h_xy",     "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "reco_x_sv", "reco_y_sv");
+        .Histo2D({"h_xy",     "x_{sv} vs y_{sv} (linear dp/p correction);x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "reco_x_sv", "reco_y_sv");
     
     auto hist_angles = rna.Get()
-        .Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "reco_dxdz_sv", "reco_dydz_sv"); 
+        .Histo2D({"h_angles", "dx/dz_{sv} vs dy/dz_{sv} (linear dp/p correction);dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "reco_dxdz_sv", "reco_dydz_sv"); 
     
-    auto hist_z_y = rna.Get()
-        .Histo2D({"h_z_y",    "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "reco_y_sv");
 
-    auto hist_z_dydz = rna.Get()
-        .Histo2D({"h_z_dydz", "z_{tg} vs dy/dz_{sv};z_{tg};dy/dz_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "reco_dydz_sv");
+    //create both histograms
+    auto hist_fg_xy = rna.Get()
+        .Histo2D({"h_fg_xy",     "x_{sv} vs y_{sv};x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "fg_x_sv", "fg_y_sv");
 
-    auto hist_dydz = rna.Get()
-        .Filter([](double dxdz){ return (0.0e-3 < dxdz) && (1.0e-3 > dxdz); }, {"reco_dxdz_sv"})
-        .Histo1D<double>({"h_dydz", "dy/dz_{tg} (horizontal angle);dy/dz_{tg} (rad)", 200, -0.04, 0.03}, "reco_dydz_sv"); 
-
-
-    auto hist_z_v = rna.Get()
-        .Histo1D<double>({"h_z_vert", "z_{tg} vertical plane;z_{tg};", 200, -0.4, 0.4}, "z_reco_vertical");
-
-    auto hist_z_h = rna.Get()
-        .Histo1D<double>({"h_z_horiz", "z_{tg} horizontal plane;z_{tg};", 200, -0.4, 0.4}, "z_reco_horizontal");
+    auto hist_fg_angles = rna.Get()
+        .Histo2D({"h_fg_angles", "dx/dz_{sv} vs dy/dz_{sv};dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "fg_dxdz_sv", "fg_dydz_sv");
 
     char c_title[255]; 
     sprintf(c_title, "data:'%s', db:'%s'", path_infile, path_dbfile); 
@@ -259,19 +343,17 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V1.root",
     //return 0; 
     
     auto c = new TCanvas("c1", c_title, 1200, 600); 
+    c->SetLeftMargin(0.12); c->SetRightMargin(0.05); 
     c->Divide(2,1, 0.01,0.01); 
 
-    c->cd(1); hist_xy->DrawCopy("col2"); 
-    c->cd(2); hist_angles->DrawCopy("col2");
+    c->cd(1); hist_fg_xy->DrawCopy("col2"); 
+    c->cd(2); hist_xy->DrawCopy("col2");
     
     auto c1 = new TCanvas("c2", c_title, 1200, 600); 
     c1->Divide(2,1, 0.01,0.01); 
 
-    c1->cd(1); hist_z_y->DrawCopy("col2"); 
-    c1->cd(2); hist_z_dydz->DrawCopy("col2"); 
-
-    auto c2 = new TCanvas("c3", c_title); 
-    hist_dydz->DrawCopy(); 
+    c1->cd(1); hist_fg_angles->DrawCopy("col2"); 
+    c1->cd(2); hist_angles->DrawCopy("col2"); 
 
     return 0; 
 }
