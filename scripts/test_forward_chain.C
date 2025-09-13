@@ -61,7 +61,7 @@ const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dy
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_forward_chain( const char* path_infile="data/replay/real_L_V2.root",
+int test_forward_chain( const char* path_infile="data/replay/real_L_H3.root",
                         const char* path_dbfile="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                         const char* tree_name="tracks_fp" ) 
 {
@@ -136,10 +136,10 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V2.root",
 
     const vector<NPolyArrayConstructor_t> path_and_coords_fwd{
 
-        /*/ sv => [Poly] => fp
-        {"data/csv/poly_fits_sv_fp_L_2ord.dat", branches_fp, 5} //*/ 
+        // sv => [Poly] => fp
+        {"data/csv/poly_prod_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
 
-        // sv => _Poly_ => fp
+        /*/ sv => _Poly_ => fp
         {"data/csv/poly_fits_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
 
         /*/ sv => [Poly] q1-fwd => _Poly_ => fp 
