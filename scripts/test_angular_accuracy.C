@@ -14,7 +14,7 @@
 #include <TCanvas.h> 
 #include <TRandom3.h> 
 //this last one should eventually be moved to the ApexOptics namespace, as it has general use outside of the 'isolate_sieveholes' app. 
-#include <isolate_sieveholes/SieveHoleData.h>
+#include <SieveHole.h>
 #include <TLine.h> 
 #include <TAxis.h> 
 #include <TF1.h> 
@@ -377,7 +377,7 @@ int test_angular_accuracy(  const char* path_infile ="data/replay/real_L_V2.root
 
 
     //now, we can compute where each sieve-hole SHOULD be
-    vector<SieveHole> sieve_holes = SieveHole::ConstructSieveHoles(is_RHRS); 
+    vector<SieveHole> sieve_holes = ApexOptics::ConstructSieveHoles(is_RHRS); 
 
     auto FindSieveHole = [&sieve_holes](int row, int col) 
     {
