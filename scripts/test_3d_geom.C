@@ -18,6 +18,7 @@
 #include <TMath.h> 
 #include <TVector3.h> 
 #include <TCanvas.h> 
+#include <stdexcept> 
 
 //TGMainFrame windows
 #include <TGWindow.h> 
@@ -56,6 +57,8 @@ private:
 
     void CreateGeometry(); 
 
+    const bool is_RHRS; 
+
 public: 
     GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool is_RHRS=false); 
     ~GeometryFrame(); 
@@ -72,15 +75,13 @@ GeometryFrame::~GeometryFrame()
 
 void GeometryFrame::CreateGeometry() 
 {
-   //noop  
-}
-
-//_______________________________________________________________________________________________________________________________
-GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool is_RHRS)
-    : TGMainFrame(p, w, h)
-{
+    if (!fECanvas || !fECanvas->GetCanvas()) {
+        return; 
+    }
+ 
+    //noop  
     fGeom = new TGeoManager("simple1", "Simple geometry");
-    
+
     //--- define some materials
     TGeoMaterial *mat_vacuum = new TGeoMaterial("Vacuum", 0, 0, 0);
     TGeoMaterial *mat_Al     = new TGeoMaterial("Al", 26.98, 13, 2.7);
@@ -229,11 +230,17 @@ GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool i
 
     top->AddNodeOverlap(xyz_axes, 1, rot_HCS); 
 
-
-
     fGeom->CloseGeometry();  
 
-    
+    fECanvas->GetCanvas()->cd();
+
+    top->Draw(); 
+}
+
+//_______________________________________________________________________________________________________________________________
+GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _is_RHRS)
+    : TGMainFrame(p, w, h), is_RHRS(_is_RHRS)
+{
     
     //now, we're ready to draw the geometry in our interactive window. 
     fCanvFrame = new TGVerticalFrame(this, 1600, 800); 
@@ -245,7 +252,10 @@ GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool i
     auto canv = fECanvas->GetCanvas();
     
     canv->cd(); 
-    top->Draw(); 
+    
+    //this creates all relevant geometry
+    CreateGeometry(); 
+
 
     AddFrame(fCanvFrame, new TGLayoutHints(kLHintsCenterX | kLHintsExpandX | kLHintsCenterY | kLHintsExpandY, 0, 0, 0, 0)); 
 
