@@ -13,30 +13,15 @@
 #include <ApexOptics.h>
 #include <vector>  
 #include <cmath> 
+#include <TMath.h> 
+#include <TVector3.h> 
+#include <TCanvas.h> 
 
 using namespace std; 
 
 int test_3d_geom(const bool is_RHRS=false)
 {
-    /*auto manager = new TGeoManager("world", "test"); 
-
-    auto vacuum = new TGeoMaterial("Vacuum", 0,0,0); 
-
-    auto medium_vac = new TGeoMedium("Vacuum",1,vacuum); 
-
-    auto top = manager->MakeBox("Top", medium_vac, 10., 10., 10.); 
-
-    manager->SetTopVolume(top); 
-
-    manager->CloseGeometry(); 
-
-    top->SetLineColor(kMagenta); 
-
-    top->Draw(); 
-
-    return 0;*/ 
-
-    gStyle->SetCanvasPreferGL(true); 
+    //gStyle->SetCanvasPreferGL(true); 
 
     TGeoManager *geom = new TGeoManager("simple1", "Simple geometry");
     
@@ -52,8 +37,6 @@ int test_3d_geom(const bool is_RHRS=false)
     TGeoVolume *top = geom->MakeBox("top", vacuum, 200., 200., 200.);     
     top->SetVisibility(false); 
     geom->SetTopVolume(top); 
-
-    
 
     //now, get ready to make a box for the sieve
     const double sieve_depth    = 12.7  /2.; 
@@ -84,7 +67,7 @@ int test_3d_geom(const bool is_RHRS=false)
     for (SieveHole hole : sieve_holes) {   
         
         double x = hole.x * 1e3; 
-        double y = hole.y * 1e3; 
+        double y = -hole.y * 1e3; 
 
         if (hole.is_big) {
             sieve_vol->AddNodeOverlap(hole_big,   i_hole_big++,   new TGeoTranslation(x,y, sieve_depth)); 
@@ -95,7 +78,7 @@ int test_3d_geom(const bool is_RHRS=false)
     sieve_vol->AddNodeOverlap(sieve, 1); 
 
     //create a set of axes 
-    const double axes_size = 20.; 
+    const double axes_size = 50.; 
     const unsigned int axis_color = kBlack; 
     TGeoVolume *xyz_axes = geom->MakeBox("axes", vacuum, axes_size, axes_size, axes_size); 
     xyz_axes->SetVisibility(kFALSE); 
@@ -157,27 +140,44 @@ int test_3d_geom(const bool is_RHRS=false)
         name_z->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans( +letter_size/2., 0., 0., rot_90)); 
         name_z->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_90)); 
         auto letter_barLsqrt2 = geom->MakeBox("xbarLsqrt2", Al, letter_size*sqrt(2.), axes_size/100., axes_size/100.);
-        name_z->AddNodeOverlap(letter_barL, 1, new TGeoCombiTrans( 0., 0., 0., rot_45m)); 
-
+        name_z->AddNodeOverlap(letter_barL, 1, new TGeoCombiTrans( 0., 0., 0., rot_45p)); 
 
         xyz_axes->AddNodeOverlap(single_axis, 1, rot_xaxis); xyz_axes->AddNodeOverlap(name_x, 1, new TGeoCombiTrans(axes_size*2.2, 0., 0., rot_xaxis)); 
         xyz_axes->AddNodeOverlap(single_axis, 2, rot_yaxis); xyz_axes->AddNodeOverlap(name_y, 1, new TGeoCombiTrans(0., axes_size*2.2, 0., rot_yaxis)); 
         xyz_axes->AddNodeOverlap(single_axis, 3, rot_zaxis); xyz_axes->AddNodeOverlap(name_z, 1, new TGeoCombiTrans(0., 0., axes_size*2.2, rot_zaxis)); 
     }
 
-
-
-    TGeoRotation *rot_sieve = new TGeoRotation; 
-    rot_sieve->SetAngles(0., 0., 0.); 
-
+    
+    
 
     //now, we're ready to add the sieve-holes
-    //top->AddNodeOverlap(sieve_vol, 1, rot_sieve); 
     
-    top->AddNodeOverlap(xyz_axes, 1); 
+    //this fcn returns the value to us in radians, so we need to convert to degrees. 
+    const double sieve_angle = ApexOptics::Get_sieve_angle(is_RHRS) * (180./TMath::Pi()); 
+    
+    TGeoRotation *rot_sieve = new TGeoRotation; 
+    rot_sieve->SetAngles(-90. + sieve_angle, 90., -90.); 
+    
+    //convert form meters to mm
+    auto sieve_pos = ApexOptics::Get_sieve_pos(is_RHRS); 
+
+    //set the z-coordinate to 0, before we convert to HCS
+    sieve_pos[2] = 0.; 
+    sieve_pos = ApexOptics::SCS_to_HCS(is_RHRS, sieve_pos) * 1e3; 
+
+    auto trans_sieve = new TGeoCombiTrans( sieve_pos.z(), sieve_pos.x(), sieve_pos.y(), rot_sieve); 
+    
+    top->AddNodeOverlap(sieve_vol, 1, trans_sieve); 
+
+    //draw HCS coordinate axes
+    auto rot_HCS = new TGeoRotation; 
+    rot_HCS->SetAngles(90., 90., 0.); 
+
+    top->AddNodeOverlap(xyz_axes, 1, rot_HCS); 
 
     geom->CloseGeometry(); 
 
+    new TCanvas("c", "Track drawing", 1600, 600); 
     top->Draw(); 
 
     return 0; 
