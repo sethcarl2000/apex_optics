@@ -120,7 +120,7 @@ namespace ApexOptics {
     TVector3 HCS_to_SCS(const bool is_RHRS, TVector3 pos);
     
     //this translates a DISPLACEMENT in SCS to HCS
-    TVector3 SCS_to_HCS(const bool is_RHRS, TVector3 dir); 
+    TVector3 SCS_to_HCS(const bool is_RHRS, TVector3 pos); 
 
 
     //quick and dirty (slow) way to convert a Trajectory_t struct to an RVec
