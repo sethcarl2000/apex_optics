@@ -5,6 +5,7 @@
 #pragma link off all functions;
 
 #pragma link C++ class NPoly+; 
+#pragma link C++ struct SieveHole+; 
 #pragma link C++ struct NPoly::NPolyElem+; 
 #pragma link C++ struct ApexOptics::Trajectory_t+; 
 #pragma link C++ struct ApexOptics::OpticsTarget_t+; 
@@ -25,7 +26,6 @@
 #pragma link C++ class PickSieveHoleApp+; 
 #pragma link C++ class SaveOutputFrame+; 
 #pragma link C++ class EvaluateCutFrame+; 
-#pragma link C++ struct SieveHole+; 
 #pragma link C++ struct FPcoordPolynomial+; 
 #pragma link C++ struct SieveHoleData+; 
 

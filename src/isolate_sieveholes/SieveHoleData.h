@@ -5,7 +5,6 @@
 //
 //  This defines a few structs: 
 //
-//  SieveHole
 //  SieveHoleData
 //  FPCoordPolynomial
 //
@@ -14,6 +13,7 @@
 #include <ROOT/RVec.hxx> 
 #include <TEllipse.h> 
 #include <limits> 
+#include <SieveHole.h> 
 
 //this just lists a few possible return values from the 'TCanvas::GetEvent()' method. 
 enum ECanvasEventType { 
@@ -26,27 +26,6 @@ enum ECanvasEventType {
 const double xsv_draw_range[] = { -0.050, 0.050 }; 
 const double ysv_draw_range[] = { -0.035, 0.035 }; 
 
-
-//this struct contains info about sieve holes
-struct SieveHole {
-
-    int row,col; 
-    double x,y,radius_front,radius_back; 
-    bool is_big; 
-
-    //defining (overloading) this operator lets us use the std::find() function on a vector<SieveHole> 
-    bool operator==(const SieveHole& rhs) const { return ((row==rhs.row) && (col==rhs.col)); }
-
-    //defining this operator lets us use so-called 'ordered sets', like std::map, which can employ clever algorithms 
-    // to search for a given element very qucikly
-    bool operator<(const SieveHole& rhs) const { 
-        if (row < rhs.row) return true;
-        return col < rhs.col; 
-    }; 
-
-    //this constrcuts a vector of sieve-holes, with all their accurate positions. 
-    static std::vector<SieveHole> ConstructSieveHoles(const bool is_RHRS); 
-}; 
 
 //this will contian all the data we need to make a sieve-hole output. 
 struct FPcoordPolynomial {

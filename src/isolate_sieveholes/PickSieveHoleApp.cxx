@@ -6,6 +6,9 @@
 #include "EvaluateCutFrame.h"
 #include <TApplication.h>
 #include "SaveOutputFrame.h"
+#include <SieveHole.h> 
+#include <isolate_sieveholes/SieveHoleData.h> 
+#include <ApexOptics.h> 
 
 using namespace std; 
 
@@ -93,7 +96,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     ); 
 
     //construct the vector of sieve holes...
-    for (const SieveHole& hole : SieveHole::ConstructSieveHoles(f_is_RHRS)) fSieveHoleData.emplace_back(hole); 
+    for (const SieveHole& hole : ApexOptics::ConstructSieveHoles(f_is_RHRS)) fSieveHoleData.emplace_back(hole); 
 
     fEcanvas_drawing = new TRootEmbeddedCanvas("ECanvas_drawing", fFrame_canvPick, 700, 700);
     fFrame_canvPick->AddFrame(fEcanvas_drawing, new TGLayoutHints(kLHintsRight | kLHintsExpandX | kLHintsExpandY, 0, 0, 0, 0)); 

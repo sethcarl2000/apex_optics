@@ -70,8 +70,8 @@ Trajectory_t RVec_to_Trajectory_t(const RVec<double>& v){
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_linear_model( const char* path_infile="data/replay/real_L_V2.root",
-                        const char* path_dbfile="data/csv/poly_WireAndFoil_L_4ord.dat",  
+int test_linear_model( const char* path_infile="data/mc/mc_L_V2_sieve.root",
+                        const char* path_dbfile="data/csv/poly_prod_fp_sv_L_4ord.dat",  
                         const char* path_dXsv="data/csv/poly_dXsv_L_3ord.dat",
                         const char* tree_name="tracks_fp" ) 
 {
@@ -312,9 +312,9 @@ int test_linear_model( const char* path_infile="data/replay/real_L_V2.root",
         {"fg_dydz_sv", &Trajectory_t::dydz}
     }); 
 
-    rna.Define("x_hcs_upfoil",   [](Trajectory_t Xhcs){ return Xhcs.x; }, {"Xhcs_upfoil"});
-    rna.Define("x_hcs",          [](Trajectory_t Xhcs){ return Xhcs.x; }, {"Xhcs"});
-    rna.Define("x_hcs_downfoil", [](Trajectory_t Xhcs){ return Xhcs.x; }, {"Xhcs_downfoil"});
+    rna.Define("x_hcs_upfoil",   [](Trajectory_t Xhcs){ return Xhcs.x; }, {"Xhcs_reco_upfoil"});
+    rna.Define("x_hcs",          [](Trajectory_t Xhcs){ return Xhcs.x; }, {"Xhcs_reco"});
+    rna.Define("x_hcs_downfoil", [](Trajectory_t Xhcs){ return Xhcs.x; }, {"Xhcs_reco_downfoil"});
     
 
     //check the status of the RDFNodeAccumulator obejct before proceeding
@@ -338,6 +338,7 @@ int test_linear_model( const char* path_infile="data/replay/real_L_V2.root",
     auto hist_fg_angles = rna.Get()
         .Histo2D({"h_fg_angles", "fp=>sv model: dx/dx_{sv} vs dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "fg_dxdz_sv", "fg_dydz_sv"); 
 
+    //histograms to compare the dp/p computed for the correct, +1 and -1 tungsten foils (by adding +/- 55 mm to 'z')
     auto hist_dp = rna.Get()
         .Histo1D({"h_dp", "dp/p fix; dp/p - dp/p_{guesss}", 200, -0.003, 0.003}, "dp"); 
 
@@ -347,6 +348,15 @@ int test_linear_model( const char* path_infile="data/replay/real_L_V2.root",
     auto hist_dp_downfoil = rna.Get()
         .Histo1D({"h_dp", "dp/p fix: z - 55mm; dp/p - dp/p_{guesss}", 200, -0.003, 0.003}, "dp_downfoil"); 
 
+    auto hist_x = rna.Get()
+        .Histo1D({"h_x", "x_{hcs}; x_{hcs} (m)", 200, -0.1, 0.1}, "x_hcs"); 
+
+    auto hist_x_upfoil = rna.Get()
+        .Histo1D({"h_x_up", "x_{hcs}: z + 55mm; x_{hcs} (m)", 200, -0.1, 0.1}, "x_hcs_upfoil"); 
+
+    auto hist_x_downfoil = rna.Get()
+        .Histo1D({"h_x_down", "x_{hcs}: z - 55mm; x_{hcs} (m)", 200, -0.1, 0.1}, "x_hcs_downfoil"); 
+
     char c_title[255]; 
     sprintf(c_title, "data:'%s', db:'%s'", path_infile, path_dbfile); 
 
@@ -354,27 +364,6 @@ int test_linear_model( const char* path_infile="data/replay/real_L_V2.root",
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
 
-    //PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
-    //return 0; 
-
-    auto c0 = new TCanvas("c0", c_title); 
-    hist_dp->DrawCopy(); 
-
-    hist_dp_upfoil->SetFillStyle(3004); 
-    hist_dp_upfoil->SetFillColor(kRed);
-    hist_dp_upfoil->SetLineColor(kRed);
-    hist_dp_upfoil->SetStats(0);  
-    hist_dp_upfoil->DrawCopy("SAME");
-
-    hist_dp_downfoil->SetFillStyle(3005); 
-    hist_dp_downfoil->SetFillColor(kBlue);
-    hist_dp_downfoil->SetLineColor(kBlue);
-    hist_dp_downfoil->SetStats(0);  
-    hist_dp_downfoil->DrawCopy("SAME");
-
-    gPad->BuildLegend(); 
-
-    return 0; 
 
     auto c1 = new TCanvas("c1", c_title, 1200, 600); 
     c1->Divide(2,1, 0.01,0.01); 
@@ -387,8 +376,27 @@ int test_linear_model( const char* path_infile="data/replay/real_L_V2.root",
 
     c2->cd(1); hist_fg_angles->DrawCopy("col2");
     c2->cd(2); hist_angles->DrawCopy("col2"); 
-    
+
     return 0; 
+
+
+    auto c0 = new TCanvas("c0", c_title); 
+    hist_x->DrawCopy(); 
+
+    hist_x_upfoil->SetFillStyle(3004); 
+    hist_x_upfoil->SetFillColor(kRed);
+    hist_x_upfoil->SetLineColor(kRed);
+    hist_x_upfoil->SetStats(0);  
+    hist_x_upfoil->DrawCopy("SAME");
+
+    hist_x_downfoil->SetFillStyle(3005); 
+    hist_x_downfoil->SetFillColor(kBlue);
+    hist_x_downfoil->SetLineColor(kBlue);
+    hist_x_downfoil->SetStats(0);  
+    hist_x_downfoil->DrawCopy("SAME");
+
+    gPad->BuildLegend(); 
+
 
     return 0; 
 }

@@ -3,9 +3,14 @@
 #include <map>
 #include <fstream>
 #include <iomanip> 
-#include "TFile.h"
-#include "TVector3.h"
-#include "TParameter.h"
+#include <TFile.h>
+#include <TVector3.h>
+#include <TParameter.h>
+#include <TSystem.h> 
+#include <ROOT/RDataFrame.hxx>
+#include <ApexOptics.h> 
+#include <TCanvas.h> 
+#include <TStyle.h> 
 
 
 using namespace std; 
@@ -21,28 +26,25 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
                         const char* stem_outfile="",  
                         const char* tree_name="tracks_fp" ) 
 {
-    const char* const here = "fit_points_mc_forward"; 
+    const char* const here = "fit_points_mc_fp_sv"; 
 
-    auto infile = new TFile(path_infile, "READ");
+    //load the 'create_NPolyArray_fit' macro 
+    //gROOT->ProcessLine(".L scripts/create_NPolyArray_fit.C"); 
 
     //check if we can load the apex optics lib
     if (gSystem->Load("libApexOptics") < 0) {
         Error(here, "libApexOptics could not be loaded."); 
         return 1; 
     }
-    
+
+    auto infile = new TFile(path_infile, "READ");
+
     //check if the infile could be opened
     if (!infile || infile->IsZombie()) {
         Error(here, "root file '%s' could not be opened.", path_infile); 
         return 1; 
     }
 
-    //check if we can find the proper TTree
-    TTree* tree = (TTree*)infile->Get(tree_name); 
-    if (!tree) {
-        Error(here, "could not find TTree '%s'", tree_name); 
-        return 1; 
-    }
     //check if we can find the 'is_RHRS' parameter. Fatal error if not! 
     TParameter<bool>* param_is_RHRS = (TParameter<bool>*)infile->Get("is_RHRS"); 
     if (!param_is_RHRS) {
@@ -51,7 +53,6 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     }
     const bool is_RHRS = param_is_RHRS->GetVal(); 
 
-    delete tree; 
     infile->Close(); 
     delete infile; 
 
@@ -59,44 +60,41 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
     Info(here, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
 
     //Now, we are ready to process the tree using RDataFrame
-    ROOT::RDataFrame df(tree_name, path_infile); 
 
-    
-    const int nDoF = 4; //the 4 DoF are: x_fp, y_fp, dxdz_fp, dydz_fp
-
-    auto poly = new NPoly(nDoF,poly_order); 
-
-    //get number of coefficients
-    const int n_elems = poly->Get_nElems(); 
-
-    const double hrs_momentum = 1104.; 
-
-    //this will be used for the least-squares calculation to find the best coefficients
-    RMatrix A_init(n_elems, n_elems, 0.); 
+    //the reason I have to do this rigamarole is that I want to have the construction of the RDF in this try/catch block,
+    //but I don't know how to default-construct an ROOT::RDataFrame object *outside* of the block, so that it's scope isn't
+    //the try-catch block itself. I know its pretty dumb, but this is the best I can figure. 
+    // at least its a unique-ptr, so we can be sure it's deleted when the macro is out-of-scope. 
+    ROOT::RDataFrame *df_ptr; 
+    try { df_ptr = new ROOT::RDataFrame(tree_name, path_infile); }
+    catch (const std::invalid_argument& e) {
+        Error(here, "Trying to create RDataFrame threw std::invalid_argument exception.\n what(): %s", e.what()); 
+        return -1; 
+    } 
+    ROOT::RDataFrame& df = *df_ptr; 
 
     //Define all of the branches we want to create models to map between
-    
     //now, put these outputs into a vector (so we know to make a seperate polynomial for each of them). 
-    vector<string> branches_sv = {
+    vector<string> inputs = {
+        "x_fp", 
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp"
+    };  
+
+    vector<string> outputs = {
         "x_sv", 
         "y_sv",
         "dxdz_sv",
         "dydz_sv",
         "dpp_sv"
-    };  
-
-    vector<string> branches_fp = {
-        "x_fp", 
-        "y_fp",
-        "dxdz_fp",
-        "dydz_fp"
     };
 
     cout << "Creating polynomials for fp => sv..." << flush; 
     
     //for each of the branches in the 'branches_sv' created above, make a polynomial which takes all the branches
     // of the 'branches_fp' vec 
-    map<string,NPoly*> polymap = ApexOptics::Create_NPoly_fit(df, poly_order, branches_fp, branches_sv);
+    map<string,NPoly*> polymap = ApexOptics::Create_NPoly_fit(df, poly_order, inputs, outputs);
     
     cout << "done." << endl;    
 
@@ -126,24 +124,15 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
 
     } else { cout << "Skipping db-file creation." << endl; }
     //____________________________________________________________________________
+    
+    NPolyArray parr = ApexOptics::Parse_NPolyArray_from_file(path_outfile.c_str(), outputs, (int)inputs.size()); 
 
-    
-    //draw the reults of all models
-    //reconstruct the sieve coordinates
-    NPolyArray* parr = new NPolyArray({
-        polymap["x_sv"],
-        polymap["y_sv"],
-        polymap["dxdz_sv"],
-        polymap["dydz_sv"],
-        polymap["dpp_sv"]
-    }); 
-    
     auto df_sieve_reco = df
         
         //Define the reconstructed sieve coordinates using our model
-        .Define("reco_X_sv",    [parr](double x, double y, double dxdz, double dydz)
+        .Define("reco_X_sv",    [&parr](double x, double y, double dxdz, double dydz)
         {
-            auto X_sv = parr->Eval({x, y, dxdz, dydz}); 
+            auto X_sv = parr.Eval({x, y, dxdz, dydz}); 
             return Track_t{ 
                 .x      =X_sv[0], 
                 .y      =X_sv[1], 
@@ -195,10 +184,12 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
 
     auto df_error = error_nodes.back(); 
 
-    auto h_x    = df_error.Histo1D({"h_x", "Error of x_sv;mm",         200, -5, 5}, "error_x_sv"); 
-    auto h_y    = df_error.Histo1D({"h_y", "Error of y_sv;mm",         200, -5, 5}, "error_y_sv"); 
-    auto h_dxdz = df_error.Histo1D({"h_dxdz", "Error of dxdz_sv;mrad", 200, -5, 5}, "error_dxdz_sv"); 
-    auto h_dydz = df_error.Histo1D({"h_dydz", "Error of dydz_sv;mrad", 200, -5, 5}, "error_dydz_sv"); 
+    auto h_x    = df_error.Histo1D<double>({"h_x", "Error of x_{sv};mm",         200, -5, 5}, "error_x_sv"); 
+    auto h_y    = df_error.Histo1D<double>({"h_y", "Error of y_{sv};mm",         200, -5, 5}, "error_y_sv"); 
+    auto h_dxdz = df_error.Histo1D<double>({"h_dxdz", "Error of dx/dz_{sv};mrad", 200, -5, 5}, "error_dxdz_sv"); 
+    auto h_dydz = df_error.Histo1D<double>({"h_dydz", "Error of dy/dz_{sv};mrad", 200, -5, 5}, "error_dydz_sv"); 
+    auto h_dpp  = df_error.Histo1D<double>({"h_dpp",  "Error of dp/p_{sv};1e3 * (p - p_{0})/p_{0}", 200, -5, 5}, "error_dpp_sv");
+
     
     auto h_xy_sieve = df_error.Histo2D<double>({"h_xy_sieve", "Reconstructed sieve-coords;x_sv;y_sv", 250, -45e-3, 45e-3, 250, -45e-3, 45e-3}, "reco_x_sv", "reco_y_sv"); 
     
@@ -216,15 +207,17 @@ int fitpoints_mc_fp_sv( const int poly_order=2,
 
 
     new TCanvas("c2", b_c_title); 
-
+    
     gStyle->SetPalette(kSunset); 
     h_xy_sieve->SetStats(0); 
 
     h_xy_sieve->DrawCopy("col2"); 
 
-    //delete our template polynomial
-    delete poly;
-    delete parr;  
+
+    new TCanvas("c3", b_c_title); 
+
+    h_dpp->DrawCopy(); 
+
 
     //delete our poly models
     for (auto it = polymap.begin(); it != polymap.end(); it++ ) delete it->second;

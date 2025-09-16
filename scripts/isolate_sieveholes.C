@@ -3,9 +3,10 @@
 //  This is a macro which creates an application which allows the creation of training data 
 //  by selecting & isolating sieve-hole data 
 //
-//  This is the interactive app which creates a PolynomialCut, given a TH2.   
-//
 ////////////////////////////////////////////////////////////////////////////////
+#include <TColor.h> 
+#include <TGClient.h> 
+#include <isolate_sieveholes/PickSieveHoleApp.h> 
 
 //_____________________________________________________________________________________________________________________________________
 int isolate_sieveholes( const bool is_RHRS, 

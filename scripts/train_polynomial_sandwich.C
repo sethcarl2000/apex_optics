@@ -165,7 +165,6 @@ enum EPolynomialType {
     kSplitWithBuffer        //2 sepearate polynomials mapping fp => q1 and q1 =>, with 3 buffer polynomials 
 }; 
 
-#define POLYNOMIAL_TYPE kSplitWithBuffer 
 
 //__________________________________________________________________________________________________________________
 //Compute the gradient w/r/t each weight for the mlp (with respect to the given range of elements). 
@@ -265,6 +264,8 @@ double Evaluate_error_range(const std::vector<TrainingData_t>& data_vec,
 
 #define RUN_WITHOUT_MULTITHREADDING false
 
+#define POLYNOMIAL_TYPE kSingleWithBuffer
+
 //____________________________________________________________________________________________________________________________________
 int train_polynomial_sandwich(  const int n_grad_iterations = 10,
                                 const char* path_infile = "",
@@ -356,7 +357,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
     }; 
 
     //add the input branches
-    for (const auto& str : branches_input ) {
+    for (const auto& str : branches_input) {
 
         auto new_node = input_nodes.back() 
 
@@ -365,7 +366,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
         input_nodes.push_back(new_node); 
     }
     //add the output branches
-    for (const auto& str : branches_output ) {
+    for (const auto& str : branches_output) {
         
         auto new_node = input_nodes.back() 
 
@@ -486,8 +487,8 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
 
         case kSingleWithBuffer : {
 
-            path_dbfile_fp_sv  = "data/csv/poly_prod_fp_sv_L_3ord.dat";
-            path_outfile_fp_sv = "data/csv/poly_prod-trained_fp_sv_L_3ord.dat";
+            path_dbfile_fp_sv  = "data/csv/poly_WireAndFoil_noise-2.5e-3_fp_sv_L_4ord.dat";
+            path_outfile_fp_sv = "data/csv/poly_WireAndFoil_noise-2.5e-3_trained_fp_sv_L_4ord.dat";
             parr_fp_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 4); 
 
             sandwich->InsertBufferArray( parr_fp_sv.Get_DoF_in() ); 
@@ -500,13 +501,13 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
 
         case kSplit : {
 
-            path_dbfile_fp_q1  = "data/csv/poly_prod_fp_q1_L_3ord.dat";
+            path_dbfile_fp_q1  = "data/csv/poly_prod-buffer_fp_q1_L_3ord.dat";
             path_outfile_fp_q1 = "data/csv/poly_prod-trained_fp_q1_L_3ord.dat";
-            parr_fp_q1 = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_q1, {"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"}, 4); 
+            parr_fp_q1 = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_q1, branches_q1, 4); 
 
-            path_dbfile_q1_sv  = "data/csv/poly_prod_q1_sv_L_3ord.dat";
+            path_dbfile_q1_sv  = "data/csv/poly_prod-buffer_q1_sv_L_3ord.dat";
             path_outfile_q1_sv = "data/csv/poly_prod-trained_q1_sv_L_3ord.dat";
-            parr_q1_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_q1_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 5); 
+            parr_q1_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_q1_sv, branches_sv, 5); 
                                                         
             //add the output layer (which is mutable)
             sandwich->AppendArray( parr_fp_q1, NPolyArrayChain::kMutable ); 
@@ -514,14 +515,15 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
             sandwich->AppendArray( parr_q1_sv, NPolyArrayChain::kMutable ); 
             break; 
         }
+
         case kSplitWithBuffer : {
 
             path_dbfile_fp_q1  = "data/csv/poly_prod_fp_q1_L_3ord.dat";
-            path_outfile_fp_q1 = "data/csv/poly_prod-trained_fp_q1_L_3ord.dat";
+            path_outfile_fp_q1 = "data/csv/poly_prod-buffer_fp_q1_L_3ord.dat";
             parr_fp_q1 = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_fp_q1, {"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"}, 4); 
 
             path_dbfile_q1_sv  = "data/csv/poly_prod_q1_sv_L_3ord.dat";
-            path_outfile_q1_sv = "data/csv/poly_prod-trained_q1_sv_L_3ord.dat";
+            path_outfile_q1_sv = "data/csv/poly_prod-buffer_q1_sv_L_3ord.dat";
             parr_q1_sv = ApexOptics::Parse_NPolyArray_from_file(path_dbfile_q1_sv, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 5); 
                                                         
             //add the output layer (which is mutable)
@@ -811,7 +813,8 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
             map<string,NPoly*> polymap; 
             int i=0; for (const auto& str : branches_sv) polymap[str] = parr_fp_sv.Get_poly(i++); 
             
-            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_fp_sv), polymap ); 
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_outfile_fp_sv), polymap ); 
+            break;
         }
 
         case kSingleWithBuffer : {
@@ -822,7 +825,8 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
             map<string,NPoly*> polymap; 
             int i=0; for (const auto& str : branches_sv) polymap[str] = parr_fp_sv.Get_poly(i++); 
             
-            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_fp_sv), polymap ); 
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_outfile_fp_sv), polymap ); 
+            break;
         }
 
         case kSplit : {
@@ -830,12 +834,13 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
             map<string,NPoly*> polymap; 
             int i=0; for (const auto& str : branches_q1) polymap[str] = parr_fp_q1.Get_poly(i++); 
 
-            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_fp_q1), polymap); 
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_outfile_fp_q1), polymap); 
 
             polymap.clear(); 
             i=0; for (const auto& str : branches_sv) polymap[str] = parr_q1_sv.Get_poly(i++); 
 
-            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_q1_sv), polymap); 
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_outfile_q1_sv), polymap); 
+            break;
         }
 
         case kSplitWithBuffer : {
@@ -845,7 +850,7 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
             map<string,NPoly*> polymap; 
             int i=0; for (const auto& str : branches_q1) polymap[str] = parr_fp_q1.Get_poly(i++); 
 
-            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_fp_q1), polymap); 
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_outfile_fp_q1), polymap); 
 
             parr_q1_sv = NPolyArray::Nest( parr_q1_sv, sandwich->arrays[2].first );
             parr_q1_sv = NPolyArray::Nest( sandwich->arrays[4].first, parr_q1_sv );
@@ -853,10 +858,11 @@ int train_polynomial_sandwich(  const int n_grad_iterations = 10,
             polymap.clear(); 
             i=0; for (const auto& str : branches_sv) polymap[str] = parr_q1_sv.Get_poly(i++); 
 
-            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_dbfile_q1_sv), polymap); 
+            ApexOptics::Create_dbfile_from_polymap(is_RHRS, string(path_outfile_q1_sv), polymap); 
+            break; 
         }
     }
-     
+
     return 0; 
 
 }

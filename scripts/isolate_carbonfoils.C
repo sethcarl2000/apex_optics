@@ -53,12 +53,12 @@ ROOT::RDF::RNode add_branch_from_Trajectory_t(ROOT::RDF::RNode df, const char* b
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-4773.root",
-                            const char* target_name="none",       
-                            const char* path_cutfile="data/csv/polycut_L_O1-new.dat",
-                            const char* path_outfile="data/replay/real_L_O1.root",
-                            const char* path_dbfile ="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
-                            const char* tree_name   ="tracks_fp" ) 
+int isolate_carbonfoils(    const char* path_infile     = "data/replay/real_L_Opt1-4773.root",
+                            const char* target_name     = "none",       
+                            const char* path_cutfile    = "data/csv/polycut_L_O1-new.dat",
+                            const char* path_outfile    = "data/replay/real_L_O1.root",
+                            const char* path_dbfile     = "data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
+                            const char* tree_name       = "tracks_fp" ) 
 {
     const char* const here = "test_forward_model"; 
 
@@ -144,7 +144,6 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
 
     cout << "parsing done." << endl; 
     //now, we're ready to deal with the data. 
-
 
     ROOT::EnableImplicitMT(); 
     Info(here, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
@@ -250,9 +249,6 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
 
     //create both histograms
     auto hist_xy = rna.Get()
-        //correct for react-vertex position
-        /*.Define("x_react_vtx_fix", [](double x, TVector3 r){return x + r.x();}, {"x_sv", "position_vtx_scs"})
-        .Define("y_react_vtx_fix", [](double y, TVector3 r){return y + r.y();}, {"y_sv", "position_vtx_scs"})*/ 
 
         .Histo2D({"h_xy", "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "x_sv", "y_sv");
     
@@ -282,11 +278,9 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
 
     if (create_new_cut) {
         
-        PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
+        PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col", kSunset); 
     
     } else {
-
-
 
         auto c = new TCanvas("c1", c_title, 1200, 600); 
         c->Divide(2,1, 0.01,0.01); 
@@ -312,10 +306,6 @@ int isolate_carbonfoils(    const char* path_infile ="data/replay/real_L_Opt1-47
 
         gPad->BuildLegend(); 
 
-
-
-
-            
         //write 'is_RHRS' parameter 
         auto file = new TFile(path_outfile, "UPDATE"); 
         param_is_RHRS = new TParameter<bool>("is_RHRS", is_RHRS); 

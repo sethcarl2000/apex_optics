@@ -90,6 +90,5 @@ int create_toy_mlp_data(    const int n_events_train=1e5,
 
     printf("Info in <%s>: Data written to '%s'\n", here, path_outfile); 
 
-
     return 0; 
 }

@@ -31,7 +31,7 @@ set(sources
     MultiLayerPerceptron.cxx
     PolynomialCut.cxx
     PolynomialCutApp.cxx
-    isolate_sieveholes/SieveHoleData.cxx
+#    isolate_sieveholes/SieveHoleData.cxx
     isolate_sieveholes/PickSieveHoleApp.cxx
     isolate_sieveholes/SaveOutputFrame.cxx
     isolate_sieveholes/EvaluateCutFrame.cxx
@@ -43,6 +43,7 @@ set(headers
     RMatrix.h 
     NPolyArray.h
     NPolyArrayChain.h
+    SieveHole.h 
     MultiLayerPerceptron.h
     PolynomialCut.h 
     PolynomialCutApp.h 

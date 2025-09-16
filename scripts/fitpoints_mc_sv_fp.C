@@ -105,8 +105,8 @@ int fitpoints_mc_sv_fp(  const int poly_order=2,
 
     path_outfile += ".dat";
 
-    ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap);     
-    
+    ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap);      
+
     //draw the reults of all models
     vector<ROOT::RDF::RNode> error_nodes{ df }; 
     for (auto it = polymap.begin(); it != polymap.end(); it++) {

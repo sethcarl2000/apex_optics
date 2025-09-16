@@ -22,6 +22,7 @@
 #include <map>
 #include <ROOT/RVec.hxx>
 #include <limits>
+#include <SieveHole.h> 
 
 namespace ApexOptics {
 
@@ -151,6 +152,10 @@ namespace ApexOptics {
 
     //find a target in the list of target names. throws a std::inavlid_argument exception if name is invalid. 
     OpticsTarget_t GetTarget(const char* target_name);
+
+    //construct a std::vector container of 'SieveHole' structs; each hole has the accurate position and size of the real sieve. 
+    std::vector<SieveHole> ConstructSieveHoles(const bool is_RHRS); 
+
 };
 
 #endif
