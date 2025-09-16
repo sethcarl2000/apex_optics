@@ -4,6 +4,7 @@
 #include <TGeoMatrix.h> 
 #include <TGeoArb8.h> 
 #include <TSystem.h> 
+#include <TStyle.h> 
 #include <TEveManager.h> 
 #include <TEvePointSet.h> 
 #include <TEveArrow.h>
@@ -11,6 +12,7 @@
 #include <SieveHole.h> 
 #include <ApexOptics.h>
 #include <vector>  
+#include <cmath> 
 
 using namespace std; 
 
@@ -33,8 +35,8 @@ int test_3d_geom(const bool is_RHRS=false)
     top->Draw(); 
 
     return 0;*/ 
-    
-    //gStyle->SetCanvasPreferGL(true)
+
+    gStyle->SetCanvasPreferGL(true); 
 
     TGeoManager *geom = new TGeoManager("simple1", "Simple geometry");
     
@@ -117,20 +119,60 @@ int test_3d_geom(const bool is_RHRS=false)
         auto rot_xaxis = new TGeoRotation; rot_xaxis->SetAngles(0., 0., 0.); 
         auto rot_yaxis = new TGeoRotation; rot_yaxis->SetAngles(90., 0., 0.); 
         auto rot_zaxis = new TGeoRotation; rot_zaxis->SetAngles(0., 90., 90.);
+        
+        //create letters
+        const double letter_size = axes_size/10.; 
+        //long letter stem
+        TGeoVolume *letter_barL = geom->MakeBox("xbarL", Al, letter_size, axes_size/100., axes_size/100.); 
+        letter_barL->SetLineColor(axis_color);
+        //short letter stem
+        TGeoVolume *letter_barS = geom->MakeBox("xbarS", Al, letter_size/2., axes_size/100., axes_size/100.); 
+        letter_barS->SetLineColor(axis_color);
 
-        xyz_axes->AddNodeOverlap(single_axis, 1, rot_xaxis);
-        xyz_axes->AddNodeOverlap(single_axis, 2, rot_yaxis); 
-        xyz_axes->AddNodeOverlap(single_axis, 3, rot_zaxis); 
+        //rotations to be used for letters
+        auto rot_45p = new TGeoRotation; rot_45p->SetAngles(45., 0., 0.); 
+        auto rot_0   = new TGeoRotation; rot_0  ->SetAngles(0., 0., 0.); 
+        auto rot_45m = new TGeoRotation; rot_45m->SetAngles(-45., 0., 0.);
+        auto rot_90  = new TGeoRotation; rot_90 ->SetAngles(90., 0., 0.); 
+
+        //create 'X' 
+        TGeoVolume *name_x = geom->MakeBox("X", vacuum, letter_size, letter_size, letter_size);
+        name_x->SetVisibility(kFALSE); 
+         
+        name_x->AddNodeOverlap(letter_barL, 1, rot_45m); 
+        name_x->AddNodeOverlap(letter_barL, 2, rot_45p); 
+
+        //create 'Y' 
+        TGeoVolume *name_y = geom->MakeBox("Y", vacuum, letter_size, letter_size, letter_size); 
+        name_y->SetVisibility(kFALSE); 
+
+        name_y->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans(  letter_size/(2.*sqrt(2.)), -letter_size/(2.*sqrt(2.)), 0., rot_45m)); 
+        name_y->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans(  letter_size/(2.*sqrt(2.)), +letter_size/(2.*sqrt(2.)), 0., rot_45p)); 
+        name_y->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_0)); 
+
+        //create 'Z'
+        TGeoVolume *name_z = geom->MakeBox("Z", vacuum, letter_size, letter_size, letter_size); 
+        name_z->SetVisibility(kFALSE); 
+
+        name_z->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans( +letter_size/2., 0., 0., rot_90)); 
+        name_z->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_90)); 
+        auto letter_barLsqrt2 = geom->MakeBox("xbarLsqrt2", Al, letter_size*sqrt(2.), axes_size/100., axes_size/100.);
+        name_z->AddNodeOverlap(letter_barL, 1, new TGeoCombiTrans( 0., 0., 0., rot_45m)); 
+
+
+        xyz_axes->AddNodeOverlap(single_axis, 1, rot_xaxis); xyz_axes->AddNodeOverlap(name_x, 1, new TGeoCombiTrans(axes_size*2.2, 0., 0., rot_xaxis)); 
+        xyz_axes->AddNodeOverlap(single_axis, 2, rot_yaxis); xyz_axes->AddNodeOverlap(name_y, 1, new TGeoCombiTrans(0., axes_size*2.2, 0., rot_yaxis)); 
+        xyz_axes->AddNodeOverlap(single_axis, 3, rot_zaxis); xyz_axes->AddNodeOverlap(name_z, 1, new TGeoCombiTrans(0., 0., axes_size*2.2, rot_zaxis)); 
     }
 
 
 
     TGeoRotation *rot_sieve = new TGeoRotation; 
-    rot_sieve->SetAngles(90., 90., 0.); 
+    rot_sieve->SetAngles(0., 0., 0.); 
 
 
     //now, we're ready to add the sieve-holes
-    top->AddNodeOverlap(sieve_vol, 1); 
+    //top->AddNodeOverlap(sieve_vol, 1, rot_sieve); 
     
     top->AddNodeOverlap(xyz_axes, 1); 
 
