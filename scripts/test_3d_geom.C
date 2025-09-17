@@ -63,6 +63,8 @@ private:
     TGeoMedium *fMedVacuum; 
     TGeoMedium *fMedAluminum; 
 
+    TGeoRotation *fRot_HCS; 
+
     Object_t::NameBit fDrawnObjects = Object_t::kNone; 
 
     std::vector<Object_t> fObjects{}; 
@@ -71,10 +73,15 @@ private:
     //a map of buttons, whith their associated name-bit. 
     Object_t* FindObject(Object_t::NameBit name); 
 
+    //create geometry
     void CreateGeometry(); 
 
+    //create geometry for the left (or right) sieve
     void CreateSieveGeometry(const bool arm_is_RHRS); 
     
+    //create geometry for the production target
+    void CreateProductionTargetGeometry(); 
+
     const bool is_RHRS; 
 
 public: 
@@ -103,6 +110,45 @@ Object_t* GeometryFrame::FindObject(Object_t::NameBit name)
 //_______________________________________________________________________________________________________________________________
 //_______________________________________________________________________________________________________________________________
 //_______________________________________________________________________________________________________________________________
+void GeometryFrame::CreateProductionTargetGeometry()
+{
+    //create geometry for the 'produciton' target.
+    //recall that all units are in mm
+    const int n_targets = 10.; 
+    const double target_width = 2.5; 
+    const double target_depth = 0.010; 
+    const double target_spacing = 55.; 
+
+    const double z_foil_first = -238.19; 
+    
+    //the targets are much taller than this, but there's not much point in drawing that, as the produciton raster amplitude is ~2mm
+    const double target_height = 50.; 
+
+    TGeoVolume *prod_vol = fGeom->MakeBox("prod_box", fMedVacuum, target_width/2., target_height/2., 0.5*(target_spacing * (double)n_targets)); 
+    prod_vol->SetVisibility(kFALSE); 
+
+    int i_foil=1; 
+
+    const unsigned int color_prod = kBlack; 
+
+    double z_targ = z_foil_first; 
+    
+    auto target = fGeom->MakeBox("prod_foil", fMedAluminum, target_width/2., target_height/2., target_depth/2.); 
+    target->SetLineColor(color_prod); 
+
+    for (unsigned int i_targ=1; i_targ<=n_targets; i_targ++) {
+
+        prod_vol->AddNodeOverlap(target, i_targ, new TGeoTranslation(0., 0., z_targ)); 
+
+        z_targ += target_spacing; 
+    }
+
+    fTopVolume->AddNodeOverlap(prod_vol, 1, fRot_HCS); 
+
+    fObjects.push_back({.name=Object_t::kTarget_production, .volume=prod_vol}); 
+
+    return; 
+} 
 //_______________________________________________________________________________________________________________________________
 void GeometryFrame::CreateSieveGeometry(const bool arm_is_RHRS)
 {   
@@ -189,6 +235,8 @@ void GeometryFrame::ButtonClicked()
     if (fECanvas->GetCanvas()) fECanvas->GetCanvas()->cd(); 
     if (fTopVolume) fTopVolume->Draw();   
 }
+//_______________________________________________________________________________________________________________________________
+
 
 GeometryFrame::~GeometryFrame() 
 {
@@ -286,15 +334,20 @@ void GeometryFrame::CreateGeometry()
     //5trrrrrr610200000000000
     // -muon 
 
+    //draw HCS coordinate axes
+    fRot_HCS = new TGeoRotation; 
+    fRot_HCS->SetAngles(90., 90., 0.); 
+
     //now, we're ready to add the sieve-holes
     CreateSieveGeometry(true);  //RHRS 
     CreateSieveGeometry(false); //LHRS
-    
-    //draw HCS coordinate axes
-    auto rot_HCS = new TGeoRotation; 
-    rot_HCS->SetAngles(90., 90., 0.); 
 
-    fTopVolume->AddNodeOverlap(xyz_axes, 1, rot_HCS); 
+    //create the production target geometry 
+    CreateProductionTargetGeometry(); 
+    
+    
+
+    fTopVolume->AddNodeOverlap(xyz_axes, 1, fRot_HCS); 
 
     fGeom->CloseGeometry();  
 }
@@ -310,15 +363,27 @@ GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _
 
     TGCheckButton *button=nullptr; 
 
-    button = new TGCheckButton(this, "LHRS sieve"); 
+    // -- LHRS sieve
+    button = new TGCheckButton(this, "LHRS sieve");                             //add this button and name it
     button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
     fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
-    fButtons.push_back({Object_t::kSieve_LHRS, button}); 
+    fButtons.push_back({Object_t::kSieve_LHRS, button});                        //add it to the list of buttons
+    button->SetState(kButtonDown);                                              //set its default state to 'on' 
 
-    button = new TGCheckButton(this, "RHRS sieve"); 
+    // -- RHRS sieve
+    button = new TGCheckButton(this, "RHRS sieve");                             //add this button and name it
     button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
     fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
-    fButtons.push_back({Object_t::kSieve_RHRS, button}); 
+    fButtons.push_back({Object_t::kSieve_RHRS, button});                        //add it to the list of buttons
+    button->SetState(kButtonDown);                                              //set its default state to 'on' 
+
+    // -- production target
+    button = new TGCheckButton(this, "Prod. Tungsten foils");                   //add this button and name it
+    button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
+    fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
+    fButtons.push_back({Object_t::kTarget_production, button});                 //set its default state to 'on' 
+    button->SetState(kButtonDown);                                              //set its default state to 'on' 
+
 
     AddFrame(fButtonFrame, new TGLayoutHints(kLHintsLeft, 0,0,0,0)); 
 
