@@ -30,6 +30,9 @@
 #include <TGClient.h>  
 
 using namespace std; 
+using ApexOptics::OpticsTarget_t; 
+
+
 //this is an enum to track which objects are drawn 
 struct Object_t { 
     enum NameBit : char16_t {
@@ -38,9 +41,10 @@ struct Object_t {
         kSieve_RHRS = 1 << 1,           //right sieve
         kBeam       = 1 << 2,           //beam 
         kTarget_production = 1 << 3,    //production foils
-        kTrack_L_real      = 1 << 4,    // LHRS - actual track
-        kTrack_L_fg        = 1 << 5,    // LHRS - first-guess reconstruction
-        kTrack_L_spread    = 1 << 6     // LHRS - spread of possible track trajectories
+        kTarget_VWires     = 1 << 4,
+        kTrack_L_real      = 1 << 5,    // LHRS - actual track
+        kTrack_L_fg        = 1 << 6,    // LHRS - first-guess reconstruction
+        kTrack_L_spread    = 1 << 7     // LHRS - spread of possible track trajectories
     };
     
     NameBit name; 
@@ -82,6 +86,9 @@ private:
     //create geometry for the production target
     void CreateProductionTargetGeometry(); 
 
+    //create geometry for the VWires 
+    void CreateVWireGeometry(unsigned int color=kBlack); 
+
     const bool is_RHRS; 
 
 public: 
@@ -109,6 +116,35 @@ Object_t* GeometryFrame::FindObject(Object_t::NameBit name)
 }
 //_______________________________________________________________________________________________________________________________
 //_______________________________________________________________________________________________________________________________
+void GeometryFrame::CreateVWireGeometry(const unsigned int color)
+{
+    //create geometry for the v-wire targets. 
+    //recall that all units are in mm
+    OpticsTarget_t V1 = ApexOptics::GetTarget("V1"); 
+    OpticsTarget_t V2 = ApexOptics::GetTarget("V2"); 
+    OpticsTarget_t V3 = ApexOptics::GetTarget("V3"); 
+    
+    const double wire_radius = 0.050; 
+    const double wire_height = 50.; 
+
+    TGeoVolume *vol = fGeom->MakeBox("vwire_box", fMedVacuum, 5., 50., 0.5*1e3*(V3.z_hcs - V1.z_hcs)); 
+    vol->SetVisibility(kFALSE); 
+
+    TGeoVolume *wire = fGeom->MakeTube("vwire", fMedAluminum, wire_radius, wire_radius, wire_height/2.); 
+    wire->SetLineColor(color); 
+
+    auto rot_zaxis = new TGeoRotation; rot_zaxis->SetAngles(0., 90., 90.);
+
+    vol->AddNodeOverlap(wire, 1, new TGeoCombiTrans(1e3*V1.x_hcs, 0., 1e3*V1.z_hcs, rot_zaxis)); 
+    vol->AddNodeOverlap(wire, 2, new TGeoCombiTrans(1e3*V2.x_hcs, 0., 1e3*V2.z_hcs, rot_zaxis)); 
+    vol->AddNodeOverlap(wire, 3, new TGeoCombiTrans(1e3*V3.x_hcs, 0., 1e3*V3.z_hcs, rot_zaxis)); 
+
+    fTopVolume->AddNodeOverlap(vol, 1, fRot_HCS); 
+
+    fObjects.push_back({.name=Object_t::kTarget_VWires, .volume=vol}); 
+
+    return; 
+}
 //_______________________________________________________________________________________________________________________________
 void GeometryFrame::CreateProductionTargetGeometry()
 {
@@ -237,6 +273,10 @@ void GeometryFrame::ButtonClicked()
 }
 //_______________________________________________________________________________________________________________________________
 
+//_______________________________________________________________________________________________________________________________
+//_______________________________________________________________________________________________________________________________
+//_______________________________________________________________________________________________________________________________
+
 
 GeometryFrame::~GeometryFrame() 
 {
@@ -344,7 +384,8 @@ void GeometryFrame::CreateGeometry()
 
     //create the production target geometry 
     CreateProductionTargetGeometry(); 
-    
+
+    CreateVWireGeometry(kBlue); 
     
 
     fTopVolume->AddNodeOverlap(xyz_axes, 1, fRot_HCS); 
@@ -381,8 +422,15 @@ GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _
     button = new TGCheckButton(this, "Prod. Tungsten foils");                   //add this button and name it
     button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
     fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
-    fButtons.push_back({Object_t::kTarget_production, button});                 //set its default state to 'on' 
+    fButtons.push_back({Object_t::kTarget_production, button});                 //add it to the list of buttons
     button->SetState(kButtonDown);                                              //set its default state to 'on' 
+
+    // -- production target
+    button = new TGCheckButton(this, "Vertical Optic Wires");                   //add this button and name it
+    button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
+    fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
+    fButtons.push_back({Object_t::kTarget_VWires, button});                     //add it to the list of buttons
+    button->SetState(kButtonUp);                                                //set its default state to 'on' 
 
 
     AddFrame(fButtonFrame, new TGLayoutHints(kLHintsLeft, 0,0,0,0)); 
@@ -398,7 +446,8 @@ GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _
     auto canv = fECanvas->GetCanvas();
     
     canv->cd(); 
-    fTopVolume->Draw(); 
+    //call this to draw only the default-drawn objects
+    ButtonClicked(); 
 
     //this creates all relevant geometry
 
