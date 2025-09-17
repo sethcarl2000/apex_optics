@@ -19,6 +19,8 @@
 #include <TVector3.h> 
 #include <TCanvas.h> 
 #include <stdexcept> 
+#include <iostream> 
+#include <algorithm> 
 
 //TGMainFrame windows
 #include <TGWindow.h> 
@@ -29,7 +31,7 @@
 
 using namespace std; 
 //this is an enum to track which objects are drawn 
-namespace Objects {
+struct Object_t { 
     enum NameBit : char16_t {
         kNone       = 0, 
         kSieve_LHRS = 1 << 0,           //left sieve 
@@ -40,83 +42,92 @@ namespace Objects {
         kTrack_L_fg        = 1 << 5,    // LHRS - first-guess reconstruction
         kTrack_L_spread    = 1 << 6     // LHRS - spread of possible track trajectories
     };
-}
+    
+    NameBit name; 
+    TGeoVolume* volume=nullptr; 
+
+    bool operator==(const Object_t& rhs) const { return rhs.name == name; }
+};
 //the definition of our geometry class
 //_______________________________________________________________________________________________________________________________
 class GeometryFrame : public TGMainFrame {
 private: 
-    TGVerticalFrame *fCanvFrame; 
+    TGHorizontalFrame *fCanvFrame; 
+    TGHorizontalFrame *fButtonFrame; 
+
     TRootEmbeddedCanvas *fECanvas; 
 
     TGeoManager *fGeom; 
+    TGeoVolume *fTopVolume; 
 
-    Objects::NameBit fDrawnObjects = Objects::kNone; 
+    TGeoMedium *fMedVacuum; 
+    TGeoMedium *fMedAluminum; 
+
+    Object_t::NameBit fDrawnObjects = Object_t::kNone; 
+
+    std::vector<Object_t> fObjects{}; 
+    std::vector<std::pair<Object_t::NameBit,TGCheckButton*>> fButtons{}; 
 
     //a map of buttons, whith their associated name-bit. 
-    std::vector<std::map<Objects::NameBit, TGCheckButton*>> fButtons{}; 
+    Object_t* FindObject(Object_t::NameBit name); 
 
     void CreateGeometry(); 
 
+    void CreateSieveGeometry(const bool arm_is_RHRS); 
+    
     const bool is_RHRS; 
 
 public: 
     GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool is_RHRS=false); 
     ~GeometryFrame(); 
 
+    void ButtonClicked(); 
+
     ClassDef(GeometryFrame,1); 
 };
 //_______________________________________________________________________________________________________________________________
 
-GeometryFrame::~GeometryFrame() 
+//_______________________________________________________________________________________________________________________________
+Object_t* GeometryFrame::FindObject(Object_t::NameBit name)
 {
-    fGeom->~TGeoManager(); 
-    Cleanup(); 
-}
+    //find an object with the given namebit 
+    auto it = std::find_if( fObjects.begin(), fObjects.end(), [name](const Object_t& obj){ return obj.name == name; });
 
-void GeometryFrame::CreateGeometry() 
-{
-    if (!fECanvas || !fECanvas->GetCanvas()) {
-        return; 
+    if (it == fObjects.end()) {
+        throw invalid_argument("in <GeometryFrame::FindObject>: invalid object name bit given."); 
+        return nullptr; 
     }
- 
-    //noop  
-    fGeom = new TGeoManager("simple1", "Simple geometry");
 
-    //--- define some materials
-    TGeoMaterial *mat_vacuum = new TGeoMaterial("Vacuum", 0, 0, 0);
-    TGeoMaterial *mat_Al     = new TGeoMaterial("Al", 26.98, 13, 2.7);
-
-    //--- define some media
-    TGeoMedium *vacuum  = new TGeoMedium("Vacuum", 1, mat_vacuum);
-    TGeoMedium *Al      = new TGeoMedium("Al", 2, mat_Al);
-
-    //create the world box
-    TGeoVolume *top = fGeom->MakeBox("top", vacuum, 200., 200., 200.);     
-    top->SetVisibility(false); 
-    fGeom->SetTopVolume(top); 
-
+    return &(*it); 
+}
+//_______________________________________________________________________________________________________________________________
+//_______________________________________________________________________________________________________________________________
+//_______________________________________________________________________________________________________________________________
+//_______________________________________________________________________________________________________________________________
+void GeometryFrame::CreateSieveGeometry(const bool arm_is_RHRS)
+{   
     //now, get ready to make a box for the sieve
     const double sieve_depth    = 12.7  /2.; 
     const double sieve_width    = 107.95/2.; 
     const double sieve_height   = 82.55 /2.;
 
-    TGeoVolume *sieve_vol = fGeom->MakeBox("sieve_box", vacuum, sieve_width, sieve_height, sieve_depth); 
+    TGeoVolume *sieve_vol = fGeom->MakeBox(Form("sieve_box_%s",arm_is_RHRS?"R":"L"), fMedVacuum, sieve_width, sieve_height, sieve_depth); 
     sieve_vol->SetVisibility(kFALSE); 
 
-    TGeoVolume *sieve = fGeom->MakeBox("sieve", Al, sieve_width, sieve_height, sieve_depth);     
+    TGeoVolume *sieve = fGeom->MakeBox("sieve", fMedAluminum, sieve_width, sieve_height, sieve_depth);     
 
     //two possible hole radii
     const double holeR_small = 0.6985; 
     const double holeR_big   = 1.3462; 
 
-    TGeoVolume *hole_small = fGeom->MakeTube("small_hole", vacuum, holeR_small, holeR_small, 0.);
+    TGeoVolume *hole_small = fGeom->MakeTube("small_hole", fMedVacuum, holeR_small, holeR_small, 0.);
     //hole_small->SetLineColor(kBlack); 
     //hole_small->SetVisibility(kTRUE); 
 
-    TGeoVolume *hole_big   = fGeom->MakeTube("big_hole",   vacuum, holeR_big, holeR_big, 0.); 
+    TGeoVolume *hole_big   = fGeom->MakeTube("big_hole",   fMedVacuum, holeR_big, holeR_big, 0.); 
 
     //now, we're ready to draw the sieve-holes. 
-    vector<SieveHole> sieve_holes = ApexOptics::ConstructSieveHoles(is_RHRS); 
+    vector<SieveHole> sieve_holes = ApexOptics::ConstructSieveHoles(arm_is_RHRS); 
 
     int i_hole_small=1;
     int i_hole_big=1; 
@@ -134,22 +145,92 @@ void GeometryFrame::CreateGeometry()
     }
     sieve_vol->AddNodeOverlap(sieve, 1); 
 
+    Object_t::NameBit name = arm_is_RHRS ? Object_t::kSieve_RHRS : Object_t::kSieve_LHRS; 
+
+    //this fcn returns the value to us in radians, so we need to convert to degrees. 
+    const double sieve_angle = ApexOptics::Get_sieve_angle(arm_is_RHRS) * (180./TMath::Pi()); 
+    
+    TGeoRotation *rot_sieve = new TGeoRotation; 
+    rot_sieve->SetAngles(90. + sieve_angle, 90., -90.); 
+    
+    //convert form meters to mm
+    auto sieve_pos = ApexOptics::Get_sieve_pos(arm_is_RHRS); 
+
+    //set the z-coordinate to 0, before we convert to HCS
+    sieve_pos[2] = 0.; 
+    sieve_pos = ApexOptics::SCS_to_HCS(arm_is_RHRS, sieve_pos) * 1e3; 
+
+    auto trans_sieve = new TGeoCombiTrans( sieve_pos.z(), sieve_pos.x(), sieve_pos.y(), rot_sieve); 
+    
+    fTopVolume->AddNodeOverlap(sieve_vol, 1, trans_sieve); 
+
+    fObjects.push_back({.name=name, .volume=sieve_vol}); 
+
+    return; 
+}
+//_______________________________________________________________________________________________________________________________
+void GeometryFrame::ButtonClicked()
+{
+    fDrawnObjects = Object_t::kNone; 
+    for (auto& button : fButtons) {
+        if (button.second && button.second->IsOn()) fDrawnObjects = Object_t::NameBit( fDrawnObjects | button.first ); 
+    }
+
+    for (auto & obj : fObjects) {
+        if (!obj.volume) continue; 
+        //if the bit for this object is set to 'true', then draw it. 
+        if (fDrawnObjects & obj.name) { 
+            obj.volume->SetVisDaughters(kTRUE);
+        } else { 
+            obj.volume->SetVisDaughters(kFALSE); 
+        }
+    }
+
+    if (fECanvas->GetCanvas()) fECanvas->GetCanvas()->cd(); 
+    if (fTopVolume) fTopVolume->Draw();   
+}
+
+GeometryFrame::~GeometryFrame() 
+{
+    fGeom->~TGeoManager(); 
+    Cleanup(); 
+}
+//_______________________________________________________________________________________________________________________________
+void GeometryFrame::CreateGeometry() 
+{
+    //noop  
+    fGeom = new TGeoManager("simple1", "Simple geometry");
+
+    //--- define some materials
+    TGeoMaterial *mat_vacuum = new TGeoMaterial("Vacuum", 0, 0, 0);
+    TGeoMaterial *mat_Al     = new TGeoMaterial("Al", 26.98, 13, 2.7);
+
+    //--- define some media
+    fMedVacuum   = new TGeoMedium("Vacuum", 1, mat_vacuum);
+    fMedAluminum = new TGeoMedium("Al", 2, mat_Al);
+
+    //create the world box
+    fTopVolume = fGeom->MakeBox("top", fMedVacuum, 200., 200., 200.);     
+    fTopVolume->SetVisibility(false); 
+    fGeom->SetTopVolume(fTopVolume); 
+
+
     //create a set of axes 
     const double axes_size = 50.; 
     const unsigned int axis_color = kBlack; 
-    TGeoVolume *xyz_axes = fGeom->MakeBox("axes", vacuum, axes_size, axes_size, axes_size); 
+    TGeoVolume *xyz_axes = fGeom->MakeBox("axes", fMedVacuum, axes_size, axes_size, axes_size); 
     xyz_axes->SetVisibility(kFALSE); 
     {
-        TGeoVolume *single_axis = fGeom->MakeBox("single_axis", vacuum, axes_size, axes_size/10., axes_size/10.); 
+        TGeoVolume *single_axis = fGeom->MakeBox("single_axis", fMedVacuum, axes_size, axes_size/10., axes_size/10.); 
         single_axis->SetVisibility(kFALSE); 
         
         TGeoRotation *single_axis_rot = new TGeoRotation; 
         single_axis_rot->SetAngles(90., 90., 0.); 
 
-        TGeoVolume *axis_stick = fGeom->MakeTube("axis_stick", Al, axes_size/100., axes_size/100., axes_size*0.8); 
+        TGeoVolume *axis_stick = fGeom->MakeTube("axis_stick", fMedAluminum, axes_size/100., axes_size/100., axes_size*0.8); 
         axis_stick->SetLineColor(axis_color); 
 
-        TGeoVolume *axis_cone  = fGeom->MakeCone("axis_cone", Al, axes_size*0.2, 0., axes_size*0.1, 0., 0.);
+        TGeoVolume *axis_cone  = fGeom->MakeCone("axis_cone", fMedAluminum, axes_size*0.2, 0., axes_size*0.1, 0., 0.);
         axis_cone ->SetLineColor(axis_color);  
         
         single_axis->AddNodeOverlap(axis_stick, 1, new TGeoCombiTrans(axes_size*0.8, 0., 0., single_axis_rot)); 
@@ -162,10 +243,10 @@ void GeometryFrame::CreateGeometry()
         //create letters
         const double letter_size = axes_size/10.; 
         //long letter stem
-        TGeoVolume *letter_barL = fGeom->MakeBox("xbarL", Al, letter_size, axes_size/100., axes_size/100.); 
+        TGeoVolume *letter_barL = fGeom->MakeBox("xbarL", fMedAluminum, letter_size, axes_size/100., axes_size/100.); 
         letter_barL->SetLineColor(axis_color);
         //short letter stem
-        TGeoVolume *letter_barS = fGeom->MakeBox("xbarS", Al, letter_size/2., axes_size/100., axes_size/100.); 
+        TGeoVolume *letter_barS = fGeom->MakeBox("xbarS", fMedAluminum, letter_size/2., axes_size/100., axes_size/100.); 
         letter_barS->SetLineColor(axis_color);
 
         //rotations to be used for letters
@@ -175,14 +256,14 @@ void GeometryFrame::CreateGeometry()
         auto rot_90  = new TGeoRotation; rot_90 ->SetAngles(90., 0., 0.); 
 
         //create 'X' 
-        TGeoVolume *name_x = fGeom->MakeBox("X", vacuum, letter_size, letter_size, letter_size);
+        TGeoVolume *name_x = fGeom->MakeBox("X", fMedVacuum, letter_size, letter_size, letter_size);
         name_x->SetVisibility(kFALSE); 
          
         name_x->AddNodeOverlap(letter_barL, 1, rot_45m); 
         name_x->AddNodeOverlap(letter_barL, 2, rot_45p); 
 
         //create 'Y' 
-        TGeoVolume *name_y = fGeom->MakeBox("Y", vacuum, letter_size, letter_size, letter_size); 
+        TGeoVolume *name_y = fGeom->MakeBox("Y", fMedVacuum, letter_size, letter_size, letter_size); 
         name_y->SetVisibility(kFALSE); 
 
         name_y->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans(  letter_size/(2.*sqrt(2.)), -letter_size/(2.*sqrt(2.)), 0., rot_45m)); 
@@ -190,12 +271,12 @@ void GeometryFrame::CreateGeometry()
         name_y->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_0)); 
 
         //create 'Z'
-        TGeoVolume *name_z = fGeom->MakeBox("Z", vacuum, letter_size, letter_size, letter_size); 
+        TGeoVolume *name_z = fGeom->MakeBox("Z", fMedVacuum, letter_size, letter_size, letter_size); 
         name_z->SetVisibility(kFALSE); 
 
         name_z->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans( +letter_size/2., 0., 0., rot_90)); 
         name_z->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_90)); 
-        auto letter_barLsqrt2 = fGeom->MakeBox("xbarLsqrt2", Al, letter_size*sqrt(2.), axes_size/100., axes_size/100.);
+        auto letter_barLsqrt2 = fGeom->MakeBox("xbarLsqrt2", fMedAluminum, letter_size*sqrt(2.), axes_size/100., axes_size/100.);
         name_z->AddNodeOverlap(letter_barL, 1, new TGeoCombiTrans( 0., 0., 0., rot_45p)); 
 
         xyz_axes->AddNodeOverlap(single_axis, 1, rot_xaxis); xyz_axes->AddNodeOverlap(name_x, 1, new TGeoCombiTrans(axes_size*2.2, 0., 0., rot_xaxis)); 
@@ -206,63 +287,64 @@ void GeometryFrame::CreateGeometry()
     // -muon 
 
     //now, we're ready to add the sieve-holes
+    CreateSieveGeometry(true);  //RHRS 
+    CreateSieveGeometry(false); //LHRS
     
-    //this fcn returns the value to us in radians, so we need to convert to degrees. 
-    const double sieve_angle = ApexOptics::Get_sieve_angle(is_RHRS) * (180./TMath::Pi()); 
-    
-    TGeoRotation *rot_sieve = new TGeoRotation; 
-    rot_sieve->SetAngles(90. + sieve_angle, 90., -90.); 
-    
-    //convert form meters to mm
-    auto sieve_pos = ApexOptics::Get_sieve_pos(is_RHRS); 
-
-    //set the z-coordinate to 0, before we convert to HCS
-    sieve_pos[2] = 0.; 
-    sieve_pos = ApexOptics::SCS_to_HCS(is_RHRS, sieve_pos) * 1e3; 
-
-    auto trans_sieve = new TGeoCombiTrans( sieve_pos.z(), sieve_pos.x(), sieve_pos.y(), rot_sieve); 
-    
-    top->AddNodeOverlap(sieve_vol, 1, trans_sieve); 
-
     //draw HCS coordinate axes
     auto rot_HCS = new TGeoRotation; 
     rot_HCS->SetAngles(90., 90., 0.); 
 
-    top->AddNodeOverlap(xyz_axes, 1, rot_HCS); 
+    fTopVolume->AddNodeOverlap(xyz_axes, 1, rot_HCS); 
 
     fGeom->CloseGeometry();  
-
-    fECanvas->GetCanvas()->cd();
-
-    top->Draw(); 
 }
-
+//_______________________________________________________________________________________________________________________________
 //_______________________________________________________________________________________________________________________________
 GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _is_RHRS)
     : TGMainFrame(p, w, h), is_RHRS(_is_RHRS)
 {
+    CreateGeometry(); 
+
+    //create the button frame
+    fButtonFrame = new TGHorizontalFrame(this, 100, 800); 
+
+    TGCheckButton *button=nullptr; 
+
+    button = new TGCheckButton(this, "LHRS sieve"); 
+    button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
+    fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
+    fButtons.push_back({Object_t::kSieve_LHRS, button}); 
+
+    button = new TGCheckButton(this, "RHRS sieve"); 
+    button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
+    fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
+    fButtons.push_back({Object_t::kSieve_RHRS, button}); 
+
+    AddFrame(fButtonFrame, new TGLayoutHints(kLHintsLeft, 0,0,0,0)); 
+
     
     //now, we're ready to draw the geometry in our interactive window. 
-    fCanvFrame = new TGVerticalFrame(this, 1600, 800); 
+    fCanvFrame = new TGHorizontalFrame(this, 1600, 800); 
     
     fECanvas = new TRootEmbeddedCanvas("canvas_geom", fCanvFrame, 1600, 800); 
 
-    fCanvFrame->AddFrame(fECanvas, new TGLayoutHints(kLHintsRight | kLHintsExpandX | kLHintsCenterY | kLHintsExpandY, 0, 0, 5, 5)); 
+    fCanvFrame->AddFrame(fECanvas, new TGLayoutHints(kLHintsRight | kLHintsExpandX | kLHintsExpandY, 0, 0, 5, 5)); 
 
     auto canv = fECanvas->GetCanvas();
     
     canv->cd(); 
-    
+    fTopVolume->Draw(); 
+
     //this creates all relevant geometry
-    CreateGeometry(); 
 
-
-    AddFrame(fCanvFrame, new TGLayoutHints(kLHintsCenterX | kLHintsExpandX | kLHintsCenterY | kLHintsExpandY, 0, 0, 0, 0)); 
+    AddFrame(fCanvFrame, new TGLayoutHints(kLHintsRight | kLHintsExpandX, 0, 0, 0, 0)); 
 
     SetWindowName("Sieve geometry");
     MapSubwindows();
     Resize(GetDefaultSize());
     MapWindow();
+
+
 }
 //_______________________________________________________________________________________________________________________________
 
