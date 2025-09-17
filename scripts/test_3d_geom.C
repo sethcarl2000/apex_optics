@@ -22,6 +22,10 @@
 #include <iostream> 
 #include <algorithm> 
 #include <cstdio>
+#include <TVirtualGeoTrack.h> 
+#include <TGeoTrack.h> 
+#include <TParticle.h> 
+#include <ROOT/RVec.hxx>
 
 //TGMainFrame windows
 #include <TGWindow.h> 
@@ -32,6 +36,8 @@
 
 using namespace std; 
 using ApexOptics::OpticsTarget_t; 
+using ApexOptics::Trajectory_t; 
+using namespace ROOT::VecOps; 
 
 
 //this is an enum to track which objects are drawn 
@@ -45,7 +51,7 @@ struct Object_t {
         kTarget_VWires     = 1 << 4,
         kTrack_L_real      = 1 << 5,    // LHRS - actual track
         kTrack_L_fg        = 1 << 6,    // LHRS - first-guess reconstruction
-        kTrack_L_spread    = 1 << 7,    // LHRS - spread of possible track trajectories
+        kTrack_L_fan       = 1 << 7,    // LHRS - spread of possible track trajectories
         kHCS_axes          = 1 << 8
     };
     
@@ -96,6 +102,19 @@ private:
 
     //create geometry for the beam
     void CreateBeamGeometry(const double x_hcs, const double y_hcs, unsigned int color=kRed); 
+
+    //create track geometry
+    struct Track_t { 
+        double x_sv, y_sv; 
+        TVector3 vtx_hcs; 
+        bool is_RHRS=false; 
+        TGeoTrack* geo_track=nullptr; 
+    }; 
+    void CreateTrackGeometry(const bool is_RHRS, GeometryFrame::Track_t& track, unsigned int color=kRed);
+
+    std::vector<Track_t> fTracks_fan{}; 
+    Track_t fTrack_real; 
+    Track_t fTrack_first_guess; 
 
     const bool is_RHRS; 
 
@@ -304,6 +323,33 @@ void GeometryFrame::ButtonClicked()
 
     if (fECanvas->GetCanvas()) fECanvas->GetCanvas()->cd(); 
     if (fTopVolume) fTopVolume->Draw();   
+
+    const unsigned int color_real   = kRed; 
+    const unsigned int color_fg     = kBlue; 
+    const unsigned int color_fan    = kBlue; 
+
+    //handle track drawing
+    // -- real
+    if (fDrawnObjects & Object_t::kTrack_L_real) {
+        fTrack_real.geo_track->SetLineColorAlpha(color_real, 1.); 
+        fTrack_real.geo_track->Draw(); 
+    }
+
+    // -- fan
+    if (fDrawnObjects & Object_t::kTrack_L_fan) {
+        for (auto& track : fTracks_fan) {
+            track.geo_track->SetLineColorAlpha(color_real, 1.); 
+            track.geo_track->Draw(); 
+        }
+    }
+
+    // -- first-guess forward
+    if (fDrawnObjects & Object_t::kTrack_L_fg) {
+        fTrack_first_guess.geo_track->SetLineColorAlpha(color_fan, 0.15); 
+        fTrack_first_guess.geo_track->Draw();
+    } 
+    
+    return; 
 }
 //_______________________________________________________________________________________________________________________________
 
@@ -378,6 +424,248 @@ TGeoVolume* GeometryFrame::CreateAxesGeometry(const double axes_size=50., const 
     return xyz_axes; 
 }
 //_______________________________________________________________________________________________________________________________
+void GeometryFrame::CreateTrackGeometry(const bool is_RHRS, GeometryFrame::Track_t& real_track, unsigned int color)
+{
+    const char* const here = "draw_trajectory_fan"; 
+
+    const vector<string> branches_sv{
+        "x_sv",
+        "y_sv",
+        "dxdz_sv",
+        "dydz_sv",
+        "dpp_sv"
+    }; 
+
+    const vector<string> branches_fp{
+        "x_fp",
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp"
+    }; 
+
+    const char* path_poly_fp_sv = "data/csv/poly_prod_fp_sv_L_6ord.dat"; 
+    const char* path_poly_sv_fp = "data/csv/poly_prod_sv_fp_L_6ord.dat"; 
+
+    //try to parse the NPolyArray-s from the given db-files
+    NPolyArray parr_fp_sv, parr_sv_fp; 
+    try {
+        parr_fp_sv = ApexOptics::Parse_NPolyArray_from_file(path_poly_fp_sv, branches_sv, 4); 
+        parr_sv_fp = ApexOptics::Parse_NPolyArray_from_file(path_poly_sv_fp, branches_fp, 5); 
+    
+    } catch (const std::exception& e) {
+
+        Error(here, "Exception caught trying to parse NPolyArray db-files.\n what(): %s", e.what()); 
+        return; 
+    }
+
+    //this function takes a starting vertex (in HCS), and a target position on the sieve-face, and given dp/p momentum parameter, 
+    //and generates a 'Trajectory_t' in SCS 
+    auto Generate_test_trajectory = [&](TVector3 react_vertex, double x_sv, double y_sv, double dpp)
+    {
+        //first, convert the TVector3 to SCS. 
+        react_vertex.RotateY( -ApexOptics::Get_sieve_angle(is_RHRS) ); 
+        react_vertex.RotateZ( TMath::Pi()/2. ); 
+
+        react_vertex += -ApexOptics::Get_sieve_pos(is_RHRS);
+
+        //now compute the 'angles' in scs, using the intercept with the sieve-face
+        double dxdz = ( x_sv - react_vertex.x() )/( 0. - react_vertex.z() ); 
+        double dydz = ( y_sv - react_vertex.y() )/( 0. - react_vertex.z() ); 
+
+        //return a Trajectory_t struct with all this information 
+        return Trajectory_t{ 
+            .x    = x_sv, 
+            .y    = y_sv, 
+            .dxdz = dxdz, 
+            .dydz = dydz, 
+            .dpp  = dpp
+        }; 
+    }; 
+
+    
+
+    const double center_dpp = +0.000; 
+
+    vector<Trajectory_t> test_trajectories{};
+
+    TVector3 react_vtx_center = real_track.vtx_hcs * 1e-3; 
+
+    const double z_target = react_vtx_center.z(); 
+
+
+    Trajectory_t real_traj = Generate_test_trajectory(react_vtx_center, real_track.x_sv, real_track.y_sv, center_dpp); 
+
+    //the max +/- level of dp/p to search. 
+    const double dpp_search_range = 0.50e-3; 
+
+    //double this number +1 is the nubmer of 'trajectory points' to draw
+    const size_t half_trajectory_points = 20; 
+
+    //first, try to find the 'focal plane coordinate' cooresponding to this trajectory. 
+
+    auto Xfp_rvec = parr_sv_fp.Eval(ApexOptics::Trajectory_t_to_RVec(real_traj));  
+
+    auto Xsv_fwd_rvec = parr_fp_sv.Eval(Xfp_rvec); 
+
+    const RVec<double> Xsv_rvec_actual = ApexOptics::Trajectory_t_to_RVec(real_traj); 
+
+    Trajectory_t traj_fwd_model = ApexOptics::RVec_to_Trajectory_t(Xsv_fwd_rvec);
+
+    //cout << "new traj.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" << endl; 
+    //printf("traj (real vs fwd-model:)  {x,y,dxdz,dydz,dpp}:\n"); 
+    //printf(" -- {%+.4f,%+.4f,%+.4f,%+.4f,%+.4f}\n", traj.x, traj.y, traj.dxdz, traj.dydz, traj.dpp); 
+    //printf(" -- {%+.4f,%+.4f,%+.4f,%+.4f,%+.4f}\n", traj_fwd_model.x, traj_fwd_model.y, traj_fwd_model.dxdz, traj_fwd_model.dydz, traj_fwd_model.dpp); 
+    
+    const double error_threshold = 1e-9; 
+
+    auto rvec_mag = [](const RVec<double>& V) { double val=0.; for(const auto& x : V) { val += x*x; } return sqrt(val); }; 
+
+    //now, iterate to a Xsv coordinate which 'matches' the Xfp coordinate. 
+    auto Xsv_rvec = Xsv_fwd_rvec;
+    
+    printf(" after %i iterations, final error: % .3e\n", 
+        parr_sv_fp.Iterate_to_root(Xsv_rvec, Xfp_rvec, 15, error_threshold), 
+        rvec_mag(Xfp_rvec - parr_sv_fp.Eval(Xsv_rvec))
+    ); 
+
+    //now, let's do our little dance of finding 'adjacent' trajectories to draw. 
+    auto Find_next_traj = [&](RVec<double> Xsv, const double d_dpp) 
+    {
+        auto J = parr_sv_fp.Jacobian(Xsv_rvec); 
+
+        //the last column of this jacobian corresponds to dp/p. since this is the variable we will be varying, we will 
+        RVec<double> J4{ 
+            -J.at(0,4),
+            -J.at(1,4), 
+            -J.at(2,4), 
+            -J.at(3,4)
+        }; 
+
+        RMatrix Ji(4,4, {
+            J.at(0,0), J.at(0,1), J.at(0,2), J.at(0,3),
+            J.at(1,0), J.at(1,1), J.at(1,2), J.at(1,3),
+            J.at(2,0), J.at(2,1), J.at(2,2), J.at(2,3),
+            J.at(3,0), J.at(3,1), J.at(3,2), J.at(3,3)
+        }); 
+
+        auto dX = Ji.Solve( J4 ); 
+
+        if (dX.empty()) return RVec<double>{}; 
+        for (double x : dX) { if (x != x) return RVec<double>{}; }
+        
+        dX *= d_dpp; 
+
+        dX.push_back( d_dpp ); 
+
+        Xsv += dX; 
+
+        //now, iterate to 'correct' whatever small error may be in our linear extrapolation 'Xsv += dX' 
+        parr_sv_fp.Iterate_to_root(Xsv, Xfp_rvec, 15, 1e-10); 
+
+        return Xsv; 
+    }; 
+    //_________________________________________________________________________________________________
+    
+    
+    const double d_dpp = dpp_search_range/((double)half_trajectory_points-1); 
+
+    //if the next vector is further than this, then quit finding new points (something is wrong!)
+    const double max_dist_to_next = d_dpp * 20.; 
+
+    vector<Trajectory_t> trajectories_forward; 
+
+    auto Xsv_next = Xsv_rvec; 
+    
+    for (size_t i=0; i<half_trajectory_points; i++) {
+        
+        Xsv_next = Find_next_traj(Xsv_next, d_dpp); 
+
+        //this happens if the 'Find_next_traj' fails for some reason. if so, stop finding new points. 
+        if (Xsv_next.size() != 5) break; 
+
+        trajectories_forward.push_back( ApexOptics::RVec_to_Trajectory_t(Xsv_next) ); 
+    }
+
+    //now, find the 'backward' trajectories
+    vector<Trajectory_t> trajectories_backward;
+    
+    Xsv_next = Xsv_rvec; 
+
+    for (size_t i=0; i<half_trajectory_points; i++) {
+
+        auto Xsv_new = Find_next_traj(Xsv_next, -1.*d_dpp); 
+
+        //this happens if the 'Find_next_traj' fails for some reason. if so, stop finding new points. 
+        if (Xsv_next.size() != 5) break; 
+        
+        //check if the new vector has changed too much. if so, something has gone wrong in the iteration process
+        if (rvec_mag(Xsv_next - Xsv_new) > max_dist_to_next) break; 
+
+        //check if the momentum is 'out of range' of the maximum search range
+        if (fabs(Xsv_next[4] - real_traj.dpp) > dpp_search_range) break; 
+
+        Xsv_next = Xsv_new; 
+
+        trajectories_backward.push_back( ApexOptics::RVec_to_Trajectory_t(Xsv_next) );
+    }
+
+    //now we're done. make the vectors. 
+    cout << "number of trajectories (fwd/back): " 
+            << trajectories_forward.size() << " / " 
+            << trajectories_backward.size() << endl; 
+
+    //now, combine them all in one vector. 
+    vector<Trajectory_t> trajectories;
+    trajectories.reserve( trajectories_forward.size() + trajectories_backward.size() + 1 );
+    
+    for (int i=trajectories_backward.size()-1; i>=0; i--) 
+        trajectories.push_back( trajectories_backward.at(i) ); 
+    
+    trajectories.push_back( ApexOptics::RVec_to_Trajectory_t(Xsv_rvec) ); 
+
+    for (int i=0; i<trajectories_forward.size(); i++) 
+        trajectories.push_back( trajectories_forward.at(i) ); 
+
+    
+    //now, convert this data to tracks. 
+    int i_track=100; 
+
+    auto Trajectory_t_to_Track_t = [&](Trajectory_t traj)
+    {
+        Track_t track; 
+
+        track.x_sv = traj.x * 1e3; 
+        track.y_sv = traj.y * 1e3; 
+
+        TVector3 pt_sieve = ApexOptics::SCS_to_HCS(is_RHRS, TVector3(traj.x, traj.y, 0.)); 
+
+        auto traj_hcs = ApexOptics::SCS_to_HCS(is_RHRS, traj); 
+
+        double x_target = traj_hcs.x + (traj_hcs.dxdz * z_target); 
+        double y_target = traj_hcs.y + (traj_hcs.dydz * z_target);     
+
+        track.vtx_hcs = TVector3(x_target, y_target, z_target) * 1e3; 
+        track.is_RHRS = is_RHRS; 
+
+        track.geo_track = (TGeoTrack*)fGeom->MakeTrack(i_track++, 0., nullptr); 
+
+        track.geo_track->AddPoint(track.vtx_hcs.z(), track.vtx_hcs.x(), track.vtx_hcs.y(), 0.); 
+        track.geo_track->AddPoint(1e3*pt_sieve.z(),  1e3*pt_sieve.x(),  1e3*pt_sieve.y(),  1.); 
+
+        return track; 
+    };
+
+    real_track         = Trajectory_t_to_Track_t(real_traj); 
+    fTrack_first_guess = Trajectory_t_to_Track_t(traj_fwd_model); 
+
+    fTracks_fan.clear(); 
+    for (auto traj : trajectories) fTracks_fan.push_back( Trajectory_t_to_Track_t(traj) ); 
+
+    fGeom->SetTminTmax(0., 1.); 
+    
+    //fGeom->DrawTracks(); 
+    return; 
+}
 //_______________________________________________________________________________________________________________________________
 //_______________________________________________________________________________________________________________________________
 
@@ -428,10 +716,15 @@ void GeometryFrame::CreateGeometry()
    
     //create the beam geometry
     CreateBeamGeometry(0., 0.); 
+
+    //create the track geometry
+    fTrack_real = Track_t{.x_sv=-25e-3, .y_sv=-25e-3, .vtx_hcs=TVector3(0., 0., 36.281)}; 
+    CreateTrackGeometry(is_RHRS, fTrack_real); 
     
     fGeom->CloseGeometry();  
 }
 //_______________________________________________________________________________________________________________________________
+
 //_______________________________________________________________________________________________________________________________
 GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _is_RHRS)
     : TGMainFrame(p, w, h), is_RHRS(_is_RHRS)
@@ -478,6 +771,26 @@ GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _
     fButtons.push_back({Object_t::kBeam, button});                              //add it to the list of buttons
     button->SetState(kButtonUp);                                                //set its default state to 'on' 
 
+    // -- 'real' track
+    button = new TGCheckButton(this, "Real Track");                             //add this button and name it
+    button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
+    fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
+    fButtons.push_back({Object_t::kTrack_L_real, button});                      //add it to the list of buttons
+    button->SetState(kButtonUp);                                                //set its default state to 'on' 
+
+    // -- 'first guess' reconstructed track
+    button = new TGCheckButton(this, "Forward Reco.");                          //add this button and name it
+    button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
+    fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
+    fButtons.push_back({Object_t::kTrack_L_fg, button});                        //add it to the list of buttons
+    button->SetState(kButtonUp);                                                //set its default state to 'on' 
+
+    // -- 'fan' of reconstructed tracks
+    button = new TGCheckButton(this, "Trajectory Spread");                      //add this button and name it
+    button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
+    fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
+    fButtons.push_back({Object_t::kTrack_L_fan, button});                       //add it to the list of buttons
+    button->SetState(kButtonUp);                                                //set its default state to 'on' 
 
     AddFrame(fButtonFrame, new TGLayoutHints(kLHintsLeft, 0,0,0,0)); 
 
