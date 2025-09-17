@@ -44,7 +44,8 @@ struct Object_t {
         kTarget_VWires     = 1 << 4,
         kTrack_L_real      = 1 << 5,    // LHRS - actual track
         kTrack_L_fg        = 1 << 6,    // LHRS - first-guess reconstruction
-        kTrack_L_spread    = 1 << 7     // LHRS - spread of possible track trajectories
+        kTrack_L_spread    = 1 << 7,    // LHRS - spread of possible track trajectories
+        kHCS_axes          = 1 << 8
     };
     
     NameBit name; 
@@ -79,6 +80,9 @@ private:
 
     //create geometry
     void CreateGeometry(); 
+
+    //create a set of axes
+    TGeoVolume* CreateAxesGeometry(const double axes_size=50., unsigned int color=kBlack); 
 
     //create geometry for the left (or right) sieve
     void CreateSieveGeometry(const bool arm_is_RHRS); 
@@ -273,6 +277,76 @@ void GeometryFrame::ButtonClicked()
 }
 //_______________________________________________________________________________________________________________________________
 
+TGeoVolume* GeometryFrame::CreateAxesGeometry(const double axes_size=50., const unsigned int color)
+{
+    //create a set of axes, with the given orientation, position, size and color. 
+    //create a set of axes 
+    TGeoVolume *xyz_axes = fGeom->MakeBox("axes", fMedVacuum, axes_size, axes_size, axes_size); 
+    xyz_axes->SetVisibility(kFALSE); 
+    
+    TGeoVolume *single_axis = fGeom->MakeBox("single_axis", fMedVacuum, axes_size, axes_size/10., axes_size/10.); 
+    single_axis->SetVisibility(kFALSE); 
+    
+    TGeoRotation *single_axis_rot = new TGeoRotation; 
+    single_axis_rot->SetAngles(90., 90., 0.); 
+
+    TGeoVolume *axis_stick = fGeom->MakeTube("axis_stick", fMedAluminum, axes_size/100., axes_size/100., axes_size*0.8); 
+    axis_stick->SetLineColor(color); 
+
+    TGeoVolume *axis_cone  = fGeom->MakeCone("axis_cone", fMedAluminum, axes_size*0.2, 0., axes_size*0.1, 0., 0.);
+    axis_cone ->SetLineColor(color);  
+    
+    single_axis->AddNodeOverlap(axis_stick, 1, new TGeoCombiTrans(axes_size*0.8, 0., 0., single_axis_rot)); 
+    single_axis->AddNodeOverlap(axis_cone,  1, new TGeoCombiTrans(axes_size*1.8, 0., 0., single_axis_rot)); 
+
+    auto rot_xaxis = new TGeoRotation; rot_xaxis->SetAngles(0., 0., 0.); 
+    auto rot_yaxis = new TGeoRotation; rot_yaxis->SetAngles(90., 0., 0.); 
+    auto rot_zaxis = new TGeoRotation; rot_zaxis->SetAngles(0., 90., 90.);
+    
+    //create letters
+    const double letter_size = axes_size/10.; 
+    //long letter stem
+    TGeoVolume *letter_barL = fGeom->MakeBox("xbarL", fMedAluminum, letter_size, axes_size/100., axes_size/100.); 
+    letter_barL->SetLineColor(color);
+    //short letter stem
+    TGeoVolume *letter_barS = fGeom->MakeBox("xbarS", fMedAluminum, letter_size/2., axes_size/100., axes_size/100.); 
+    letter_barS->SetLineColor(color);
+
+    //rotations to be used for letters
+    auto rot_45p = new TGeoRotation; rot_45p->SetAngles(45., 0., 0.); 
+    auto rot_0   = new TGeoRotation; rot_0  ->SetAngles(0., 0., 0.); 
+    auto rot_45m = new TGeoRotation; rot_45m->SetAngles(-45., 0., 0.);
+    auto rot_90  = new TGeoRotation; rot_90 ->SetAngles(90., 0., 0.); 
+
+    //create 'X' 
+    TGeoVolume *name_x = fGeom->MakeBox("X", fMedVacuum, letter_size, letter_size, letter_size);
+    name_x->SetVisibility(kFALSE); 
+        
+    name_x->AddNodeOverlap(letter_barL, 1, rot_45m); 
+    name_x->AddNodeOverlap(letter_barL, 2, rot_45p); 
+
+    //create 'Y' 
+    TGeoVolume *name_y = fGeom->MakeBox("Y", fMedVacuum, letter_size, letter_size, letter_size); 
+    name_y->SetVisibility(kFALSE); 
+
+    name_y->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans(  letter_size/(2.*sqrt(2.)), -letter_size/(2.*sqrt(2.)), 0., rot_45m)); 
+    name_y->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans(  letter_size/(2.*sqrt(2.)), +letter_size/(2.*sqrt(2.)), 0., rot_45p)); 
+    name_y->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_0)); 
+
+    //create 'Z'
+    TGeoVolume *name_z = fGeom->MakeBox("Z", fMedVacuum, letter_size, letter_size, letter_size); 
+    name_z->SetVisibility(kFALSE); 
+
+    name_z->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans( +letter_size/2., 0., 0., rot_90)); 
+    name_z->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_90)); 
+    name_z->AddNodeOverlap(letter_barL, 1, new TGeoCombiTrans( 0., 0., 0., rot_45p)); 
+
+    xyz_axes->AddNodeOverlap(single_axis, 1, rot_xaxis); xyz_axes->AddNodeOverlap(name_x, 1, new TGeoCombiTrans(axes_size*2.2, 0., 0., rot_xaxis)); 
+    xyz_axes->AddNodeOverlap(single_axis, 2, rot_yaxis); xyz_axes->AddNodeOverlap(name_y, 1, new TGeoCombiTrans(0., axes_size*2.2, 0., rot_yaxis)); 
+    xyz_axes->AddNodeOverlap(single_axis, 3, rot_zaxis); xyz_axes->AddNodeOverlap(name_z, 1, new TGeoCombiTrans(0., 0., axes_size*2.2, rot_zaxis)); 
+
+    return xyz_axes; 
+}
 //_______________________________________________________________________________________________________________________________
 //_______________________________________________________________________________________________________________________________
 //_______________________________________________________________________________________________________________________________
@@ -303,81 +377,15 @@ void GeometryFrame::CreateGeometry()
     fGeom->SetTopVolume(fTopVolume); 
 
 
-    //create a set of axes 
-    const double axes_size = 50.; 
-    const unsigned int axis_color = kBlack; 
-    TGeoVolume *xyz_axes = fGeom->MakeBox("axes", fMedVacuum, axes_size, axes_size, axes_size); 
-    xyz_axes->SetVisibility(kFALSE); 
-    {
-        TGeoVolume *single_axis = fGeom->MakeBox("single_axis", fMedVacuum, axes_size, axes_size/10., axes_size/10.); 
-        single_axis->SetVisibility(kFALSE); 
-        
-        TGeoRotation *single_axis_rot = new TGeoRotation; 
-        single_axis_rot->SetAngles(90., 90., 0.); 
-
-        TGeoVolume *axis_stick = fGeom->MakeTube("axis_stick", fMedAluminum, axes_size/100., axes_size/100., axes_size*0.8); 
-        axis_stick->SetLineColor(axis_color); 
-
-        TGeoVolume *axis_cone  = fGeom->MakeCone("axis_cone", fMedAluminum, axes_size*0.2, 0., axes_size*0.1, 0., 0.);
-        axis_cone ->SetLineColor(axis_color);  
-        
-        single_axis->AddNodeOverlap(axis_stick, 1, new TGeoCombiTrans(axes_size*0.8, 0., 0., single_axis_rot)); 
-        single_axis->AddNodeOverlap(axis_cone,  1, new TGeoCombiTrans(axes_size*1.8, 0., 0., single_axis_rot)); 
-
-        auto rot_xaxis = new TGeoRotation; rot_xaxis->SetAngles(0., 0., 0.); 
-        auto rot_yaxis = new TGeoRotation; rot_yaxis->SetAngles(90., 0., 0.); 
-        auto rot_zaxis = new TGeoRotation; rot_zaxis->SetAngles(0., 90., 90.);
-        
-        //create letters
-        const double letter_size = axes_size/10.; 
-        //long letter stem
-        TGeoVolume *letter_barL = fGeom->MakeBox("xbarL", fMedAluminum, letter_size, axes_size/100., axes_size/100.); 
-        letter_barL->SetLineColor(axis_color);
-        //short letter stem
-        TGeoVolume *letter_barS = fGeom->MakeBox("xbarS", fMedAluminum, letter_size/2., axes_size/100., axes_size/100.); 
-        letter_barS->SetLineColor(axis_color);
-
-        //rotations to be used for letters
-        auto rot_45p = new TGeoRotation; rot_45p->SetAngles(45., 0., 0.); 
-        auto rot_0   = new TGeoRotation; rot_0  ->SetAngles(0., 0., 0.); 
-        auto rot_45m = new TGeoRotation; rot_45m->SetAngles(-45., 0., 0.);
-        auto rot_90  = new TGeoRotation; rot_90 ->SetAngles(90., 0., 0.); 
-
-        //create 'X' 
-        TGeoVolume *name_x = fGeom->MakeBox("X", fMedVacuum, letter_size, letter_size, letter_size);
-        name_x->SetVisibility(kFALSE); 
-         
-        name_x->AddNodeOverlap(letter_barL, 1, rot_45m); 
-        name_x->AddNodeOverlap(letter_barL, 2, rot_45p); 
-
-        //create 'Y' 
-        TGeoVolume *name_y = fGeom->MakeBox("Y", fMedVacuum, letter_size, letter_size, letter_size); 
-        name_y->SetVisibility(kFALSE); 
-
-        name_y->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans(  letter_size/(2.*sqrt(2.)), -letter_size/(2.*sqrt(2.)), 0., rot_45m)); 
-        name_y->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans(  letter_size/(2.*sqrt(2.)), +letter_size/(2.*sqrt(2.)), 0., rot_45p)); 
-        name_y->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_0)); 
-
-        //create 'Z'
-        TGeoVolume *name_z = fGeom->MakeBox("Z", fMedVacuum, letter_size, letter_size, letter_size); 
-        name_z->SetVisibility(kFALSE); 
-
-        name_z->AddNodeOverlap(letter_barS, 1, new TGeoCombiTrans( +letter_size/2., 0., 0., rot_90)); 
-        name_z->AddNodeOverlap(letter_barS, 2, new TGeoCombiTrans( -letter_size/2., 0., 0., rot_90)); 
-        auto letter_barLsqrt2 = fGeom->MakeBox("xbarLsqrt2", fMedAluminum, letter_size*sqrt(2.), axes_size/100., axes_size/100.);
-        name_z->AddNodeOverlap(letter_barL, 1, new TGeoCombiTrans( 0., 0., 0., rot_45p)); 
-
-        xyz_axes->AddNodeOverlap(single_axis, 1, rot_xaxis); xyz_axes->AddNodeOverlap(name_x, 1, new TGeoCombiTrans(axes_size*2.2, 0., 0., rot_xaxis)); 
-        xyz_axes->AddNodeOverlap(single_axis, 2, rot_yaxis); xyz_axes->AddNodeOverlap(name_y, 1, new TGeoCombiTrans(0., axes_size*2.2, 0., rot_yaxis)); 
-        xyz_axes->AddNodeOverlap(single_axis, 3, rot_zaxis); xyz_axes->AddNodeOverlap(name_z, 1, new TGeoCombiTrans(0., 0., axes_size*2.2, rot_zaxis)); 
-    }
     //5trrrrrr610200000000000
-    // -muon 
-
+    // -muon     
+    
     //draw HCS coordinate axes
+    auto hcs_axes = CreateAxesGeometry(50., kBlack); 
     fRot_HCS = new TGeoRotation; 
     fRot_HCS->SetAngles(90., 90., 0.); 
-
+    fTopVolume->AddNodeOverlap(hcs_axes, 1, new TGeoCombiTrans(0., 0., -200., fRot_HCS)); 
+    
     //now, we're ready to add the sieve-holes
     CreateSieveGeometry(true);  //RHRS 
     CreateSieveGeometry(false); //LHRS
@@ -387,9 +395,7 @@ void GeometryFrame::CreateGeometry()
 
     CreateVWireGeometry(kBlue); 
     
-
-    fTopVolume->AddNodeOverlap(xyz_axes, 1, fRot_HCS); 
-
+    
     fGeom->CloseGeometry();  
 }
 //_______________________________________________________________________________________________________________________________
