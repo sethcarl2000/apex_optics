@@ -21,6 +21,7 @@
 #include <stdexcept> 
 #include <iostream> 
 #include <algorithm> 
+#include <cstdio>
 
 //TGMainFrame windows
 #include <TGWindow.h> 
@@ -93,6 +94,9 @@ private:
     //create geometry for the VWires 
     void CreateVWireGeometry(unsigned int color=kBlack); 
 
+    //create geometry for the beam
+    void CreateBeamGeometry(const double x_hcs, const double y_hcs, unsigned int color=kRed); 
+
     const bool is_RHRS; 
 
 public: 
@@ -119,6 +123,32 @@ Object_t* GeometryFrame::FindObject(Object_t::NameBit name)
     return &(*it); 
 }
 //_______________________________________________________________________________________________________________________________
+void GeometryFrame::CreateBeamGeometry(const double x_hcs, const double y_hcs, unsigned int color=kRed)
+{
+    //draw the beam
+    const double beam_length = 500.; 
+    const double beam_rad    = 0.10; 
+
+    const double cone_rad    = 2.; 
+
+    TGeoVolume *vol = fGeom->MakeBox("beam_box", fMedVacuum, 20., 20., beam_length/2.);
+    vol->SetVisibility(kFALSE);
+
+    TGeoVolume *beam_stick = fGeom->MakeTube("beam_stick", fMedVacuum, beam_rad, beam_rad, beam_length); 
+    TGeoVolume *beam_cone  = fGeom->MakeCone("beam_cone",  fMedVacuum, cone_rad, 0., cone_rad, 0., 0.); 
+
+    beam_stick->SetLineColor(color); 
+    beam_cone ->SetLineColor(color); 
+
+    vol->AddNodeOverlap(beam_stick, 1); 
+    vol->AddNodeOverlap(beam_cone,  1, new TGeoTranslation(0., 0., beam_length)); 
+
+    fTopVolume->AddNodeOverlap(vol, 1, new TGeoCombiTrans(250., 0., 0., fRot_HCS)); 
+
+    fObjects.push_back({.name=Object_t::kBeam, .volume=vol}); 
+
+    return; 
+}
 //_______________________________________________________________________________________________________________________________
 void GeometryFrame::CreateVWireGeometry(const unsigned int color)
 {
@@ -393,8 +423,11 @@ void GeometryFrame::CreateGeometry()
     //create the production target geometry 
     CreateProductionTargetGeometry(); 
 
+    //create vwire geometry
     CreateVWireGeometry(kBlue); 
-    
+   
+    //create the beam geometry
+    CreateBeamGeometry(0., 0.); 
     
     fGeom->CloseGeometry();  
 }
@@ -431,11 +464,18 @@ GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _
     fButtons.push_back({Object_t::kTarget_production, button});                 //add it to the list of buttons
     button->SetState(kButtonDown);                                              //set its default state to 'on' 
 
-    // -- production target
+    // -- vertical wire targets
     button = new TGCheckButton(this, "Vertical Optic Wires");                   //add this button and name it
     button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
     fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
     fButtons.push_back({Object_t::kTarget_VWires, button});                     //add it to the list of buttons
+    button->SetState(kButtonUp);                                                //set its default state to 'on' 
+
+    // -- beam
+    button = new TGCheckButton(this, "Beam");                                   //add this button and name it
+    button->Connect("Clicked()", "GeometryFrame", this, "ButtonClicked()");
+    fButtonFrame->AddFrame(button, new TGLayoutHints(kLHintsLeft, 5, 5, 2, 2)); 
+    fButtons.push_back({Object_t::kBeam, button});                              //add it to the list of buttons
     button->SetState(kButtonUp);                                                //set its default state to 'on' 
 
 
