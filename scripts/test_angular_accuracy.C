@@ -22,6 +22,7 @@
 #include <TFitResultPtr.h> 
 #include <memory>
 #include <TRandom3.h> 
+#include <TBox.h> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -99,6 +100,321 @@ double gaussian_semicircle(double *x, double *par) {
     return val * par[3] + par[4]; 
 }
 
+using ApexOptics::OpticsTarget_t; 
+
+//test the horizontal angle reconstruction efficiency
+void TestHorizontalAngle(   const bool is_RHRS,         //arm to use
+                            ROOT::RDF::RNode df,        //RDataFrame to get our data from 
+                            OpticsTarget_t target,      //optics target to use  
+                            const int center_row,       //central row to start at
+                            const int n_side_rows,      //number of rows IN ADDITION TO THE CENTRAL row on either side to fit       
+                            const int center_col,       //central column to fit
+                            const int n_side_cols,      //number of columns on eiter side to fit
+                            const double row_cut_width=1.1,  //width to make vertical cut, expressed as a fraction of the row spacing 
+                            const double col_cut_width=0.70,  //width to make cut around hole, in fraction of inter-column spacing
+                            const char* name_dxdz="reco_dxdz_sv", 
+                            const char* name_dydz="reco_dydz_sv", 
+                            const char* name_react_vtx="position_vtx")
+{
+    const char* const here = "test_horizontal_angle"; 
+
+    char c_title[255]; 
+    
+    //check that the target given is a V-wire
+    if (!(target.name == "V1" || 
+          target.name == "V2" || 
+          target.name == "V3"))  {
+        
+        Error(here, "Target provided is not a V-wire target: %s", target.name.c_str()); 
+        return; 
+    }
+
+    //get the react vertex
+    const double vtx_y_hcs = *df.Define("y", [](TVector3 v){ return v.y(); }, {name_react_vtx}).Mean("y"); 
+
+    const TVector3 react_vtx_scs = ApexOptics::HCS_to_SCS( is_RHRS, TVector3(target.x_hcs, vtx_y_hcs, target.z_hcs) ); 
+
+    //set the color pallete
+    gStyle->SetPalette(kSunset); 
+    gStyle->SetOptStat(0); 
+
+    //now, we can compute where each sieve-hole SHOULD be
+    vector<SieveHole> sieve_holes = ApexOptics::ConstructSieveHoles(is_RHRS); 
+
+    auto FindSieveHole = [&sieve_holes](int row, int col) 
+    {
+        auto it = std::find_if( 
+            sieve_holes.begin(),
+            sieve_holes.end(), 
+            [row,col](const SieveHole& elem){ return row==elem.row && col==elem.col; }
+        ); 
+        if (it == sieve_holes.end()) {
+            ostringstream oss; 
+            oss << "in <FindSieveHole>: invalid sieve hole requested. row/col: " << row << "/" << col; 
+            throw invalid_argument(oss.str()); 
+            return SieveHole{}; 
+        } 
+        return SieveHole{*it}; 
+    }; 
+
+    //all units in meters
+    const double sieve_thickness_z = 12e-3; 
+    const double sieve_hole_spacing_y = 4.826e-3; 
+    const double sieve_hole_spacing_x = 5.842e-3; 
+    
+    //in radians
+    const double dxdz_cut_width = (sieve_hole_spacing_x * row_cut_width) / fabs(react_vtx_scs.z()); 
+    const double dydz_cut_width = (sieve_hole_spacing_y * col_cut_width) / fabs(react_vtx_scs.z()); 
+
+    auto c_holes = new TCanvas("c", "Angle Reco", 1600, 800); 
+    c_holes->Divide( 2,1, 0.01,0.01 ); 
+    
+    const double dydz_max = +0.04; 
+    const double dydz_min = -0.04;
+
+    const int canvId_x_y = 1;
+    const int canvId_dx_dy = 2; 
+
+    gStyle->SetPalette(kBird);
+
+    //this will actually store the errors computed
+    double pos_error = 0.; 
+    double smear_error = 0.; 
+
+    size_t n_holes_measured =0; 
+
+    //here, we're testing vertical wires.     
+    auto c_cuts = new TCanvas("c_cuts", "", 1600, 800); 
+    c_cuts->Divide( 1, 1 + 2 * n_side_rows, 0.001, 0.00 ); 
+
+    //c->Divide( 1 + n_side_rows*2, 1, 0.01,0.); 
+    int i_canv=1; 
+
+    auto h_x_y = df
+        .Histo2D<double>({"h", "x_{sv} vs y_{sv} (m);", 200, -0.04, 0.04, 200, -0.04, 0.04}, "x_sv", "y_sv"); 
+
+    c_holes->cd(canvId_x_y); 
+    h_x_y->DrawCopy("col2"); 
+
+
+    auto h_dx_dy = df
+        .Histo2D<double>({"h", "dx/dz_{sv} vs dy/dz_{sv} (rad)", 200, -0.04, 0.04, 200, -0.04, 0.04}, name_dxdz, name_dydz); 
+
+    c_holes->cd(canvId_dx_dy); 
+    h_dx_dy->DrawCopy("col2"); 
+
+    //row counter
+    int i_row=1; 
+
+    struct FitParameter_t { 
+        double par{std::numeric_limits<double>::quiet_NaN()}, error{std::numeric_limits<double>::quiet_NaN()}; 
+    };
+    vector<FitParameter_t> fits; 
+
+
+    //the elements of this pair are 'dxdz' and 'dydz'; they represent which holes were fit successfully (and therefore should be drawn). 
+    vector<pair<double,double>> holes_to_draw; 
+
+    //loop thru eaach column 
+    for (int row = center_row-n_side_rows; row <= center_row+n_side_rows; row++) {
+
+        vector<SieveHole> row_holes; 
+        for (int col=center_col-n_side_cols; col<center_col+n_side_cols; col++) {
+            try {
+                row_holes.push_back( FindSieveHole(row, col) ); 
+            } catch (const std::exception& e) {
+                Error(here, "Error trying to access sieve hole.\n what(): %s", e.what()); 
+                return; 
+            }
+        }
+
+        vector<Trajectory_t> hole_angles;
+        for (auto& hole : row_holes) { 
+            hole_angles.emplace_back(Trajectory_t{
+                hole.x, 
+                hole.y,
+                ( hole.x - react_vtx_scs.x() )/( 0. - react_vtx_scs.z() ),
+                ( hole.y - react_vtx_scs.y() )/( 0. - react_vtx_scs.z() ) 
+            }); 
+        }
+        
+        //..
+        const double row_x    = hole_angles.front().x; 
+        
+        TLine *line; 
+
+        c_holes->cd(canvId_x_y); 
+        line = new TLine( row_x , -0.04, row_x, 0.04 ); 
+        line->Draw("SAME");
+        
+        //..
+        const double row_dxdz = hole_angles.front().dxdz; 
+        
+        c_cuts->cd(i_row); 
+
+
+        auto hist_row = df
+            
+            .Filter([dxdz_cut_width, row_dxdz](double dxdz){ return fabs(dxdz - row_dxdz) < dxdz_cut_width/2.; }, {name_dxdz})
+
+            .Histo1D<double>({Form("h_dydz_%i",i_row), "dy/dz_{sv}", 200, dydz_min, dydz_max}, name_dydz);
+
+        //make it so that the y-axes don't have tick-marks
+        hist_row->GetYaxis()->SetNdivisions(0); 
+        hist_row->DrawCopy(); 
+
+        cout << hist_row->GetMaximum() << endl; 
+
+        auto x_axis = hist_row->GetXaxis(); 
+
+
+        int i_col =0; 
+        for (size_t i=0; i<row_holes.size(); i++) {
+
+            const auto& hole  = row_holes[i]; 
+            const auto& angle = hole_angles[i]; 
+
+            auto fcn_gauss_offset = [](double *x, double *par) { 
+                double sigma = fabs(par[2]); 
+                return par[0] * exp( -0.5 * pow( (x[0] - par[1])/sigma, 2 ) ) + par[3]; 
+            }; 
+
+            //get the maximum value in this range
+            int bin_min = x_axis->FindBin( angle.dydz - dydz_cut_width/2. ); 
+            int bin_max = x_axis->FindBin( angle.dydz + dydz_cut_width/2. ); 
+
+            double maxval = -1.; 
+            int max_bin = -1; 
+            for (int bin=bin_min; bin<=bin_max; bin++) {
+
+                if (hist_row->GetBinContent(bin) > maxval) {
+                    maxval = hist_row->GetBinContent(bin); 
+                    max_bin = bin; 
+                }
+            }
+            //cout << "Max bin val: " << maxval << endl; 
+            double x0 = x_axis->GetBinCenter(max_bin); 
+
+            double offset = (hist_row->GetBinContent(bin_min) + hist_row->GetBinContent(bin_max))/2.; 
+
+            //upper edge of sieve hole, accounting for paralax, assuming that the tungsten material of the sieve is impenitrable
+            // (which is known not to be true!!)
+            const double dydz_hi = ( (hole.y + hole.radius_front) - react_vtx_scs.y() ) / ( sieve_thickness_z - react_vtx_scs.z() ); 
+
+            const double dydz_lo = ( (hole.y - hole.radius_front) - react_vtx_scs.y() ) / ( 0. - react_vtx_scs.z() ); 
+
+            const double hole_radius = (dydz_hi - dydz_lo) / 2.;
+            const double hole_dydz   = (dydz_hi + dydz_lo) / 2.;
+                
+            //auto fit = unique_ptr<TF1>(new TF1("holefit", gaussian_semicircle, hole_dydz -2.5e-3, hole_dydz +2.5e-3, 5));              
+
+            auto fit = unique_ptr<TF1>(new TF1(
+                "holefit", 
+                fcn_gauss_offset, 
+                hole_dydz - dydz_cut_width/2., 
+                hole_dydz + dydz_cut_width/2., 
+                4
+            ));              
+
+            fit->SetParameter(0, maxval - offset); 
+            fit->SetParameter(1, hole_dydz);
+            fit->SetParameter(2, hole_radius / 2.5);
+
+            fit->SetParameter(3, offset); 
+            fit->SetParLimits(3, 0., maxval); 
+
+            auto fitresult = hist_row->Fit("holefit", "S R B Q N L"); 
+
+            //if the fit failed, then skip. 
+            if (!fitresult.Get() || !fitresult->IsValid()) continue; 
+
+            //error of the dy/dz position of the hole
+            const double hole_dydz_fit  = fitresult->Parameter(1);
+            const double hole_sigma_fit = fabs(fitresult->Parameter(2)); 
+            const double hole_amplitude_fit = fitresult->Parameter(0); 
+
+            //check to see if this fit is reasonable. 
+            //if the height of the gaussian peak is less than 5% of the histogram max, then discard it
+            if (hole_amplitude_fit < hist_row->GetMaximum() * 0.05) continue; 
+
+            //if the relative error of 'sigma' is more than 5%, then discard it. 
+            if (fabs(fitresult->ParError(2) / hole_sigma_fit) > 0.05 ) continue; 
+
+
+            const double dx_hist = (x_axis->GetXmax() - x_axis->GetXmin()) / ((double)x_axis->GetNbins() - 1); 
+
+            //approximate the number of signal events for this hole, using the parameters of the gaussian fit
+            //the const number out front is sqrt(2*pi)
+            //
+            double hole_n_events = 2.50662827463 * hole_sigma_fit * hole_amplitude_fit * dx_hist; 
+
+            //errror between the hole position and the ideal position
+            pos_error   += pow( hole_dydz - hole_dydz_fit, 2 ); 
+
+            //the 'smearing' experienced by a single hole
+            smear_error += pow( hole_sigma_fit, 2 ); 
+
+            n_holes_measured++;
+
+            c_cuts->cd(i_row);
+
+            fit->SetLineColor(kRed); 
+            fit->DrawCopy("SAME");  
+
+            //draw a line of where the hole SHOULD BE 
+            auto line = new TLine(hole_dydz, 0., hole_dydz, hist_row->GetMaximum()); 
+            line->SetLineColor(kBlack); 
+            line->Draw(); 
+
+            //draw a line of where the hole SHOULD BE 
+            line = new TLine(hole_dydz_fit, 0., hole_dydz_fit, hist_row->GetMaximum()); 
+            line->SetLineColor(kRed); 
+            line->Draw(); 
+
+            holes_to_draw.push_back({angle.dxdz, angle.dydz});
+
+            //draw the box that represents the cut used 
+            auto box = new TBox(
+                angle.dxdz - dxdz_cut_width/2., 
+                angle.dydz - dydz_cut_width/2.,
+                angle.dxdz + dxdz_cut_width/2., 
+                angle.dydz + dydz_cut_width/2.
+            );
+            //make the box have no fill (transparent), and draw it.
+             
+            c_holes->cd(canvId_dx_dy);
+
+            box->SetFillStyle(0); 
+            box->Draw(); 
+        }
+
+        /*line = new TLine( row_dxdz + dxdz_cut_width/2., -0.04,  row_dxdz + dxdz_cut_width/2., +0.04 ); 
+        line->Draw("SAME");
+
+        line = new TLine( row_dxdz - dxdz_cut_width/2., -0.04,  row_dxdz - dxdz_cut_width/2., +0.04 ); 
+        line->Draw("SAME");*/ 
+
+        i_row++; 
+    }
+
+    printf("position error: %.4e\n",  sqrt( pos_error / ((double)n_holes_measured)) );
+    printf("smearing error: %.4e\n", sqrt( smear_error / ((double)n_holes_measured)) );  
+
+    printf("Total: %.4e\n", sqrt( (pos_error + smear_error) / ((double)n_holes_measured)) ); 
+
+
+    /*if (is_MonteCarlo) {
+        printf("Smearing: %.4e\n", hole_smearing );
+        
+        printf("hole_smearing, pos-err, smear-err:\n");
+        printf("%+.8e, %+.8e, %+.8e\n", 
+            hole_smearing,
+            sqrt( pos_error / ((double)n_holes_measured)),
+            sqrt( smear_error / ((double)n_holes_measured))
+        ); 
+    }*/ 
+    
+}
 
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
@@ -193,7 +509,7 @@ int test_angular_accuracy(  const char* path_infile ="data/replay/real_L_V2.root
     //choose which row/column to start at, and how many rows/columns to do in either direction. 
 
     const int center_row = 8; 
-    const int n_side_rows = 3; 
+    const int n_side_rows = 4; 
 
     const int center_col = 5; 
     const int n_side_cols = 4; 
@@ -368,272 +684,8 @@ int test_angular_accuracy(  const char* path_infile ="data/replay/real_L_V2.root
         {"reco_dydz_sv", &Trajectory_t::dydz}
     }); 
 
-    char c_title[255]; 
-    sprintf(c_title, "data:'%s', db:'%s'", path_infile, path_dbfile); 
-
-    //set the color pallete
-    gStyle->SetPalette(kSunset); 
-    gStyle->SetOptStat(0); 
-
-
-    //now, we can compute where each sieve-hole SHOULD be
-    vector<SieveHole> sieve_holes = ApexOptics::ConstructSieveHoles(is_RHRS); 
-
-    auto FindSieveHole = [&sieve_holes](int row, int col) 
-    {
-        auto it = std::find_if( 
-            sieve_holes.begin(),
-            sieve_holes.end(), 
-            [row,col](const SieveHole& elem){ return row==elem.row && col==elem.col; }
-        ); 
-        if (it == sieve_holes.end()) {
-            ostringstream oss; 
-            oss << "in <FindSieveHole>: invalid sieve hole requested. row/col: " << row << "/" << col; 
-            throw invalid_argument(oss.str()); 
-            return SieveHole{}; 
-        } 
-        return SieveHole{*it}; 
-    }; 
-
-    const double sieve_thickness_z = 12e-3; 
-
-    //in radians
-    const double cut_width = 1.25e-3; 
-
-    auto c = new TCanvas("c", c_title, 1600, 800); 
-    c->Divide( 2,1, 0.01,0.01 ); 
-    
-    const double dydz_max = +0.03; 
-    const double dydz_min = -0.03;
-
-
-    const int canvId_x_y = 1;
-    const int canvId_dx_dy = 2; 
-
-    gStyle->SetPalette(kBird);
-
-    //this will actually store the errors computed
-    double pos_error = 0.; 
-    double smear_error = 0.; 
-
-    size_t n_holes_measured =0; 
-
-    if (test_horizontal_angle) {
-        //here, we're testing vertical wires. 
-        
-        auto c_cuts = new TCanvas("c_cuts", c_title, 1600, 800); 
-        c_cuts->Divide( 1, 1 + 2 * n_side_rows, 0.001, 0.00 ); 
-
-        //c->Divide( 1 + n_side_rows*2, 1, 0.01,0.); 
-        int i_canv=1; 
-
-        auto h_x_y = rna.Get() 
-            .Histo2D<double>({"h", "x_{sv} vs y_{sv} (m);", 200, -0.04, 0.04, 200, -0.04, 0.04}, "x_sv", "y_sv"); 
-
-        c->cd(canvId_x_y); 
-        h_x_y->DrawCopy("col2"); 
-
-
-        auto h_dx_dy = rna.Get()
-            .Histo2D<double>({"h", "dx/dz_{sv} vs dy/dz_{sv} (rad)", 200, -0.04, 0.04, 200, -0.04, 0.04}, "dxdz_sv", "dydz_sv"); 
-
-        c->cd(canvId_dx_dy); 
-        h_dx_dy->DrawCopy("col2"); 
-
-        //row counter
-        int i_row=1; 
-
-        struct FitParameter_t { 
-            double par{std::numeric_limits<double>::quiet_NaN()}, error{std::numeric_limits<double>::quiet_NaN()}; 
-        };
-        vector<FitParameter_t> fits; 
-
-        
-
-        //loop thru eaach column 
-        for (int row = center_row-n_side_rows; row <= center_row+n_side_rows; row++) {
-
-            vector<SieveHole> row_holes; 
-            for (int col=center_col-n_side_cols; col<center_col+n_side_cols; col++) {
-                try {
-                    row_holes.push_back( FindSieveHole(row, col) ); 
-                } catch (const std::exception& e) {
-                    Error(here, "Error trying to access sieve hole.\n what(): %s", e.what()); 
-                    return -1; 
-                }
-            }
-
-            vector<Trajectory_t> hole_angles;
-            for (auto& hole : row_holes) { 
-                hole_angles.emplace_back(Trajectory_t{
-                    hole.x, 
-                    hole.y,
-                    ( hole.x - react_vtx_scs.x() )/( 0. - react_vtx_scs.z() ),
-                    ( hole.y - react_vtx_scs.y() )/( 0. - react_vtx_scs.z() ) 
-                }); 
-            }
-
-        
-            
-            //..
-            const double row_x    = hole_angles[0].x; 
-            
-            TLine *line; 
-
-            c->cd(canvId_x_y); 
-            line = new TLine( row_x , -0.04, row_x, 0.04 ); 
-            line->Draw("SAME");
-            
-            //..
-            const double row_dxdz = hole_angles[0].dxdz; 
-            
-            auto hist_row = rna.Get()
-                
-                .Filter([cut_width, row_dxdz](double dxdz){ return fabs(dxdz - row_dxdz) < cut_width/2.; }, {"dxdz_sv"})
-
-                .Histo1D<double>({Form("h_dydz_%i",i_row), "dy/dz_{sv}", 200, dydz_min, dydz_max}, "dydz_sv");
-
-            c_cuts->cd(i_row); 
-
-            //make it so that the y-axes don't have tick-marks
-            hist_row->GetYaxis()->SetNdivisions(0); 
-
-            hist_row->DrawCopy(); 
-
-            cout << hist_row->GetMaximum() << endl; 
-
-            auto x_axis = hist_row->GetXaxis(); 
-
-            int i_col =0; 
-            for (size_t i=0; i<row_holes.size(); i++) {
-
-                const auto& hole  = row_holes[i]; 
-                const auto& angle = hole_angles[i]; 
-
-                auto fcn_gauss_offset = [](double *x, double *par) { 
-                    double sigma = fabs(par[2]); 
-                    return par[0] * exp( -0.5 * pow( (x[0] - par[1])/sigma, 2 ) ) + par[3]; 
-                }; 
-
-                //get the maximum value in this range
-                int bin_min = x_axis->FindBin( angle.dydz - 2.5e-3 ); 
-                int bin_max = x_axis->FindBin( angle.dydz + 2.5e-3 ); 
-
-                double maxval = -1.; 
-                int max_bin = -1; 
-                for (int bin=bin_min; bin<=bin_max; bin++) {
-
-                    if (hist_row->GetBinContent(bin) > maxval) {
-                        maxval = hist_row->GetBinContent(bin); 
-                        max_bin = bin; 
-                    }
-                }
-                //cout << "Max bin val: " << maxval << endl; 
-                double x0 = x_axis->GetBinCenter(max_bin); 
-
-                double offset = (hist_row->GetBinContent(bin_min) + hist_row->GetBinContent(bin_max))/2.; 
-
-                //upper edge of sieve hole, accounting for paralax, assuming that the tungsten material of the sieve is impenitrable
-                // (which is known not to be true!!)
-                const double dydz_hi = ( (hole.y + hole.radius_front) - react_vtx_scs.y() ) / ( sieve_thickness_z - react_vtx_scs.z() ); 
-
-                const double dydz_lo = ( (hole.y - hole.radius_front) - react_vtx_scs.y() ) / ( 0. - react_vtx_scs.z() ); 
-
-                const double hole_radius = (dydz_hi - dydz_lo) / 2.;
-                const double hole_dydz   = (dydz_hi + dydz_lo) / 2.;
-                    
-                //auto fit = unique_ptr<TF1>(new TF1("holefit", gaussian_semicircle, hole_dydz -2.5e-3, hole_dydz +2.5e-3, 5));              
-
-                auto fit = unique_ptr<TF1>(new TF1("holefit", fcn_gauss_offset, hole_dydz -2.5e-3, hole_dydz +2.5e-3, 4));              
-
-                fit->SetParameter(0, maxval - offset); 
-                fit->SetParameter(1, hole_dydz);
-                fit->SetParameter(2, hole_radius / 2.5);
-
-                fit->SetParameter(3, offset); 
-                fit->SetParLimits(3, 0., maxval); 
-
-                auto fitresult = hist_row->Fit("holefit", "S R B Q N L"); 
-
-                //if the fit failed, then skip. 
-                if (!fitresult.Get() || !fitresult->IsValid()) continue; 
-
-                //error of the dy/dz position of the hole
-                const double hole_dydz_fit  = fitresult->Parameter(1);
-                const double hole_sigma_fit = fabs(fitresult->Parameter(2)); 
-                const double hole_amplitude_fit = fitresult->Parameter(0); 
-
-                //check to see if this fit is reasonable. 
-                //if the height of the gaussian peak is less than 5% of the histogram max, then discard it
-                if (hole_amplitude_fit < hist_row->GetMaximum() * 0.05) continue; 
-
-                //if the relative error of 'sigma' is more than 5%, then discard it. 
-                if (fabs(fitresult->ParError(2) / hole_sigma_fit) > 0.05 ) continue; 
-
-                
-
-                const double dx_hist = (x_axis->GetXmax() - x_axis->GetXmin()) / ((double)x_axis->GetNbins() - 1); 
-
-                //approximate the number of signal events for this hole, using the parameters of the gaussian fit
-                //the const number out front is sqrt(2*pi)
-                //
-                double hole_n_events = 2.50662827463 * hole_sigma_fit * hole_amplitude_fit * dx_hist; 
-
-                //errror between the hole position and the ideal position
-                pos_error   += pow( hole_dydz - hole_dydz_fit, 2 ); 
-
-                //the 'smearing' experienced by a single hole
-                smear_error += pow( hole_sigma_fit, 2 ); 
-
-                n_holes_measured++;
-
-
-                fit->SetLineColor(kRed); 
-                fit->DrawCopy("SAME");  
-
-                //draw a line of where the hole SHOULD BE 
-                auto line = new TLine(hole_dydz, 0., hole_dydz, hist_row->GetMaximum()); 
-                line->SetLineColor(kBlack); 
-                line->Draw(); 
-
-                //draw a line of where the hole SHOULD BE 
-                line = new TLine(hole_dydz_fit, 0., hole_dydz_fit, hist_row->GetMaximum()); 
-                line->SetLineColor(kRed); 
-                line->Draw(); 
-
-            }
-
-            c->cd(canvId_dx_dy);
-
-            line = new TLine( row_dxdz + cut_width/2., -0.04,  row_dxdz + cut_width/2., +0.04 ); 
-            line->Draw("SAME");
-
-            line = new TLine( row_dxdz - cut_width/2., -0.04,  row_dxdz - cut_width/2., +0.04 ); 
-            line->Draw("SAME");
- 
-            i_row++; 
-        }
-    }
-
-
-    printf("position error: %.4e\n",  sqrt( pos_error / ((double)n_holes_measured)) );
-    printf("smearing error: %.4e\n", sqrt( smear_error / ((double)n_holes_measured)) );  
-
-    printf("Total: %.4e\n", sqrt( (pos_error + smear_error) / ((double)n_holes_measured)) ); 
-
-
-    if (is_MonteCarlo) {
-        printf("Smearing: %.4e\n", hole_smearing );
-        
-        printf("hole_smearing, pos-err, smear-err:\n");
-        printf("%+.8e, %+.8e, %+.8e\n", 
-            hole_smearing,
-            sqrt( pos_error / ((double)n_holes_measured)),
-            sqrt( smear_error / ((double)n_holes_measured))
-        ); 
-    }
-    
-
+    TestHorizontalAngle(is_RHRS, rna.Get(), target, center_row, n_side_rows, center_col, n_side_cols); 
 
     return 0; 
 }
+
