@@ -41,7 +41,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     
     //setup the canvas, and split it 
     // Create embedded canvas
-    //fGFrame_pick    = new TGHorizontalFrame(this, 1400, 700); 
+    // fGFrame_pick    = new TGHorizontalFrame(this, 1400, 700); 
 
     fFrame_canvPick = new TGHorizontalFrame(this, 1400, 700); 
 

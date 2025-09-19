@@ -11,7 +11,6 @@
 #include <ROOT/RDataFrame.hxx>
 #include <ApexOptics.h> 
 
-
 using namespace std;
 
 //sieve coords  {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}
@@ -20,12 +19,12 @@ using namespace std;
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 //if you want to avoid creating (or overwriting) a db-file, just enter "" as the db-file name, and only the histograms will be drawn instead. 
-int create_NPolyArray_fit(  const int poly_order=2,
-                            const char* path_infile  ="data/sieve_holes/fits_L_allWiresAndFoils_MCmodel.root",
-                            const char* stem_outfile ="data/csv/poly_fits_fp_fwd-q1_L_2ord.dat",  
+int create_NPolyArray_fit(  const int poly_order=6,
+                            const char* path_infile  ="data/mc/mc_L_production.root",
+                            const char* stem_outfile ="data/csv/poly_prod_fp_sv_L_6ord.dat",  
                             const vector<string> inputs  ={"x_fp","y_fp","dxdz_fp","dydz_fp"},
-                            const vector<string> outputs ={"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"}, 
-                            const char* tree_name    ="tracks_fp" ) 
+                            const vector<string> outputs ={"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 
+                            const char* tree_name    ="tracks_fp") 
 {
     const char* const here = "fit_points_mc_forward"; 
 

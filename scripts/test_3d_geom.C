@@ -481,7 +481,6 @@ void GeometryFrame::CreateTrackGeometry(const bool is_RHRS, GeometryFrame::Track
             .dpp  = dpp
         }; 
     }; 
-
     
 
     const double center_dpp = +0.000; 

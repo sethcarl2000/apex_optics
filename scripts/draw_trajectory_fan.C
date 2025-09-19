@@ -184,7 +184,7 @@ int draw_trajectory_fan(const string target_name = "V2", const bool is_RHRS=fals
 
     //draw the 'center' of each trajectory
     for (auto traj : test_trajectories) {
-        hist_x_y  ->Fill( traj.x, traj.y ); 
+        hist_x_y  ->Fill( traj.x,    traj.y ); 
         hist_dx_dy->Fill( traj.dxdz, traj.dydz ); 
     }
 
