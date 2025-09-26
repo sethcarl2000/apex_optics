@@ -7,6 +7,7 @@
 #include <map>
 #include <utility> 
 #include "include/RDFNodeAccumulator.h"
+#include "include/TestAngleReco.h"
 #include <TParameter.h>
 #include <ApexOptics.h> 
 #include <TVector3.h> 
@@ -16,7 +17,6 @@
 #include <TCanvas.h> 
 #include <NPolyArrayChain.h> 
 #include <limits> 
-
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -61,7 +61,8 @@ const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dy
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_forward_chain( const char* path_infile="data/replay/real_L_H3.root",
+int test_forward_chain( const char* path_infile="data/replay/real_L_V2.root",
+                        const char* target_name="V2",
                         const char* path_dbfile="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                         const char* tree_name="tracks_fp" ) 
 {
@@ -100,7 +101,16 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_H3.root",
     infile->Close(); 
     delete infile; 
 
+    //try to get the target we need. 
+    OpticsTarget_t target; 
+    try { 
+        target = ApexOptics::GetTarget(string(target_name)); 
+    
+    } catch (const std::exception& e) {
 
+        Error(here, "Something went wrong trying to get the target info.\n what(): %s", e.what()); 
+        return -1; 
+    }
 
     //in the syntax below, an '<=' arrow represents an input or output of a polynomial. 
     // if a polynomial is written '[Poly]' then it is trained soley on monte-carlo data. 
@@ -263,8 +273,6 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_H3.root",
             double y0 = Xhcs.y    + (Xhcs.dydz    * vtx.z()); 
             double y1 = Xhcs_dp.y + (Xhcs_dp.dydz * vtx.z()); 
             
-            // y_vtx = y0 + (y1 - y0) * dp; 
-            
             return ( vtx.y() - y0 )/( y1 - y0 ); 
 
         }, {"Xsv_first_guess", "dXsv", "position_vtx"});
@@ -296,6 +304,13 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_H3.root",
         Error(here, "RDFNodeAccumulator reached error status when defining branches.\n Message: %s", rna.GetErrorMsg().c_str()); 
         return -1; 
     }
+    
+    rna = add_branch_from_Trajectory_t(rna.Get(), "Xsv_first_guess", {
+        {"fg_x_sv",    &Trajectory_t::x},
+        {"fg_y_sv",    &Trajectory_t::y},
+        {"fg_dxdz_sv", &Trajectory_t::dxdz},
+        {"fg_dydz_sv", &Trajectory_t::dydz}
+    }); 
 
     rna = add_branch_from_Trajectory_t(rna.Get(), "Xsv_reco", {
         {"reco_x_sv",    &Trajectory_t::x},
@@ -304,12 +319,31 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_H3.root",
         {"reco_dydz_sv", &Trajectory_t::dydz}
     }); 
 
-    rna = add_branch_from_Trajectory_t(rna.Get(), "Xsv_first_guess", {
-        {"fg_x_sv",    &Trajectory_t::x},
-        {"fg_y_sv",    &Trajectory_t::y},
-        {"fg_dxdz_sv", &Trajectory_t::dxdz},
-        {"fg_dydz_sv", &Trajectory_t::dydz}
-    }); 
+    
+    const int center_row = 8; 
+    const int n_side_rows = 4; 
+
+    const int center_col = 5; 
+    const int n_side_cols = 4; 
+
+    auto fit_result_ret = TestAngleReco(is_RHRS, rna.Get(), target, center_row, n_side_rows, center_col, n_side_cols); 
+
+    AngleFitResult_t fit; 
+
+    if (fit_result_ret) {
+        fit = fit_result_ret.value(); 
+    } else {
+        Error(here, "Something went wrong with the fitresult."); 
+        return -1; 
+    }
+
+    printf("position error: %.4e\n", fit.sigma_dydz_position );
+    printf("smearing error: %.4e\n", fit.sigma_dydz_smearing );  
+
+    printf("total error: %.4e\n", fit.sigma_dydz_overall); 
+
+    return 0; 
+
 
     //check the status of the RDFNodeAccumulator obejct before proceeding
     if (rna.GetStatus() != RDFNodeAccumulator::kGood) {
@@ -339,9 +373,9 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_H3.root",
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
 
-    //PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
-    //return 0; 
-    
+
+
+
     auto c = new TCanvas("c1", c_title, 1200, 600); 
     c->SetLeftMargin(0.12); c->SetRightMargin(0.05); 
     c->Divide(2,1, 0.01,0.01); 
