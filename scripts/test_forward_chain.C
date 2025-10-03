@@ -17,6 +17,8 @@
 #include <TCanvas.h> 
 #include <NPolyArrayChain.h> 
 #include <limits> 
+#include <Interactive3dHist.hxx>
+#include <TGClient.h> 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -61,10 +63,10 @@ const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dy
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_forward_chain( const char* path_infile="data/replay/real_L_V2.root",
-                        const char* target_name="V2",
-                        const char* path_dbfile="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
-                        const char* tree_name="tracks_fp" ) 
+int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut.root",
+                        const char* target_name ="V2",
+                        const char* path_dbfile ="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
+                        const char* tree_name   ="tracks_fp" ) 
 {
     const char* const here = "test_forward_chain"; 
 
@@ -319,6 +321,18 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V2.root",
         {"reco_dydz_sv", &Trajectory_t::dydz}
     }); 
 
+    rna.Define("y_pos", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}); 
+
+    /*
+    //launch the interactive hist app
+    new Interactive3dHist(rna.Get(), 
+        {"fg_dxdz_sv", 150, -0.055,  +0.055}, 
+        {"fg_dydz_sv", 150, -0.040,  +0.030},
+        {"y_pos",      150, +1.0e-3, +3.5e-3}, 
+        900, 800, kSunset, gClient->GetRoot()    
+    ); 
+
+    return 0; 
     
     const int center_row = 8; 
     const int n_side_rows = 4; 
@@ -343,13 +357,38 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V2.root",
     printf("total error: %.4e\n", fit.sigma_dydz_overall); 
 
     return 0; 
-
+    */ 
 
     //check the status of the RDFNodeAccumulator obejct before proceeding
     if (rna.GetStatus() != RDFNodeAccumulator::kGood) {
         Error(here, "RDFNodeAccumulator reached error status when defining branches.\n Message: %s", rna.GetErrorMsg().c_str()); 
         return -1; 
     }
+
+    const double min_cerenkov_sum = 1.5e3; 
+    const double min_Esh_Eps_sum = 0.5; 
+
+    
+    auto hist_z_dy_nocut = rna.Get()
+        .Histo2D<double>({"h_z_dy_nocut", "No PID cut;z_{tg};dy/dz_{sv}", 200, -0.4, +0.4, 200, -0.04, 0.03}, "z_reco_vertical", "reco_dydz_sv"); 
+
+
+    auto hist_z_dy_cut = rna.Get()
+
+        .Filter([min_cerenkov_sum](double cer_sum)
+            {
+                return cer_sum > min_cerenkov_sum; 
+            }, {"cer_sum"})
+
+        .Filter([min_Esh_Eps_sum](double E_sh, double E_ps)
+            {
+                return E_sh + E_ps > min_Esh_Eps_sum; 
+            }, {"E_sh_p_ratio","E_ps_p_ratio"})
+
+        .Histo2D<double>({"h_z_dy_cut", "PID cut;z_{tg};dy/dz_{sv}", 200, -0.4, +0.4, 200, -0.04, 0.03}, "z_reco_vertical", "reco_dydz_sv"); 
+
+    
+
 
     //create both histograms
     auto hist_xy = rna.Get()
@@ -374,7 +413,14 @@ int test_forward_chain( const char* path_infile="data/replay/real_L_V2.root",
     gStyle->SetOptStat(0); 
 
 
+    auto c_z_dy = new TCanvas("c_z_reco", c_title, 1200, 700); 
+    c_z_dy->Divide(2,1, 0.01,0.01); 
+    c_z_dy->SetLeftMargin(0.22); c_z_dy->SetRightMargin(0.05); 
 
+    c_z_dy->cd(1); hist_z_dy_nocut->DrawCopy("col"); 
+    c_z_dy->cd(2); hist_z_dy_cut->DrawCopy("col"); 
+
+    return 0; 
 
     auto c = new TCanvas("c1", c_title, 1200, 600); 
     c->SetLeftMargin(0.12); c->SetRightMargin(0.05); 
