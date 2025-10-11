@@ -8,6 +8,7 @@
 #include <utility> 
 #include "include/RDFNodeAccumulator.h"
 #include "include/TestAngleReco.h"
+#include "include/ChainedOpticsModel.h"
 #include <TParameter.h>
 #include <ApexOptics.h> 
 #include <TVector3.h> 
@@ -123,7 +124,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
 
     struct NPolyArrayConstructor_t { string path{}; vector<string> coords{}; int input_DoF{0}; }; 
 
-    const vector<NPolyArrayConstructor_t> path_and_coords_rev{
+    const vector<ChainedOpticsModel::ChainConstructor_t> path_and_coords_rev{
 
         /*/ sv <= [Poly] <= fp
         {"data/csv/poly_prod_fp_sv_L_4ord.dat", branches_sv, 4} //*/ 
@@ -146,7 +147,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
         {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
     }; 
 
-    const vector<NPolyArrayConstructor_t> path_and_coords_fwd{
+    const vector<ChainedOpticsModel::ChainConstructor_t> path_and_coords_fwd{
 
         // sv => [Poly] => fp
         {"data/csv/poly_prod_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
@@ -163,6 +164,45 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
         {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
     };
 
+    ChainedOpticsModel* model = new ChainedOpticsModel(is_RHRS); 
+    model->CreateChainRev({
+
+        /*/ sv <= [Poly] <= fp
+        {"data/csv/poly_prod_fp_sv_L_4ord.dat", branches_sv, 4} //*/ 
+
+        /*/ sv <= [Poly] <= fp-fwd <= _Poly_ <= fp
+        {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
+        {"data/csv/poly_prod_fp_sv_L_4ord.dat",     branches_sv,     4} //*/ 
+
+        /*/ sv <= [Poly] q1 <= [Poly] <= fp-fwd <= _Poly_ <= fp 
+        {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
+        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4},
+        {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
+
+        // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
+        {"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
+        {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
+
+        /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
+        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
+        {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
+    }); 
+    model->CreateChainFwd({
+
+        // sv => [Poly] => fp
+        {"data/csv/poly_prod_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
+
+        /*/ sv => _Poly_ => fp
+        {"data/csv/poly_fits_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
+
+        /*/ sv => [Poly] q1-fwd => _Poly_ => fp 
+        {"data/csv/poly_prod_sv_q1_L_3ord.dat",     branches_q1, 5},
+        {"data/csv/poly_fits_q1-fwd_fp_L_2ord.dat", branches_fp, 5} //*/ 
+
+        /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
+        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
+        {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
+    }); 
 
     NPolyArrayChain chain_rev, chain_fwd; 
     
@@ -230,7 +270,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
 
             return ApexOptics::RVec_to_Trajectory_t(Xsv_rvec); 
         }, {"Xfp"});
-
+ 
     //now, use the 'sv=>fp' model to determine where the 'wiggle room' is in dp/p 
     const double d_dpp = 1e-3; 
     rna.Define("dXsv", [&chain_fwd, d_dpp](const Trajectory_t& Xsv)
@@ -284,6 +324,11 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
             return Xsv + ( dXsv * dp ); 
 
         }, {"Xsv_first_guess", "dXsv", "dp"}); 
+
+    rna.Overwrite("Xsv_reco", [&model](Trajectory_t Xfp, TVector3 vtx_hcs)
+        {
+            return model->Compute_Xsv(Xfp, vtx_hcs);
+        }, {"Xfp", "position_vtx"});
 
     rna.Define("Xhcs_reco", [is_RHRS](const Trajectory_t& Xsv)
         {
@@ -372,8 +417,8 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     auto hist_z_dy_nocut = rna.Get()
         .Histo2D<double>({"h_z_dy_nocut", "No PID cut;z_{tg};dy/dz_{sv}", 200, -0.4, +0.4, 200, -0.04, 0.03}, "z_reco_vertical", "reco_dydz_sv"); 
 
-
-    auto hist_z_dy_cut = rna.Get()
+    //make a new rna 
+    RDFNodeAccumulator rna_pidcut(rna.Get()
 
         .Filter([min_cerenkov_sum](double cer_sum)
             {
@@ -384,12 +429,13 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
             {
                 return E_sh + E_ps > min_Esh_Eps_sum; 
             }, {"E_sh_p_ratio","E_ps_p_ratio"})
+    ); 
+
+    auto hist_z_dy_cut = rna_pidcut.Get()
 
         .Histo2D<double>({"h_z_dy_cut", "PID cut;z_{tg};dy/dz_{sv}", 200, -0.4, +0.4, 200, -0.04, 0.03}, "z_reco_vertical", "reco_dydz_sv"); 
 
     
-
-
     //create both histograms
     auto hist_xy = rna.Get()
         .Histo2D({"h_xy",     "x_{sv} vs y_{sv} (linear dp/p correction);x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "reco_x_sv", "reco_y_sv");
@@ -420,7 +466,6 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     c_z_dy->cd(1); hist_z_dy_nocut->DrawCopy("col"); 
     c_z_dy->cd(2); hist_z_dy_cut->DrawCopy("col"); 
 
-    return 0; 
 
     auto c = new TCanvas("c1", c_title, 1200, 600); 
     c->SetLeftMargin(0.12); c->SetRightMargin(0.05); 
