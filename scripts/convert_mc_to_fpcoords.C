@@ -1,5 +1,8 @@
 #include "TROOT.h"
 #include <ROOT/RDataFrame.hxx>
+#include <TVector3.h> 
+#include <TParameter.h>
+#include "include/Add_TParameter_to_TFile.h" 
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -64,8 +67,8 @@ int convert_mc_to_fpcoords(const char* path_infile, const char* path_outfile, co
     delete file; 
     file = new TFile(path_outfile, "UPDATE"); 
 
-    param_is_RHRS = new TParameter<bool>("is_RHRS", is_RHRS); 
-    param_is_RHRS->Write();
+    Add_TParameter_to_TFile("is_RHRS", is_RHRS); 
+            
     file->Close(); 
 
     cout << "done." << endl; 
