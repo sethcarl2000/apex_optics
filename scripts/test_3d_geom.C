@@ -815,8 +815,6 @@ GeometryFrame::GeometryFrame(const TGWindow* p, UInt_t w, UInt_t h, const bool _
     MapSubwindows();
     Resize(GetDefaultSize());
     MapWindow();
-
-
 }
 //_______________________________________________________________________________________________________________________________
 
