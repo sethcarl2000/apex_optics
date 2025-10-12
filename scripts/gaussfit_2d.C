@@ -17,6 +17,7 @@
 #include <limits> 
 #include <optional> 
 #include "include/Fit_fcn_to_TH2D.h"
+#include "include/Fit_gauss_to_TH2D.h"
 
 using namespace std; 
 
@@ -44,10 +45,10 @@ int gaussfit_2d()
 
     auto tf2 = new TF2(
         "gauss_fcn",        //name of fcn 
-        fcn_2d_gauss,       //ptr to fcn that will do calculation
+        Gauss2D::fcn,       //ptr to fcn that will do calculation
         -5.,5.,             // x min and max
         -5.,5.,             // y min and max
-        6                   // number of parameters
+        7                   // number of parameters
     ); 
 
     
@@ -85,14 +86,20 @@ int gaussfit_2d()
 
     auto fit_params = Fit_fcn_to_TH2D(hist, fcn_2d_gauss, fit_vars); 
 
+    auto fit_gauss = Gauss2D::Fit_TH2D(hist, -2, 0., 3, 5.); 
+
     //hist->GetZaxis()->SetRangeUser(0., hist->GetMaximum()*1.25); 
     hist->Draw("colz"); 
 
-    if (fit_params) {
+    if (fit_gauss) {
 
-        int i_var=0; 
+        auto par = fit_gauss.value(); 
+        /*int i_var=0; 
         for (auto var : fit_params.value()) tf2->SetParameter(i_var++, var.val); 
+        */
+        tf2 = Gauss2D::Make_TF2_from_fit(fit_gauss.value());
         
+        cout << "success" << endl; 
         tf2->Draw("SAME"); 
     }
 
