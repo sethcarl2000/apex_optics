@@ -12,12 +12,24 @@
 #include <TCanvas.h> 
 #include <TStyle.h> 
 #include <TBox.h> 
+#include <TLine.h> 
+#include <TF1.h> 
+#include <TFitResult.h> 
+#include <TFitResultPtr.h> 
+#include <TH1D.h> 
+#include <TH2D.h> 
 //std lib headers
 #include <vector>
 #include <string> 
 #include <optional> 
 #include <stdexcept>
 #include <cmath>  
+
+//simple 1d gauss fcn with const offset
+double fcn_gauss_with_offset(const double* X, const double* par); 
+
+TFitResult* Fit_gauss_to_TH1D(TH1D* hist); 
+
 
 using namespace std; 
 using ApexOptics::Trajectory_t; 
@@ -68,15 +80,6 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
     
     ROOT::EnableImplicitMT(); 
     ROOT::RDataFrame df(tree_name, path_infile); 
-
-    //minimum sum of all cerenkov ADCs. 
-    const double min_cerenkov_sum = 1.5e3;  
-    const double min_Esh_Eps_sum  = 0.45;
-
-    const double central_momentum = 1104.;  //in MeV
-
-    //this accounts for the fact that the y-raseter was not calibrated correctly for these runs. 
-    const double y_correction = +1.72835e-3;
 
     //select the target chosen
     OpticsTarget_t target; 
@@ -197,7 +200,7 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
 
 
 
-    auto hist_dx_dy_ptr = rna.Get().Histo2D<double>({"h", "hist xy", 100, -0.04,0.03, 200, -0.05,0.05}, "dxdz_sv","dydz_sv"); 
+    auto hist_dx_dy_ptr = rna.Get().Histo2D<double>({"h", "hist xy", 100, -0.05,0.05, 200, -0.04,0.03}, "dxdz_sv","dydz_sv"); 
 
     auto hist_dx_dy = (TH2D*)hist_dx_dy_ptr->Clone("hist_dx_dy"); 
 
@@ -205,30 +208,58 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
     gStyle->SetOptStat(0); 
     gStyle->SetPalette(kBird); hist_dx_dy->GetZaxis()->SetNdivisions(200.); 
     hist_dx_dy->Draw("col"); 
- 
+    
+    c->Modified(); 
+    c->Update(); 
 
 
     //range of columns and rows to try to fit 
-    const int row_0 = 3; 
-    const int row_1 = 12; 
+    const int row_0 = 2;//3; 
+    const int row_1 = 13;//12; 
     
-    const int col_0 = 1; 
-    const int col_1 = 10; 
+    const int col_0 = 0; 
+    const int col_1 = 12; 
 
     //statistical constraints (to avoid fitting cells which have no stats)
     
     //for each fit subrange, the maximum bin-value in that subrange must be at least this fraction of the 
     // histogram's global maximum. otherwise, a fit is not attempted. 
-    const double subrange_max_ratio_min = 0.025;    
+    const double subrange_max_ratio_min = 0.075;    
 
+    //number of bins to use in the 1d fit histogram 
+    const int nbins_fit = 25; 
 
     //fraction of the spacing to the next hole to make our cut. 
     // '=1.' corresponds to a cut which spans to the center of the next hole on either side. 
-    const double cut_width_row = 1.25; 
-    const double cut_width_col = 0.40;  
+    const double cut_width_row = 0.85; 
+    const double cut_width_col = 0.45;  
+
+    //number of sigmas in x & y to make final cut on events
+    const double cut_sigma_mult = 2.; 
+
+    //max acceptable sigma for fit
+    const double sigma_x_max = 0.65 * cut_width_row * dx;
+    const double sigma_y_max = 0.65 * cut_width_col * dy;  
+
+    //
+    const double min_amplitude_offset_ratio = 0.20;     
+
 
     //cache the sieve-coords and fp-coords in memory, to make it faster. 
-    auto df_cache = rna.Get().Cache({"Xsv", "Xfp"}); 
+    auto df_cache = rna.Get().Cache({
+        "x_sv", 
+        "y_sv",
+        "dxdz_sv",
+        "dydz_sv",
+        "dpp_sv",
+
+        "x_fp",
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp"
+    });     
+
+
 
     //loop thru all the sieve holes, and try to fit the ones (which exist). 
     for (int row=row_0; row<=row_1; row++) {
@@ -268,41 +299,131 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
             double global_max   = hist_dx_dy->GetMaximum(); 
             //check the ratio of the subrange max to the global max. if it's too small, then don't attemt a fit. 
             if (subrange_max / global_max < subrange_max_ratio_min) continue; 
+            
+            //create the 2d hist of the events in this box. 
+            auto hist_box = df_cache  
+                //make a cut on events in our rectangle
+                .Filter([&](double dxdz){ return fabs(dxdz - hole_angle.dxdz_sv) < cut_halfwidth_x; }, {"dxdz_sv"})
+                .Filter([&](double dydz){ return fabs(dydz - hole_angle.dydz_sv) < cut_halfwidth_y; }, {"dydz_sv"})
+                
+                .Histo2D<double>({
+                    "h_box", "", 
+                    nbins_fit, hole_angle.dxdz_sv - cut_halfwidth_x, hole_angle.dxdz_sv + cut_halfwidth_x,
+                    nbins_fit, hole_angle.dydz_sv - cut_halfwidth_y, hole_angle.dydz_sv + cut_halfwidth_y    
+                }, "dxdz_sv", "dydz_sv"); 
 
+            //create each 1d-hist that we will attempt to fit
+            auto fit_x = Fit_gauss_to_TH1D(hist_box->ProjectionX("h_box_dxdz")); 
+            if (!fit_x) continue; 
+            const double dxdz_cent  = fit_x->Parameter(1); 
+            const double dxdz_sigma = fabs(fit_x->Parameter(2)); 
+
+            //check for reasonability 
+            // - center of fit must be inside cut range
+            if (dxdz_cent < dxdz0 || dxdz_cent > dxdz1) continue; 
+            // - amplitude must be at least as large as background * 0.20
+            if (fabs(fit_x->Parameter(0)/fit_x->Parameter(3)) < min_amplitude_offset_ratio) continue; 
+            // - max acceptable sigma
+            if (dxdz_sigma > sigma_x_max) continue; 
 
             
-            //try to fit a gaussian to the data 
-            auto gauss_fit_result_optional = Gauss2D::Fit_TH2D(
-                hist_dx_dy,
-                dxdz0, dydz0,
-                dxdz1, dydz1
-            ); 
+            auto fit_y = Fit_gauss_to_TH1D(hist_box->ProjectionY("h_box_dydz")); 
+            if (!fit_y) continue; 
+            const double dydz_cent  = fit_y->Parameter(1); 
+            const double dydz_sigma = fabs(fit_y->Parameter(2));
+            
+            //check for reasonability
+            // - center of fit must be inside cut range
+            if (dydz_cent < dydz0 || dydz_cent > dydz1) continue; 
+            // - amplitude must be at least as large as background * 0.20 
+            if (fabs(fit_y->Parameter(0)/fit_y->Parameter(3)) < min_amplitude_offset_ratio) continue; 
+            // - max acceptable sigma
+            if (dydz_sigma > sigma_y_max) continue; 
 
-            //if the fit did not succeed, then skip. 
-            if (!gauss_fit_result_optional.has_value()) continue; 
-
-            //make reasonable cuts on what the result should be
-            auto fit = gauss_fit_result_optional.value(); 
-            if (fit.cent_x < dxdz0 || fit.cent_x > dxdz1 ||
-                fit.cent_y < dydz0 || fit.cent_y > dydz1)
-                continue; 
-
-            //now, we have our angles and we're ready to proceed. 
             auto box = new TBox(
-                dxdz0, dydz0, 
-                dxdz1, dydz1
-            ); 
+                dxdz_cent + dxdz_sigma*2., dydz_cent + dydz_sigma*2., 
+                dxdz_cent - dxdz_sigma*2., dydz_cent - dydz_sigma*2.
+            );
             box->SetFillStyle(0);
             box->SetLineColor(kBlack); 
             box->SetLineStyle(kDotted); 
             box->Draw(); 
-            
-            
-            auto tf2 = Gauss2D::Make_TF2_from_fit(gauss_fit_result_optional.value(), "gauss2d"); 
-            tf2->DrawCopy("SAME"); 
 
+            TLine *line=nullptr; 
+            line = new TLine(dxdz_cent,dydz0, dxdz_cent,dydz1); 
+            line->SetLineColor(kBlack); 
+            line->Draw(); 
+
+            line = new TLine(dxdz0,dydz_cent, dxdz1,dydz_cent); 
+            line->SetLineColor(kBlack); 
+            line->Draw(); 
+
+            c->Modified(); 
+            c->Update(); 
         }
     }
 
     return 0; 
+}
+
+//______________________________________________________________________________________________________________________________
+double fcn_gauss_with_offset(const double* X, const double* par)
+{
+    //params: 
+    // par[0]   amplitude
+    // par[1]   mean
+    // par[2]   sigma
+    // par[3]   offset
+
+    double x = (X[0] - par[1])/fabs(par[2]); 
+    
+    return (par[0] * exp(-0.5 * x*x)) + fabs(par[3]); 
+}
+//______________________________________________________________________________________________________________________________
+TFitResult* Fit_gauss_to_TH1D(TH1D* hist)
+{
+    if (hist==nullptr) return nullptr; 
+
+    //attempt to fit the histogram. lets' make some reasonable guesses for parameters: 
+    double offset       = hist->GetMinimum(); 
+    double amplitude    = hist->GetMaximum() - offset; 
+    double mean         = hist->GetXaxis()->GetBinCenter( hist->GetMaximumBin() ); 
+    double sigma        = 0.5 * (hist->GetXaxis()->GetXmax() - hist->GetXaxis()->GetXmin()); 
+
+    //printf("first guess: %f, %f, %f, %f\n", amplitude, mean, sigma, offset);
+
+    double params[] = { amplitude, mean, sigma, offset }; 
+
+    auto tf1 = new TF1(
+        "gauss_fit_with_offset", 
+        fcn_gauss_with_offset, 
+        hist->GetXaxis()->GetXmin(), 
+        hist->GetXaxis()->GetXmax(), 
+        4
+    );
+
+    tf1->SetParameters(params); 
+
+    // options (second character argument):
+    //  S - store the hit in the returned FitResult object 
+    //  R - only fit to the function range 
+    //  L - use 'log liklihood' method to fit, which is appropriate for histograms where bins represent fit-counts
+    //  Q - don't print information about the fit (we'll do that oursevles.)
+    //  N - do not draw the result
+    //  
+    TFitResult* fit_result = (hist->Fit("gauss_fit_with_offset", "R L Q S N")).Get(); 
+
+    /*printf("result : %f, %f, %f, %f\n", 
+        fit_result->Parameter(0), 
+        fit_result->Parameter(1), 
+        fit_result->Parameter(2), 
+        fit_result->Parameter(3)
+    );*/ 
+
+    if (!fit_result) return nullptr; 
+
+    if (!fit_result->IsValid()) return nullptr; 
+
+    return fit_result; 
+
 }
