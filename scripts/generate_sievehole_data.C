@@ -72,10 +72,10 @@ double GetMaximum_in_subrange(TH2* hist, double x0,double y0, double x1,double y
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2-dp.root",
-                            const char* target_name     = "V2",
-                            const char* path_outfile    = "data/sieve_holes/holes_L_V2-nofit.root",
-                            const char* path_graphic    = "histos/holes_L_V2",
+int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V3-dp.root",
+                            const char* target_name     = "V3",
+                            const char* path_outfile    = "data/sieve_holes/holes_L_V3-nofit.root",
+                            const char* path_graphic    = "histos/holes_L_V3",
                             const char* tree_name       = "tracks_fp" )
 {
     const char* const here = "cleanup_optics_replay";
@@ -235,15 +235,15 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
     
     //for each fit subrange, the maximum bin-value in that subrange must be at least this fraction of the 
     // histogram's global maximum. otherwise, a fit is not attempted. 
-    const double subrange_max_ratio_min = 0.075;    
+    const double subrange_max_ratio_min = 0.10;    
 
     //number of bins to use in the 1d fit histogram 
     const int nbins_fit = 25; 
 
     //fraction of the spacing to the next hole to make our cut. 
     // '=1.' corresponds to a cut which spans to the center of the next hole on either side. 
-    const double cut_width_row = 0.85 * dx / fabs(position_vtx_scs.z()); 
-    const double cut_width_col = 0.30 * dy / fabs(position_vtx_scs.z());  
+    const double cut_width_row = 0.60 * dx / fabs(position_vtx_scs.z()); 
+    const double cut_width_col = 0.50 * dy / fabs(position_vtx_scs.z());  
 
     //number of sigmas in x & y to make final cut on events
     const double cut_sigma_mult = 2.; 
@@ -252,8 +252,12 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
     const double sigma_x_max = 0.55 * cut_width_row; 
     const double sigma_y_max = 0.75 * cut_width_col; 
 
-    //
-    const double min_amplitude_offset_ratio = 0.20;     
+    //min ratio between amplitude of gaussian and offset background
+    const double min_amplitude_offset_ratio = 0.15;     
+
+    //how far we're going to let the peak center be from the edge
+    const double max_peak_dist_from_center_x = 0.65; 
+    const double max_peak_dist_from_center_y = 0.85; 
 
 
     //cache the sieve-coords and fp-coords in memory, to make it faster. 
@@ -346,7 +350,7 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
 
             //check for reasonability 
             // - center of fit must be inside cut range
-            if (dxdz_cent < dxdz0 || dxdz_cent > dxdz1) continue; 
+            if (fabs(dxdz_cent - hole_angle.dxdz_sv)/cut_halfwidth_x > max_peak_dist_from_center_x) continue; 
             // - amplitude must be at least as large as background * 0.20
             if (fabs(fit_x->Parameter(0)/fit_x->Parameter(3)) < min_amplitude_offset_ratio) continue; 
             // - max acceptable sigma
@@ -360,7 +364,7 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
             
             //check for reasonability
             // - center of fit must be inside cut range
-            if (dydz_cent < dydz0 || dydz_cent > dydz1) continue; 
+            if (fabs(dydz_cent - hole_angle.dydz_sv)/cut_halfwidth_y > max_peak_dist_from_center_y) continue; 
             // - amplitude must be at least as large as background * 0.20 
             if (fabs(fit_y->Parameter(0)/fit_y->Parameter(3)) < min_amplitude_offset_ratio) continue; 
             // - max acceptable sigma
