@@ -3,10 +3,9 @@
 #include <ApexOptics.h> 
 //local 'scripts/include' folder headers
 #include "include/ChainedOpticsModel.h"
-#include "include/Fit_gauss_to_TH2D.h"
 #include "include/RDFNodeAccumulator.h"
 #include "include/Add_TParameter_to_TFile.h"
-#include "include/Fit_gauss_to_TH2D.h"
+#include "include/Add_branch_from_Trajectory_t.h"
 //ROOT headers
 #include <ROOT/RDataFrame.hxx>
 #include <TCanvas.h> 
@@ -24,6 +23,7 @@
 #include <optional> 
 #include <stdexcept>
 #include <cmath>  
+#include <utility> 
 
 //simple 1d gauss fcn with const offset
 double fcn_gauss_with_offset(const double* X, const double* par); 
@@ -74,7 +74,9 @@ double GetMaximum_in_subrange(TH2* hist, double x0,double y0, double x1,double y
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
 int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2-dp.root",
                             const char* target_name     = "V2",
-                            const char* tree_name       = "tracks_fp" ) 
+                            const char* path_outfile    = "data/sieve_holes/holes_L_V2-nofit.root",
+                            const char* path_graphic    = "histos/holes_L_V2",
+                            const char* tree_name       = "tracks_fp" )
 {
     const char* const here = "cleanup_optics_replay";
     
@@ -118,6 +120,10 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
         Error(here, "Something went wrong trying to build the polynomial chains.\n what(): %s", e.what()); 
         return -1; 
     }
+
+    //figure out if we're going to make a graphic 
+    const bool make_graphic = (string(path_graphic)!=""); 
+
 
     //try and make the RDataFrame
     RDFNodeAccumulator rna(tree_name, path_infile); 
@@ -199,7 +205,7 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
 
 
 
-
+    
     auto hist_dx_dy_ptr = rna.Get().Histo2D<double>({"h", "hist xy", 100, -0.05,0.05, 200, -0.04,0.03}, "dxdz_sv","dydz_sv"); 
 
     auto hist_dx_dy = (TH2D*)hist_dx_dy_ptr->Clone("hist_dx_dy"); 
@@ -211,11 +217,16 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
     
     c->Modified(); 
     c->Update(); 
-
+    
+    auto c_fp = new TCanvas("c_fp", "focal-plane coords", 1500, 700); 
+    c_fp->Divide(2,2); 
+    c_fp->cd(1); hist_dx_dy->Draw("col"); 
+    c_fp->Modified(); 
+    c_fp->Update(); 
 
     //range of columns and rows to try to fit 
     const int row_0 = 2;//3; 
-    const int row_1 = 13;//12; 
+    const int row_1 = 12;//12; 
     
     const int col_0 = 0; 
     const int col_1 = 12; 
@@ -231,15 +242,15 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
 
     //fraction of the spacing to the next hole to make our cut. 
     // '=1.' corresponds to a cut which spans to the center of the next hole on either side. 
-    const double cut_width_row = 0.85; 
-    const double cut_width_col = 0.45;  
+    const double cut_width_row = 0.85 * dx / fabs(position_vtx_scs.z()); 
+    const double cut_width_col = 0.30 * dy / fabs(position_vtx_scs.z());  
 
     //number of sigmas in x & y to make final cut on events
     const double cut_sigma_mult = 2.; 
 
     //max acceptable sigma for fit
-    const double sigma_x_max = 0.65 * cut_width_row * dx;
-    const double sigma_y_max = 0.65 * cut_width_col * dy;  
+    const double sigma_x_max = 0.55 * cut_width_row; 
+    const double sigma_y_max = 0.75 * cut_width_col; 
 
     //
     const double min_amplitude_offset_ratio = 0.20;     
@@ -256,11 +267,17 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
         "x_fp",
         "y_fp",
         "dxdz_fp",
-        "dydz_fp"
+        "dydz_fp", 
+
+        "position_vtx_scs"
     });     
 
+    //this will be where we take our data. 
+    vector<pair<Trajectory_t,Trajectory_t>> coordinate_data; 
 
+    TBox* cursor_box = nullptr; 
 
+    int i_frame=0; 
     //loop thru all the sieve holes, and try to fit the ones (which exist). 
     for (int row=row_0; row<=row_1; row++) {
         for (int col=col_0; col<=col_1; col++) {
@@ -283,8 +300,8 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
                 return -1;
             }
 
-            const double cut_halfwidth_x = dx*cut_width_row; 
-            const double cut_halfwidth_y = dy*cut_width_col; 
+            const double cut_halfwidth_x = cut_width_row; 
+            const double cut_halfwidth_y = cut_width_col; 
 
             //get the fit subrange
             const double 
@@ -294,6 +311,15 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
                 dxdz1{hole_angle.dxdz_sv + cut_halfwidth_x}, 
                 dydz1{hole_angle.dydz_sv + cut_halfwidth_y}; 
 
+            
+            //draw the box of the hole we're trying to fit, currently 
+            if (cursor_box != nullptr) delete cursor_box; 
+            cursor_box = new TBox(dxdz0,dydz0, dxdz1,dydz1); 
+            cursor_box->SetLineColor(kRed); 
+            cursor_box->SetFillStyle(0); 
+            c->cd(); cursor_box->Draw(); 
+            c->Modified(); c->Update(); 
+            
 
             double subrange_max = GetMaximum_in_subrange(hist_dx_dy, dxdz0,dydz0, dxdz1,dydz1); 
             double global_max   = hist_dx_dy->GetMaximum(); 
@@ -341,9 +367,12 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
             if (dydz_sigma > sigma_y_max) continue; 
 
             auto box = new TBox(
-                dxdz_cent + dxdz_sigma*2., dydz_cent + dydz_sigma*2., 
-                dxdz_cent - dxdz_sigma*2., dydz_cent - dydz_sigma*2.
+                dxdz_cent + dxdz_sigma*cut_sigma_mult, dydz_cent + dydz_sigma*cut_sigma_mult, 
+                dxdz_cent - dxdz_sigma*cut_sigma_mult, dydz_cent - dydz_sigma*cut_sigma_mult
             );
+
+            c->cd(); 
+
             box->SetFillStyle(0);
             box->SetLineColor(kBlack); 
             box->SetLineStyle(kDotted); 
@@ -360,9 +389,146 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_V2
 
             c->Modified(); 
             c->Update(); 
+
+            //now, lets plot the data in the focal coordinate plane
+            auto df_cut = df_cache
+                //make a cut on events in our rectangle
+                .Filter([&](double dxdz){ return fabs(dxdz - dxdz_cent) < dxdz_sigma*cut_sigma_mult; }, {"dxdz_sv"})
+                .Filter([&](double dydz){ return fabs(dydz - dydz_cent) < dydz_sigma*cut_sigma_mult; }, {"dydz_sv"}); 
+
+            c_fp->cd(1);
+            box->Draw(); 
+
+            auto h_x_y    = df_cut.Histo2D<double>({"h_x_y",  "x_{fp} vs y_{fp}",     50,-0.6,0.6, 60,-0.05,0.05}, "x_fp", "y_fp"); 
+            auto h_x_dxdz = df_cut.Histo2D<double>({"h_x_dy", "x_{fp} vs dx/dz_{fp}", 50,-0.6,0.6, 60,-0.05,0.05}, "x_fp", "dxdz_fp"); 
+            auto h_x_dydz = df_cut.Histo2D<double>({"h_x_dx", "x_{fp} vs dy/dz_{fp}", 50,-0.6,0.6, 60,-0.05,0.05}, "x_fp", "dydz_fp"); 
+            
+            c_fp->cd(2); h_x_y->Draw("col"); 
+            c_fp->cd(3); h_x_dxdz->Draw("col"); 
+            c_fp->cd(4); h_x_dydz->Draw("col"); 
+
+            c_fp->Modified(); 
+            c_fp->Update(); 
+
+            // 'take' this data from the RDataFrame (get a vector of all events)
+            vector<pair<Trajectory_t,Trajectory_t>> hole_coord_data = *df_cut
+
+                .Define("Xsv", [](double x, double y, double dxdz, double dydz, double dpp){ return Trajectory_t{x,y,dxdz,dydz,dpp}; }, 
+                        {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"})
+
+                .Define("Xfp", [](double x, double y, double dxdz, double dydz){ return Trajectory_t{x,y,dxdz,dydz}; }, 
+                        {"x_fp","y_fp","dxdz_fp","dydz_fp"})
+                       
+                .Define("coord_data", [&hole, sieve_dz](Trajectory_t Xsv, Trajectory_t Xfp, TVector3 vtx_scs)
+                {
+                    //take an average of the 'back' and 'front' hole opening, 
+                    // which is a rough way to approximate the effects of 
+                    // parallax (for react vertices which are askew from the axis of this sieve-hole)
+                    Trajectory_t Xsv_front{
+                        hole.x, 
+                        hole.y, 
+                        (hole.x - vtx_scs.x())/(0. - vtx_scs.z()), 
+                        (hole.y - vtx_scs.y())/(0. - vtx_scs.z()),
+                        Xsv.dpp
+                    };
+
+                    Trajectory_t Xsv_back{
+                        hole.x, 
+                        hole.y, 
+                        (hole.x - vtx_scs.x())/(sieve_dz - vtx_scs.z()), 
+                        (hole.y - vtx_scs.y())/(sieve_dz - vtx_scs.z()),
+                        Xsv.dpp
+                    };
+
+                    //take the average of the two 
+                    auto Xsv_corrected = (Xsv_front + Xsv_back) * 0.5; 
+
+                    //compute dx/dz & dy/dz
+                    return pair<Trajectory_t, Trajectory_t>({Xsv_corrected, Xfp}); 
+                }, {"Xsv", "Xfp", "position_vtx_scs"})
+
+                .Take<pair<Trajectory_t,Trajectory_t>>("coord_data"); 
+
+            //now, we actually 'take' the data from the rdataframe. 
+            
+            //stick this data into the vector we need. 
+            coordinate_data.insert( 
+                coordinate_data.end(), 
+                std::make_move_iterator(hole_coord_data.begin()), 
+                std::make_move_iterator(hole_coord_data.end())                      
+            );
+
+            if (make_graphic) {
+                if (i_frame==0) { c_fp->SaveAs(Form("%s.pdf(",path_graphic)); }
+                else            { c_fp->SaveAs(Form("%s.pdf",path_graphic));  } 
+                i_frame++; 
+            }
         }
     }
 
+    //now, we can stick this data in a file. 
+    //we need to run in single-thread mode
+    if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
+
+    size_t i_event=0;
+    const size_t n_events = coordinate_data.size();  
+    ROOT::RDataFrame df_out(n_events);
+    RDFNodeAccumulator rna_out(df_out); 
+    
+    rna_out.Define("coord_data", [&coordinate_data, &i_event, n_events]()
+        {
+            if (i_event >= n_events) {
+                throw std::logic_error("Error! we have tried to access events which don't exist!"); 
+                return std::pair<Trajectory_t,Trajectory_t>({}); 
+            } 
+            return coordinate_data.at(i_event++); 
+        }, {});
+    rna_out.Define("Xsv", [](std::pair<Trajectory_t,Trajectory_t> pair){ return pair.first;  }, {"coord_data"}); 
+    rna_out.Define("Xfp", [](std::pair<Trajectory_t,Trajectory_t> pair){ return pair.second; }, {"coord_data"}); 
+
+    rna_out = Add_branch_from_Trajectory_t(rna_out.Get(), "Xsv", {
+        {"x_sv",    &Trajectory_t::x}, 
+        {"y_sv",    &Trajectory_t::y}, 
+        {"dxdz_sv", &Trajectory_t::dxdz}, 
+        {"dydz_sv", &Trajectory_t::dydz}, 
+        {"dpp_sv",  &Trajectory_t::dpp} 
+    }); 
+
+    rna_out = Add_branch_from_Trajectory_t(rna_out.Get(), "Xfp", {
+        {"x_fp",    &Trajectory_t::x}, 
+        {"y_fp",    &Trajectory_t::y}, 
+        {"dxdz_fp", &Trajectory_t::dxdz}, 
+        {"dydz_fp", &Trajectory_t::dydz}, 
+    }); 
+
+    cout << "making snapshot. (path='" << path_outfile << ")..." << flush; 
+
+    rna_out.Get().Snapshot("tracks_fp", path_outfile, {
+        "x_sv",
+        "y_sv",
+        "dxdz_sv",
+        "dydz_sv",
+        "dpp_sv",
+
+        "x_fp",
+        "y_fp",
+        "dxdz_fp",
+        "dydz_fp"
+    });
+
+    cout << "done" << endl; 
+
+    //add the parameter to the file
+    auto file = new TFile(path_outfile, "UPDATE");
+    Add_TParameter_to_TFile<bool>("is_RHRS", is_RHRS);
+    file->Close(); 
+    delete file;  
+
+    if (make_graphic) {
+        c->cd(); 
+        c->SaveAs(Form("%s.pdf(",path_graphic)); 
+    }
+    
     return 0; 
 }
 
