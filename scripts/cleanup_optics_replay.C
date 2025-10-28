@@ -32,7 +32,6 @@ using namespace ROOT::VecOps;
 using ApexOptics::Trajectory_t; 
 using ApexOptics::OpticsTarget_t; 
 
-
 const vector<string> branches_sv{"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"};
 const vector<string> branches_q1{"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"};
 const vector<string> branches_fp{"x_fp","y_fp","dxdz_fp","dydz_fp"};
@@ -47,9 +46,10 @@ const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dy
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
 int cleanup_optics_replay(  const bool is_RHRS          = false,
-                            const char* path_infile     = "data/replay/replay.4770.root",
-                            const char* target_name     = "V3",
-                            const char* path_outfile    = "data/replay/real_L_V3-test.root",
+                            const char* path_infile     = "data/replay/replay.4775.root",
+                            const char* target_name     = "O7",
+                            const char* path_outfile    = "data/replay/real_L_O7-dp.root",
+                            const char* path_polycut    = "data/csv/polycut_L_O7-new.dat",
                             const char* tree_name       = "track_data" ) 
 {
     const char* const here = "cleanup_optics_replay";
@@ -68,16 +68,51 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
 
     //select the target chosen
     OpticsTarget_t target; 
-    try { target = ApexOptics::GetTarget(string(target_name)); } 
+    
+    if (string(target_name)=="") { 
 
-    catch (const std::exception& e) {
+        target = ApexOptics::GetTarget("none"); 
+    
+    } else {
 
-        Error(here, "Something went wrong trying to get the target info.\n what(): %s", e.what()); 
-        return -1; 
+        try { target = ApexOptics::GetTarget(string(target_name)); } 
+
+        catch (const std::exception& e) {
+
+            Error(here, "Something went wrong trying to get the target info.\n what(): %s", e.what()); 
+            return -1; 
+        }
     }
     
     printf("Optics target chosen is '%s'.\n", target.name.c_str()); 
 
+
+    //try to create the polynomial cu
+    PolynomialCut* polycut = nullptr; 
+
+    const bool use_polycut = (string(path_polycut) != ""); 
+
+    
+    if (use_polycut) {
+        printf("We are applying a polynomial cut to the data: '%s'\n", path_polycut); 
+    } else {
+        printf("We are NOT going to apply a polynomial cut to filter events - none was specified.\n"); 
+    }
+
+    if (use_polycut) {
+        try { 
+            cout << "using polycut file: " << path_polycut << endl; 
+
+            polycut = new PolynomialCut; 
+            polycut->Parse_dbfile(path_polycut); 
+        } 
+        catch (const PolynomialCut::DBFileException& e) {
+            Error(here, "Problem parsing cutfile. Exception:\n %s", e.what());
+            return -1;  
+        }
+    }
+    const char* cutbranch_x = "z_reco_vertical"; 
+    const char* cutbranch_y = "dydz_sv"; 
 
     //try to initialize the optics model
     ChainedOpticsModel* model = new ChainedOpticsModel(is_RHRS); 
@@ -208,9 +243,14 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
     //apply the phase correction to the vertex
     rna.Define("y_BPM", [](TVector2 BPMA, TVector2 BPMB){ return (BPMA.Y() + BPMB.Y())/2.; }, {"r_BPMA", "r_BPMB"}); 
 
+    rna.Define("y_hcs_corrected", [y_correction, &Phase_correction](TVector3 vtx, double y_BPM)
+        {
+            return vtx.y() + Phase_correction(vtx.y(), y_BPM) + y_correction; 
+        }, {"react_vertex", "y_BPM"});
+
     rna.Define("position_vtx", [&](TVector3 vtx, double y_BPM)
         {
-            //fix the y-value
+            //fix the y-value, unless this is an H-wire run, in which case we should NOT fix it. 
             if (target.x_hcs==target.x_hcs) { vtx[0] = target.x_hcs; }  
             if (target.y_hcs==target.y_hcs) { vtx[1] = target.y_hcs; } else { vtx[1] += Phase_correction(vtx.y(), y_BPM); }  
             if (target.z_hcs==target.z_hcs) { vtx[2] = target.z_hcs; }  
@@ -231,12 +271,12 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
         
 
     //now, add the constant y-offset
-    rna.Overwrite("position_vtx", [y_correction, &target](TVector3 vtx_hcs)
+    rna.Overwrite("position_vtx", [y_correction, &target](TVector3 vtx_hcs, double y_hcs_corrected)
         { 
             //only do this if this ISN'T a h-wire run
-            if (target.y_hcs != target.y_hcs) vtx_hcs[1] += y_correction; 
+            if (target.y_hcs != target.y_hcs) vtx_hcs[1] = y_hcs_corrected; 
             return vtx_hcs; 
-        }, {"position_vtx"}); 
+        }, {"position_vtx", "y_hcs_corrected"}); 
 
     rna.Define("position_vtx_scs", [is_RHRS](TVector3 vtx_hcs)
         {
@@ -252,7 +292,6 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
             return Xsv;  
             
         }, {"Xsv_reco", "position_vtx_scs"}); 
-    
 
 
     //perform a very basic cut on sum of cerenkov ADCs 
@@ -301,8 +340,23 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
         {"dpp_sv",  &Trajectory_t::dpp}
     }); 
 
+    //make a cut on z_vertical & dydz, if we're using a polycut
+    if (use_polycut) {
+
+        rna.Define("z_reco_vertical", [is_RHRS](TVector3 vtx, Trajectory_t Xsv)
+        {
+            auto Xhcs = ApexOptics::SCS_to_HCS(is_RHRS, Xsv);
+            return - ( Xhcs.x - vtx.x() ) / Xhcs.dxdz; 
+        }, {"position_vtx", "Xsv_reco"}); 
+
+        //apply the polynomial cut
+        rna = rna.Get().Filter([&polycut](double dydz_sv, double z_reco_vertical)
+            {
+                return polycut->IsInside(z_reco_vertical, dydz_sv); 
+            }, {"dydz_sv", "z_reco_vertical"});
+    }
     
-        //do a cut on cerenkov values
+    //do a cut on cerenkov values
     auto df_out = rna.Get()
 
         //do a cut on cerenkov sum
@@ -317,8 +371,8 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
     );  
     
 
-
     df_out.Snapshot("tracks_fp", path_outfile, {
+
             //focal-plane coordinates
             "x_fp",         
             "y_fp",
@@ -333,9 +387,17 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
             "dpp_sv",
 
             //vertex/target information
-            "position_vtx", 
-            "position_vtx_scs",
-            "y_BPM",
+            "position_vtx",         //the position vtx, in APEX HCS
+            "position_vtx_scs",     //the position vtx, in SCS
+            "y_hcs_corrected",      //the y-position from raster info.
+                                    // this will be no different from position_vtx.y() for non-H-wire runs, but for H-wire runs 
+                                    // (where position_vtx.y() is overwritten with the real H-wire pos from survey data, this is 
+                                    // a way to keep the raster info.) 
+            "y_BPM",                // average of both BPMs for this event.
+            "r_BPMA",               // event-wise BPMA info
+            "r_BPMB",               // event-wise BPMB info
+            "Raster2_current_x",    // raw raster current - x
+            "Raster2_current_y",    // raw raster current - y  
 
             //pid information
             "cer_sum",      
@@ -352,7 +414,7 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
     auto file = new TFile(path_outfile, "UPDATE"); 
 
     Add_TParameter_to_TFile("is_RHRS",          is_RHRS); 
-    Add_TParameter_to_TFile("min_cerenkov_sum", min_cerenkov_sum);
+    Add_TParameter_to_TFile("min_cerenkov_sum", min_cerenkov_sum); 
     Add_TParameter_to_TFile("min_Esh_Eps_sum",  min_Esh_Eps_sum); 
 
     file->Close(); 
@@ -360,5 +422,4 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
     cout << "done." << endl; 
 
     return 0; 
-
 }
