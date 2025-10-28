@@ -1,24 +1,42 @@
 #include "SaveOutputFrame.h"
 #include <ROOT/RDataFrame.hxx>
 #include <TParameter.h>
+#include <string> 
+#include <cmath> 
+#include <optional>
+#include <ApexOptics.h> 
 
 using namespace std; 
+using ApexOptics::Trajectory_t; 
 
 //_______________________________________________________________________________________________________________
 SaveOutputFrame::SaveOutputFrame(   const TGWindow *p, 
                                     UInt_t w, 
                                     UInt_t h, 
                                     const std::vector<SieveHoleData>& shd,
+                                    ROOT::RDF::RNode *df, 
                                     bool is_RHRS,
-                                    TVector3 vtx )
-    : TGMainFrame(p, w, h)
+                                    TVector3 vtx, 
+                                    const double fpcoord_cut_width,
+                                    const char* branch_horizontal, 
+                                    const char* branch_vertical
+                                )
+    : TGMainFrame(p, w, h), 
+    fFpcoord_cut_width{fpcoord_cut_width},
+    fNode{df},
+    fBranch_horiz{branch_horizontal}, 
+    fBranch_vert{branch_vertical}
 {
     if (shd.empty()) CloseWindow(); 
 
-    
-
     fIsRHRS = is_RHRS; 
     fReactVertex = vtx; 
+
+    //check if node is ok
+    if (fNode == nullptr) {
+        throw logic_error("in <SaveOutputFrame::DoSave>: passed a nullptr for the dataframe!"); 
+        return; 
+    }
 
     // Set up the main frame
     SetCleanup(kDeepCleanup);
@@ -55,7 +73,9 @@ void SaveOutputFrame::DoSave()
 { 
     if (!fTextEntry) return; 
     
-    const char* path_outfile = fTextEntry->GetBuffer()->GetString(); 
+    const char* prefix_outfile     = fTextEntry->GetBuffer()->GetString(); 
+
+    const char* path_outfile_holes = Form("%s-holes.root", prefix_outfile);
 
     //get the react vertex from the parent
     const TVector3 rvtx = fReactVertex; 
@@ -66,6 +86,8 @@ void SaveOutputFrame::DoSave()
     ROOT::RDataFrame df(fSavedHoles.size()); 
 
     int i_elem =0; 
+
+    cout << "Creating outfile of hole-fits: '" << path_outfile_holes << "..." << flush; 
 
     auto snapshot = df 
 
@@ -98,7 +120,7 @@ void SaveOutputFrame::DoSave()
 
         .Define("position_vtx_scs", [rvtx](){ return rvtx; }, {})
 
-        .Snapshot("hole_data", path_outfile, {
+        .Snapshot("hole_data", path_outfile_holes, {
             "x_sv",
             "y_sv",
             "dxdz_sv",
@@ -124,20 +146,127 @@ void SaveOutputFrame::DoSave()
         }); 
 
     //now, create the output parameters we want to make
-    auto file = new TFile(path_outfile, "UPDATE"); 
-
+    auto file = new TFile(path_outfile_holes, "UPDATE"); 
     if (!file || file->IsZombie()) {
         throw logic_error("in <SaveOutputFrame::DoSave>: putput file file is null/zombie. check path."); 
         return; 
     }
-
     auto param_is_RHRS = new TParameter<bool>("is_RHRS", fIsRHRS);  
     param_is_RHRS->Write();
 
     file->Close();
     delete file; 
 
-    cout << "saved file: " << path_outfile << endl; 
+    cout << "done" << endl; 
+
+    cout << "saved (hole) file: " << path_outfile_holes << endl; 
+
+    const double focalplane_cut_width = 0.0055; 
+
+    const char* path_outfile_cuts = Form("%s-cutdata.root", prefix_outfile); 
+
+    cout << "Creating outfile of cuts: '" << path_outfile_cuts << "..." << flush; 
+
+    auto df_cuts = (*fNode)
+
+        //now save all the 'cut' data (actual events)
+        .Define("holedata_selected_opt", [this](  double dxdz_sv, //sieve coords
+                                                                        double dydz_sv, 
+                                                                        double x_fp, //target coords
+                                                                        double y_fp, 
+                                                                        double dxdz_fp, 
+                                                                        double dydz_fp, 
+                                                                        TVector3 vtx_scs    
+                                                                    )
+        {   
+            std::optional<SieveHoleData> holedata_selected(std::nullopt); 
+
+            for (const auto & holedata : this->fSavedHoles) {
+
+                double dxdz_hole = (holedata.hole.x - vtx_scs.x())/(0. - vtx_scs.z()); 
+                double dydz_hole = (holedata.hole.y - vtx_scs.y())/(0. - vtx_scs.z()); 
+
+                //make cut on hole coords in fp 
+                double hole_rad2 = 
+                    pow( (dxdz_hole - dxdz_sv)/holedata.cut_width,  2) + 
+                    pow( (dydz_hole - dydz_sv)/holedata.cut_height, 2);
+                    
+                if (hole_rad2 > 1.) continue; 
+                
+                //now, make a cut on event in the focal plane 
+                //printf(" y_fp (polynomial vs real): %+.4f  %+.4f\n", holedata.y_fp.Eval(x_fp), y_fp); 
+                const double& fp_cut = this->fFpcoord_cut_width; 
+
+                if (fabs( holedata.y_fp   .Eval(x_fp) - y_fp )    > fp_cut) continue; 
+                if (fabs( holedata.dxdz_fp.Eval(x_fp) - dxdz_fp ) > fp_cut) continue; 
+                if (fabs( holedata.dydz_fp.Eval(x_fp) - dydz_fp ) > fp_cut) continue; 
+                
+                //make a copy for us to keep
+                holedata_selected = optional<SieveHoleData>(SieveHoleData{holedata});
+            }
+
+            return holedata_selected; 
+
+        }, {fBranch_horiz.c_str(), 
+            fBranch_vert.c_str(), 
+            "x_fp", "y_fp", "dxdz_fp", "dydz_fp", 
+            "position_vtx_scs"})
+        
+        //filter out events which were not selected for a particular hole
+        .Filter([](std::optional<SieveHoleData> holedata_opt){ return holedata_opt.has_value(); }, {"holedata_selected_opt"})
+
+        .Define("Xsv", [](std::optional<SieveHoleData> holedata_opt, TVector3 vtx_scs)
+        {   
+            SieveHole hole = holedata_opt.value().hole; 
+
+            //take the 'average' bewtween the front and back centers of the sieve hole 
+            double dxdz_front = (hole.x - vtx_scs.x())/(0. - vtx_scs.z()); 
+            double dydz_front = (hole.y - vtx_scs.y())/(0. - vtx_scs.z());
+
+            double dxdz_back  = (hole.x - vtx_scs.x())/(0.0125 - vtx_scs.z()); 
+            double dydz_back  = (hole.y - vtx_scs.y())/(0.0125 - vtx_scs.z());
+
+            return Trajectory_t{ 
+                .x      = hole.x, 
+                .y      = hole.y, 
+                .dxdz   = 0.5*(dxdz_front + dxdz_back), 
+                .dydz   = 0.5*(dydz_front + dydz_back)
+            }; 
+        }, {"holedata_selected_opt", "position_vtx_scs"})
+
+        .Redefine("x_sv",     [](Trajectory_t Xsv){ return Xsv.x;     }, {"Xsv"})
+        .Redefine("y_sv",     [](Trajectory_t Xsv){ return Xsv.y;     }, {"Xsv"})
+        .Redefine("dxdz_sv",  [](Trajectory_t Xsv){ return Xsv.dxdz;  }, {"Xsv"})
+        .Redefine("dydz_sv",  [](Trajectory_t Xsv){ return Xsv.dydz;  }, {"Xsv"})
+        
+        .Snapshot("tracks_fp_cut", path_outfile_cuts, {
+            "x_sv", 
+            "y_sv",
+            "dxdz_sv",
+            "dydz_sv",
+            "dpp_sv",
+
+            "x_fp",
+            "y_fp",
+            "dxdz_fp",
+            "dydz_fp",
+
+            "position_vtx_scs"
+        }); 
+
+    cout << "done." << endl; 
+
+    //now, create the output parameters we want to make
+    file = new TFile(path_outfile_cuts, "UPDATE"); 
+    if (!file || file->IsZombie()) {
+        throw logic_error("in <SaveOutputFrame::DoSave>: putput file file is null/zombie. check path."); 
+        return; 
+    }
+    param_is_RHRS = new TParameter<bool>("is_RHRS", fIsRHRS);  
+    param_is_RHRS->Write();
+    file->Close();
+    delete file; 
+
 
     DoExit(); 
 }

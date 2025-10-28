@@ -12,8 +12,9 @@ using namespace std;
 
 EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p, 
                                     PickSieveHoleApp *_parent, 
-                                    ROOT::RDataFrame *_rdf, 
+                                    ROOT::RDF::RNode *_rdf, 
                                     SieveHoleData *_hd,
+                                    const double fp_cut_width, 
                                     const char* branch_x, 
                                     const char* branch_y, 
                                     const char* draw_option,
@@ -21,7 +22,8 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     : TGMainFrame( p, 1400, 800 ), 
     fParent{_parent},
     fRDF{_rdf}, 
-    fSelectedSieveHole{_hd}
+    fSelectedSieveHole{_hd}, 
+    fFpcoord_cut_width{fp_cut_width}
 {   
     const int polynomial_degree =3; 
 
@@ -390,7 +392,13 @@ void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t
         f1_poly->SetLineColor(kRed); 
         f1_poly->SetLineWidth(2); 
         int i=0; for (double coeff : poly) f1_poly->SetParameter(i++, coeff); 
-        f1_poly->Draw("SAME");
+        
+        //draw the up and down limits of the cut
+        f1_poly->SetParameter(0, poly[0] + fFpcoord_cut_width); 
+        f1_poly->DrawCopy("SAME"); 
+
+        f1_poly->SetParameter(0, poly[0] - fFpcoord_cut_width); 
+        f1_poly->DrawCopy("SAME"); 
     } 
 }
 //_____________________________________________________________________________________________________________________________________

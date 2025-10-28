@@ -17,15 +17,18 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
                                     UInt_t w, 
                                     UInt_t h, 
                                     const bool is_RHRS, 
-                                    const char* path_infile, 
+                                    const char* path_infile,
+                                    const char* target_name,  
                                     const char* coordname_x,
                                     const char* coordname_y,
+                                    const int n_rast_partitions,
                                     const char* drawing_option, 
                                     unsigned int palette) 
     : TGMainFrame(p, w, h),
     f_is_RHRS(is_RHRS), 
     fBranchX(coordname_x),
     fBranchY(coordname_y),
+    fNRastPartitions{n_rast_partitions},
     fPathInfile(path_infile),
     fDrawingOption(drawing_option),
     fPalette{palette}
@@ -36,7 +39,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fCurrentWindow     = kWindow_PickSieveHole;  
     fCurrentPickStatus = kNoneSelected; 
 
-    // Set up the main frame
+    // Set up the main frame    
     SetCleanup(kDeepCleanup);
     
     //setup the canvas, and split it 
@@ -56,7 +59,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     //first things first, lets set up & draw the histogram: 
     if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
 
-    fRDF = new ROOT::RDataFrame(fTreeName.c_str(), path_infile); 
+    fRDF = (ROOT::RDF::RNode*)(new ROOT::RDataFrame(fTreeName.c_str(), path_infile)); 
 
     fSieveHist = (TH2D*)fRDF->Histo2D<double>({
         "h_sieve_cpy", 
@@ -393,7 +396,15 @@ void PickSieveHoleApp::DoEvaluate()
         fCurrentWindow = kWindow_EvalSieveHole; 
     }
     
-    new EvaluateCutFrame(gClient->GetRoot(), this, fRDF, fSelectedSieveHole, "dxdz_sv", "dydz_sv", "col", kBird); 
+    new EvaluateCutFrame(
+        gClient->GetRoot(), 
+        this, 
+        fRDF, 
+        fSelectedSieveHole, 
+        fFpcoord_cut_width, 
+        "dxdz_sv", "dydz_sv", "col", 
+        kBird
+    ); 
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DoneEvaluate()
@@ -507,8 +518,10 @@ void PickSieveHoleApp::WriteOutput() {
             gClient->GetRoot(), 
             900, 500,  
             fSieveHoleData,
+            fRDF,
             Get_IsRHRS(),
-            GetReactVertex()
+            GetReactVertex(),
+            fFpcoord_cut_width
         );
 }
 //_____________________________________________________________________________________________________________________________________

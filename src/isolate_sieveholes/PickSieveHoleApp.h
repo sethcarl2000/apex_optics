@@ -15,6 +15,7 @@
 #include <TGButton.h>
 #include <TH2D.h>
 #include <TVector3.h>
+#include <ApexOptics.h> 
 #include "SieveHoleData.h"
 #include <ROOT/RDataFrame.hxx>
 #include <vector>
@@ -34,6 +35,11 @@ private:
     TGHorizontalFrame *fFrame_numbers; 
     //buttons, sorted by the 'status' in which they appear
     TGTextButton*  fButton_Exit;     //Exit
+
+    ApexOptics::OpticsTarget_t fTarget; //the optics target we're looking at 
+
+    //total number of different 'fits' we're going to do 
+    int fNRastPartitions{1}; 
     
     //additional buttons when a hole is picked on the plot
     TGTextButton*  fButton_Evaluate; //evaluate this hole
@@ -93,8 +99,11 @@ private:
 
     TVector3 fReactVertex; 
 
+    //max allowable dist between the fp-coord value and the actual value
+    const double fFpcoord_cut_width{0.0055}; 
+
     //RDF node, with which we will do analysis 
-    ROOT::RDataFrame* fRDF{nullptr};  
+    ROOT::RDF::RNode* fRDF{nullptr};  
 
     const std::string fTreeName = "tracks_fp"; 
     const bool f_is_RHRS; 
@@ -108,8 +117,10 @@ public:
                      UInt_t h, 
                      const bool is_RHRS, 
                      const char* path_infile,
+                     const char* target_name="none",
                      const char* branch_x="dxdz_sv",
                      const char* branch_y="dydz_sv", 
+                     const int n_rast_partitions=3,
                      const char* drawing_option="col2", 
                      unsigned int palette=kSunset);
     

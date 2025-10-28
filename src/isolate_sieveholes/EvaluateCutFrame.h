@@ -42,9 +42,11 @@ private:
     //*fHist_yfp, *fHist_dxdzfp, *fHist_dydzfp; 
     HistAndLimit fY_fp, fDxdz_fp, fDydz_fp; 
 
+    const double fFpcoord_cut_width; 
+
     PickSieveHoleApp *fParent; 
 
-    ROOT::RDataFrame *fRDF{nullptr}; 
+    ROOT::RDF::RNode *fRDF{nullptr}; 
 
     SieveHoleData *fSelectedSieveHole{nullptr}; 
 
@@ -56,8 +58,9 @@ private:
 public: 
     EvaluateCutFrame(   const TGWindow *p, 
                         PickSieveHoleApp *_parent, 
-                        ROOT::RDataFrame *_rdf, 
+                        ROOT::RDF::RNode *_rdf, 
                         SieveHoleData *_hd,
+                        const double fp_cut_width, 
                         const char* branch_x="dxdz_sv", 
                         const char* branch_y="dydz_sv", 
                         const char* draw_option="col2",

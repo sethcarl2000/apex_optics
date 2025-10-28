@@ -80,6 +80,9 @@ struct SieveHoleData {
     TEllipse* draw_circ{nullptr}; 
     TEllipse* hole_cut{nullptr}; 
 
+    //fraction of a sigma for which we will keeps events 
+    double focalplane_cut_width = 1.8; 
+
     bool operator==(const SieveHoleData& rhs) const { return hole == rhs.hole; }
 };
 
