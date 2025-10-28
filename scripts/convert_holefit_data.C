@@ -1,9 +1,16 @@
-#include "TROOT.h"
-#include <ROOT/RDataFrame.hxx> 
+//ROOT headers
+#include <ROOT/RDataFrame.hxx>
+#include <TRandom3.h>  
+#include <TVector3.h> 
+//std lib headers
 #include <vector> 
 #include <iostream> 
 #include <cstdio> 
 #include <cmath> 
+//Apex-specific headers
+#include "include/Add_TParameter_to_TFile.h"
+#include <ApexOptics.h>
+
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -18,6 +25,8 @@ struct HoleData_t {
     RVec<double> a_y_fp, a_dxdz_fp, a_dydz_fp; 
 
     double x_fp_min{-0.6}, x_fp_max{0.6}; 
+
+    TVector3 position_vtx_scs; 
 }; 
 
 int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const char* path_infile, const char* path_outfile) 
@@ -44,7 +53,8 @@ int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const 
                                     RVec<double> a_dxdz_fp,
                                     RVec<double> a_dydz_fp,// ) 
                                     double x_fp_min, 
-                                    double x_fp_max )
+                                    double x_fp_max, 
+                                    TVector3 position_vtx_scs )
         {
             return HoleData_t{
                 .x_sv       = x_sv, 
@@ -55,9 +65,10 @@ int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const 
                 .a_dxdz_fp  = a_dxdz_fp,
                 .a_dydz_fp  = a_dydz_fp,
                 .x_fp_min   = x_fp_min,
-                .x_fp_max   = x_fp_max 
+                .x_fp_max   = x_fp_max,
+                .position_vtx_scs = position_vtx_scs
             }; 
-        }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "a_y_fp", "a_dxdz_fp", "a_dydz_fp", "x_fp_min", "x_fp_max"})
+        }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "a_y_fp", "a_dxdz_fp", "a_dydz_fp", "x_fp_min", "x_fp_max", "position_vtx_scs"})
         
         //this 'Take' command tells the RDataFrame to put each event in the column 'holedata_vec' into a vector, 
         // and hand that vector back to us. 
@@ -159,6 +170,17 @@ int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const 
 
         }, {"hole_data", "x_fp"})
 
+        .Define("position_vtx_scs", [](const HoleData_t& hole_data){
+
+            return hole_data.position_vtx_scs; 
+        }, {"hole_data"})
+
+        .Define("position_vtx", [is_RHRS](TVector3 vtx_scs){
+
+            return ApexOptics::SCS_to_HCS(is_RHRS, vtx_scs); 
+
+        }, {"position_vtx_scs"})
+
         .Snapshot("tracks_fp", path_outfile, {
             "x_sv",
             "y_sv",
@@ -169,27 +191,22 @@ int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const 
             "x_fp",
             "y_fp",
             "dxdz_fp",
-            "dydz_fp"
+            "dydz_fp", 
+
+            "position_vtx", 
+            "position_vtx_scs"
         }); 
 
     cout << "done." << endl; 
-
 
     //add 'is_RHRS' parameter
     cout << "Adding parameters..." << flush; 
     auto file = new TFile(path_outfile, "UPDATE"); 
 
-    auto param_is_RHRS = new TParameter<bool>("is_RHRS", is_RHRS); 
-    
-    auto param_x_fp_min = new TParameter<double>("x_fp_min", x_fp_min); 
-    auto param_x_fp_max = new TParameter<double>("x_fp_max", x_fp_max); 
-
-    auto param_n_sieve_holes = new TParameter<int>("n_sieve_holes", (int)hole_data.size()); 
-    
-    param_is_RHRS       ->Write();
-    param_x_fp_min      ->Write(); 
-    param_x_fp_max      ->Write(); 
-    param_n_sieve_holes ->Write(); 
+    Add_TParameter_to_TFile<bool>   ("is_RHRS",         is_RHRS); 
+    Add_TParameter_to_TFile<double> ("x_fp_min",        x_fp_min); 
+    Add_TParameter_to_TFile<double> ("x_fp_max",        x_fp_max); 
+    Add_TParameter_to_TFile<int>    ("n_sieve_holes",   (int)hole_data.size()); 
 
     file->Close(); 
     delete file; 
