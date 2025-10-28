@@ -7,6 +7,7 @@
 #include <TVector3.h>
 #include <TParameter.h>
 #include <TSystem.h> 
+#include <TDatime.h> 
 #include <memory> 
 #include <ROOT/RDataFrame.hxx>
 #include <ApexOptics.h> 
@@ -15,15 +16,16 @@ using namespace std;
 
 //sieve coords  {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}
 //q1 coords     {"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"}
+//q1-fwd coords {"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"} 
 //fp coords     {"x_fp","y_fp","dxdz_fp","dydz_fp"}
 
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 //if you want to avoid creating (or overwriting) a db-file, just enter "" as the db-file name, and only the histograms will be drawn instead. 
-int create_NPolyArray_fit(  const int poly_order=6,
-                            const char* path_infile  ="data/mc/mc_L_production.root",
-                            const char* stem_outfile ="data/csv/poly_prod_fp_sv_L_6ord.dat",  
-                            const vector<string> inputs  ={"x_fp","y_fp","dxdz_fp","dydz_fp"},
-                            const vector<string> outputs ={"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"}, 
+int create_NPolyArray_fit(  const int poly_order =4,
+                            const char* path_infile  ="data/sieve_holes/fits_15Oct/fits_L_V123-H3-dp.root",
+                            const char* stem_outfile ="data/poly/V123-H3-fits_sv_fp_4ord.dat",  
+                            const vector<string> inputs  ={"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"},
+                            const vector<string> outputs ={"x_fp","y_fp","dxdz_fp","dydz_fp"},
                             const char* tree_name    ="tracks_fp") 
 {
     const char* const here = "fit_points_mc_forward"; 
@@ -88,7 +90,38 @@ int create_NPolyArray_fit(  const int poly_order=6,
     if (path_outfile != "") {
         cout << "Creating dbfiles for polynomials..." << flush; 
         
-        ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap); 
+        // first, we're going to write some of our own data to the file.
+        // the 'trunc' flag means that we're going to wipe the contents of the file and start over.  
+        fstream outfile(path_outfile, ios::out | ios::trunc); 
+
+        if (!outfile.is_open()) {
+            Error(here, "Unable to open file '%s'.", path_outfile.c_str()); 
+            return -1; 
+        }
+
+        //now that we can open the file, let's add some metadata to it. 
+        string metadata_format =  
+            "# Polynomial metadata: \n"
+            "# -- Order: %i\n"
+            "# -- Trained on data: '%s'\n"
+            "# -- Input branches: { "; 
+
+        for (const auto& br : inputs) metadata_format += br + " "; 
+
+        metadata_format += 
+            "}\n"
+            "# -- Time created: %s\n"; 
+
+        TDatime dtime; 
+
+        char metadata[1000];
+        sprintf(metadata, metadata_format.c_str(), poly_order, path_infile, dtime.AsString()); 
+        cout << metadata << endl; 
+
+        outfile << metadata << endl; 
+        outfile.close(); 
+
+        ApexOptics::Create_dbfile_from_polymap(is_RHRS, path_outfile, polymap, true); 
 
         cout << "done." << endl; 
 

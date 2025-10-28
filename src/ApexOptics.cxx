@@ -261,11 +261,16 @@ int ApexOptics::Create_dbfile_from_mlp(const char* path_dbfile, const MultiLayer
     return 0; 
 }
 //__________________________________________________________________________________________________________________
-int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap) 
+int ApexOptics::Create_dbfile_from_polymap(bool is_RHRS, string path_outfile, map<string, NPoly*> polymap, const bool append_file) 
 {            
     const char* const here = "ApexOptics::Create_dbfile_from_polymap"; 
 
-    fstream outfile(path_outfile, ios::out | ios::trunc); 
+    fstream outfile; 
+
+    // if append_file==true, then we won't overwrite the contents already there.  
+    // otherwise, wipe the file and start over. 
+    if (append_file) { outfile.open(path_outfile, ios::out | ios::app); }
+    else             { outfile.open(path_outfile, ios::out | ios::trunc); }
 
     if (!outfile.is_open()) {
         fprintf(stderr, "Error in <%s>: Unable to open output file: '%s'", here, path_outfile.data()); 
@@ -383,6 +388,8 @@ int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_
     //The first token is the name of the polynomial to which this element belongs.
     // the next 4 tokens are the power to which this polynomial must be raised. 
     // the last token is the coefficient of this element.
+
+    //Comment lines start with: '#'. these lines will be skipped. 
     
     //The file must be headed by the line: 
     //
@@ -404,7 +411,11 @@ int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_
     string line; 
     
     //get the DoF of this poly
-    getline(dbfile, line); 
+    //iterate until we find a line which is not empty, and is not a comment
+    do {
+        getline(dbfile, line); 
+    } while (line.empty() || line[0]=='#'); 
+
     istringstream iss_init(line);
     
     string token; 
@@ -431,7 +442,11 @@ int ApexOptics::Parse_NPoly_from_file(const char* path_dbfile, const char* poly_
         //parse the string into token (delimited by whitespace!)
         istringstream iss(line); 
 
-        string elem_name; iss >> elem_name; 
+        string elem_name; 
+        iss >> elem_name; 
+
+        //check if this is a commented line (or if its empty.)
+        if (elem_name.empty() || elem_name[0]=='#') continue; 
 
         //this line is not the poly you're looking for
         if (elem_name != poly_name) continue; 
