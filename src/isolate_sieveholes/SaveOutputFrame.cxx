@@ -41,20 +41,57 @@ SaveOutputFrame::SaveOutputFrame(   const TGWindow *p,
     // Set up the main frame
     SetCleanup(kDeepCleanup);
 
-    auto bframe = new TGHorizontalFrame(this, 900, 500); 
-    
-    fButton_Save = new TGTextButton(bframe, "&Save", 1); 
+    // ~~~~ Text entry for the user to input the output file path: 
+    fHFrame_outPath = new TGHorizontalFrame(this, w, 60);
+    //
+    // label
+    fLabel_outPath = new TGLabel(fHFrame_outPath, "Output file rel. path: "); 
+    fHFrame_outPath->AddFrame(fLabel_outPath, new TGLayoutHints(kLHintsLeft)); 
+    //
+    // text entry 
+    fTextEntry_outPath = new TGTextEntry(fHFrame_outPath); 
+    fHFrame_outPath->AddFrame(fTextEntry_outPath, new TGLayoutHints(kLHintsRight | kLHintsExpandX)); 
+    //
+    // Add this frame to the parent frame
+    AddFrame(fHFrame_outPath, new TGLayoutHints(kLHintsTop | kLHintsExpandX)); 
+
+
+    // ~~~ Number entry for the user to input the desired number of input events
+    fHFrame_nEvents = new TGHorizontalFrame(this, w, 60); 
+    // 
+    // label
+    fLabel_nEvents = new TGLabel(fHFrame_nEvents, "Number of output events: "); 
+    fHFrame_nEvents->AddFrame(fLabel_nEvents, new TGLayoutHints(kLHintsLeft)); 
+    //
+    // number entry
+    fNumEntry_nEvents = new TGNumberEntry(fHFrame_nEvents, 1e5); // 1e5 is the default number of events generated. 
+    fNumEntry_nEvents->SetNumStyle(TGNumberEntry::kNESInteger); //number entered must be an integer
+    fNumEntry_nEvents->SetNumAttr(TGNumberEntry::kNEAPositive); //number entered must be positive  
+    fNumEntry_nEvents->SetLimits(TGNumberEntry::kNELLimitMinMax, 1., (double)fnEvents_max); //set the min and max reasonable limits
+    fNumEntry_nEvents->GetNumberEntry()->Connect("ReturnPressed()", "SaveOutputFrame", this, "SetNEvents()"); 
+    fHFrame_nEvents->AddFrame(fNumEntry_nEvents, new TGLayoutHints(kLHintsRight | kLHintsExpandX)); 
+    //
+    // Add this frame to the parent frame
+    AddFrame(fHFrame_nEvents, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX)); 
+
+
+    // ~~~ Add frame for the 'save' and 'Exit' buttons
+    fHFrame_buttons = new TGHorizontalFrame(this, w, 60); 
+    //
+    // 'save' button
+    fButton_Save = new TGTextButton(fHFrame_buttons, "&Save", 1); 
     fButton_Save->Connect("Clicked()", "SaveOutputFrame", this, "DoSave()"); 
-    bframe->AddFrame(fButton_Save, new TGLayoutHints(kLHintsLeft  | kLHintsExpandX , 10, 10, 10, 5)); 
-
-    fButton_Exit = new TGTextButton(bframe, "&Exit", 1); 
+    fHFrame_buttons->AddFrame(fButton_Save, new TGLayoutHints(kLHintsLeft  | kLHintsExpandX)); 
+    //
+    // 'exit' button
+    fButton_Exit = new TGTextButton(fHFrame_buttons, "&Exit", 1); 
     fButton_Exit->Connect("Clicked()", "SaveOutputFrame", this, "DoExit()"); 
-    bframe->AddFrame(fButton_Exit, new TGLayoutHints(kLHintsLeft  | kLHintsExpandX , 10, 10, 10, 5)); 
-    
-    AddFrame(bframe, new TGLayoutHints(kLHintsBottom | kLHintsExpandX, 10, 10, 10, 10)); 
+    fHFrame_buttons->AddFrame(fButton_Exit, new TGLayoutHints(kLHintsLeft  | kLHintsExpandX)); 
+    //
+    // Add this frame to the parent frame
+    AddFrame(fHFrame_buttons, new TGLayoutHints(kLHintsCenterY | kLHintsExpandX)); 
 
-    fTextEntry = new TGTextEntry(this);
-    AddFrame(fTextEntry, new TGLayoutHints(kLHintsTop | kLHintsExpandX, 20, 20, 20, 20));  
+    //Text entry for the user to input the desired number of simulated events:     
 
     //make copies of all the sieve holes which were sucessfully evaluated
     for (const SieveHoleData& dat : shd) {
@@ -71,9 +108,9 @@ SaveOutputFrame::SaveOutputFrame(   const TGWindow *p,
 //_________________________________________________________________________________________________________________________________
 void SaveOutputFrame::DoSave() 
 { 
-    if (!fTextEntry) return; 
+    if (!fTextEntry_outPath) return; 
     
-    const char* prefix_outfile     = fTextEntry->GetBuffer()->GetString(); 
+    const char* prefix_outfile     = fTextEntry_outPath->GetBuffer()->GetString(); 
 
     const char* path_outfile_holes = Form("%s-holes.root", prefix_outfile);
 
