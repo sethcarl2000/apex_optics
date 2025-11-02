@@ -211,6 +211,11 @@ PickSieveHoleApp::~PickSieveHoleApp() {
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DrawSieveHoles()
 {
+    const char* const here = "DrawSieveHoles"; 
+#ifdef DEBUG
+    Info(here, "In %s body...", here); 
+#endif
+
     //basic struct to set style & color of circle
     struct CircleStyle { 
         unsigned int 
@@ -266,22 +271,27 @@ void PickSieveHoleApp::DrawSieveHoles()
     canv->cd(); 
 
     //draw all sieve-holes
+#ifdef DEBUG
+    cout << "Entering SieveHoleData Loop..." << endl;  
+#endif
+
+
     for (SieveHoleData& hole_data : fSieveHoleData) {
+
         auto& circ = hole_data.draw_circ;
 
-        double draw_rad = hole_data.hole.is_big ? fDrawSize_big : fDrawSize_small; 
+        double draw_rad = hole_data.hole.is_big ? fDrawSize_big : fDrawSize_small;
 
-        //if circ already exists, delete it to prevent a memory leak
-        if (circ) delete circ; 
-        
         //draw the the new circle with the given hole-position and radius
-        circ = new TEllipse(
-            hole_data.hole.x, 
-            hole_data.hole.y, 
-            draw_rad,
-            draw_rad
-        ); 
-
+        if (circ==nullptr) {
+            circ = new TEllipse(
+                hole_data.hole.x, 
+                hole_data.hole.y, 
+                draw_rad,
+                draw_rad
+            ); 
+        } 
+       
         //set line/fill style based on the status of the hole (has it been selected / drawn / etc.)
         if ((fSelectedSieveHole != nullptr) && (hole_data == *fSelectedSieveHole)) {
             set_circle_style( circ, style_selected ); 
@@ -291,9 +301,24 @@ void PickSieveHoleApp::DrawSieveHoles()
         }
         
         circ->Draw();  
+        //we use this line to tell root that WE will manage this object, so it should not try to delete it itself.
+        //circ->SetBit(kCanDelete, false); 
     }
+#ifdef DEBUG
+    cout << "Done with loop." << endl; 
+#endif 
+
+#ifdef DEBUG
+    Info(here, "Calling canv->Modified()...");
+#endif 
     canv->Modified(); 
+#ifdef DEBUG
+    Info(here, "Calling canv->Update()...");
+#endif 
     canv->Update(); 
+#ifdef DEBUG
+    Info(here, "Exiting %s body.", here); 
+#endif
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::SetCutSize()
@@ -316,6 +341,8 @@ void PickSieveHoleApp::SetCutSize()
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DrawHoleCuts() 
 {
+    const char* const here = "DrawHoleCuts"; 
+
     const unsigned int line_color         = kBlue; 
     const unsigned int line_size          = 1; 
     const unsigned int line_size_selected = 3; 
@@ -334,26 +361,70 @@ void PickSieveHoleApp::DrawHoleCuts()
     }
     canv->cd(); 
 
+    //a few helper functions we need 
+    //returns true if the passed double is NaN, false otherwise 
+    auto is_nan = [](double x){ return bool(x!=x); }; 
+
+    //returns true if the passed TObject is in the canvas' list of primitives, false otherwise. 
+    auto is_owned_by_TCanvas = [canv](TObject* obj){
+        for (const auto prim : *canv->GetListOfPrimitives()) { if (prim == obj) return true; }
+        return false; 
+    }; 
+
+    //delete all ellipses from the pad, so we can re-draw them 
+    
+#ifdef DEBUG
+    Info(here, "About to loop through all sieve-holes"); 
+#endif 
+
     //draw all sieve-holes
     for (SieveHoleData& hole_data : fSieveHoleData) {
 
         auto& circ = hole_data.hole_cut;
-
-        //if circ already exists, delete it to prevent a memory leak
-        if (circ) delete circ; 
-
+#ifdef DEBUG
+        //Info(here, "Checking to see if cuts are null... circ ptr: %p", circ); 
+#endif  
         //check if the cuts have been defiend for this hole
-        if (hole_data.cut_x      != hole_data.cut_x ||
-            hole_data.cut_y      != hole_data.cut_y ||
-            hole_data.cut_width  != hole_data.cut_width ||
-            hole_data.cut_height != hole_data.cut_height) continue; 
+        if (is_nan(hole_data.cut_x) ||
+            is_nan(hole_data.cut_y) ||
+            is_nan(hole_data.cut_width) ||
+            is_nan(hole_data.cut_height)) {
 
-        circ = new TEllipse(
-            hole_data.cut_x, 
-            hole_data.cut_y, 
-            hole_data.cut_width,
-            hole_data.cut_height
-        );  
+            //check to see if this circle's been drawn. if it has, we need to remove it. 
+            if (circ) {
+
+#ifdef DEBUG 
+                Info(here, "Found null hole with extant circ (%p). Removing from canvas list of primitives..."); 
+#endif  
+                //if (is_owned_by_TCanvas(circ)) 
+                canv->RecursiveRemove(circ); 
+#ifdef DEBUG    
+                Info(here, "Circ ptr after RecursiveRemove: %p\n", circ); 
+#endif
+            }
+            continue; //move on to the next hole
+        }
+
+#ifdef DEBUG
+        Info(here, "Found non-null hole. Checking to see if 'circ' ptr exists..."); 
+#endif 
+        //if circ has not been drawn, then make a new one. 
+        if (circ==nullptr) {
+#ifdef DEBUG
+            Info(here, "Creating new Circ object..."); 
+#endif 
+            circ = new TEllipse(
+                hole_data.cut_x, 
+                hole_data.cut_y, 
+                hole_data.cut_width,
+                hole_data.cut_height
+            ); 
+        } 
+#ifdef DEBUG
+        else {
+            Info(here, "Circ already exists.");
+        } 
+#endif 
 
         circ->SetLineColor(line_color); 
 
@@ -367,6 +438,9 @@ void PickSieveHoleApp::DrawHoleCuts()
         circ->SetFillStyle(0); //no fill (transparent)
         circ->Draw(); 
     }
+#ifdef DEBUG
+    Info(here, "Modifying & updating canvas."); 
+#endif 
     canv->Modified(); 
     canv->Update(); 
 }
@@ -402,6 +476,7 @@ void PickSieveHoleApp::DoEvaluate()
         fRDF, 
         fSelectedSieveHole, 
         fFpcoord_cut_width, 
+        fNRastPartitions, 
         "dxdz_sv", "dydz_sv", "col", 
         kBird
     ); 
@@ -409,13 +484,20 @@ void PickSieveHoleApp::DoEvaluate()
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DoneEvaluate()
 {
+    const char* const here = "DoneEvaluate"; 
+#ifdef DEBUG
+    Info(here, "Enter DoneEvaluate() body"); 
+#endif 
     //once the EvaluateCutFrame object is done working, then we reutrn here. 
     //now, we've evaluated this sievehole
 
     if (!fSelectedSieveHole) {
         throw logic_error("in <PickSieveHoleApp::DoneEvaluate>: no sieve hole is selected."); 
         return; 
-    }
+    } 
+#ifdef DEBUG
+    else { cout << "fSelectedSieveHole : " << fSelectedSieveHole << endl; }
+#endif 
 
     //this might be changed by the EvaulateCutFrame app
     gStyle->SetPalette(fPalette); 
@@ -423,7 +505,7 @@ void PickSieveHoleApp::DoneEvaluate()
     if (fSelectedSieveHole->is_evaluated) {
 
         cout << "Evaluated hole: row " << fSelectedSieveHole->hole.row << ", col " << fSelectedSieveHole->hole.col << endl; 
-    
+        
     } else { 
 
         cout << "Rejected hole: row " << fSelectedSieveHole->hole.row << ", col " << fSelectedSieveHole->hole.col << endl; 
@@ -431,12 +513,31 @@ void PickSieveHoleApp::DoneEvaluate()
 
     //do re-drawing of buttons
     fCurrentWindow     = kWindow_PickSieveHole; 
+    
+#ifdef DEBUG 
+    Info(here, "Calling DeselectSieveHole..."); 
+#endif 
     DeselectSieveHole(); 
+#ifdef DEBUG
+    Info(here, "Returned."); 
+#endif
 
     //redraw the sieve holes, and update the button layout
+#ifdef DEBUG
+    Info(here, "Calling DrawSieveHoles...");
+#endif
     DrawSieveHoles(); 
+#ifdef DEBUG
+    Info(here, "Calling DrawHoleCuts...");
+#endif
     DrawHoleCuts(); 
+#ifdef DEBUG
+    Info(here, "Calling UpdateButtons...");
+#endif
     UpdateButtons(); 
+#ifdef DEBUG
+    Info("DoneEvaluate", "Leaving DoneEvaluate() body."); 
+#endif 
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DoDelete() 
@@ -456,10 +557,8 @@ void PickSieveHoleApp::DoDelete()
     }
 
     //create a new, 'fresh' SieveHoleData, in which everything is default-initialized except the SieveHole struct. 
-    SieveHoleData clean_slate(fSelectedSieveHole->hole); 
-    fSelectedSieveHole->~SieveHoleData(); 
-    *fSelectedSieveHole = clean_slate; 
-    
+    fSelectedSieveHole->Clear(); 
+
     //and, finally, deselect the hole. 
     DeselectSieveHole(); 
 
@@ -567,13 +666,15 @@ void PickSieveHoleApp::HandleCanvasClick_data() {
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::HandleCanvasClick_drawing() {
-    
+
+    const char* const here = "HandleCanvasClick_drawing"; 
+
     if (fCurrentWindow != kWindow_PickSieveHole) return; 
-    
+
     // Get canvas and event information
     TCanvas* canvas = fEcanvas_drawing->GetCanvas();
     if (!canvas) return;
-    
+
     //new event registered 
     if (fEventType != canvas->GetEvent()) {
         fEventType = canvas->GetEvent(); 
@@ -581,8 +682,18 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
         //if the mouse-button was just released
         if (fEventType == kMouseButton1_up) {
 
+#ifdef DEBUG
+            Info(here, "Handling kMouseButton1_up event."); 
+#endif 
+
             //deselect any selected sievehole 
+#ifdef DEBUG
+            cout << "Calling DeselectSieveHole..." << endl; 
+#endif 
             DeselectSieveHole(); 
+#ifdef DEBUG
+            cout << "Done." << endl; 
+#endif 
 
              // Get pixel coordinates
             Int_t px = canvas->GetEventX();
@@ -623,9 +734,21 @@ void PickSieveHoleApp::HandleCanvasClick_drawing() {
             }//for (auto& hole_data : fSieveHoleData)
 
             //if no sieve hole was picked, then return. 
+#ifdef DEBUG
+            Info(here, "Calling 'DrawSieveHoles'"); 
+#endif
             DrawSieveHoles(); 
+#ifdef DEBUG
+            Info(here, "Calling 'DrawHoleCuts'"); 
+#endif
             DrawHoleCuts(); 
+#ifdef DEBUG
+            Info(here, "Calling 'UpdateButtons'"); 
+#endif
             UpdateButtons(); 
+#ifdef DEBUG
+            Info(here, "Done, exiting.'"); 
+#endif
         }// if (fEventType == kMouseButton1_up) 
     }// if (fEventType != canvas->GetEvent()) 
 }
@@ -638,15 +761,15 @@ void PickSieveHoleApp::DeselectSieveHole()
     //check if we've already loaded a bit of data into this hole
     if (fSelectedSieveHole && !fSelectedSieveHole->is_evaluated) {
 
-        SieveHoleData clean_slate = SieveHoleData(fSelectedSieveHole->hole); 
-        
+        fSelectedSieveHole->Clear(); 
+
         //clean up the sieve hole by deleting this one
-        fSelectedSieveHole->~SieveHoleData(); 
+        //fSelectedSieveHole->~SieveHoleData(); 
         
         //this hole has not been evaluated. therefore, we need to make sure that we 'clean it up' when we deselect. 
         //but if it *has* been evaluated, we don't want to wipe the data that has already been recorded. 
         
-        *fSelectedSieveHole = clean_slate; 
+        //*fSelectedSieveHole = clean_slate; 
     }
     fLabel_selectedHole->SetText("No hole selected"); 
 

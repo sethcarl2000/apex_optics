@@ -14,6 +14,8 @@
 #include <TEllipse.h> 
 #include <limits> 
 #include <SieveHole.h> 
+#include <ApexOptics.h>
+#include <TVector3.h>  
 
 //this just lists a few possible return values from the 'TCanvas::GetEvent()' method. 
 enum ECanvasEventType { 
@@ -27,17 +29,29 @@ const double xsv_draw_range[] = { -0.050, 0.050 };
 const double ysv_draw_range[] = { -0.035, 0.035 }; 
 
 
-//this will contian all the data we need to make a sieve-hole output. 
 struct FPcoordPolynomial {
     ROOT::RVec<double> poly{};
     
     //evaluate the polynomial 
-    double Eval(double x) const { 
+    double Eval(double x_fp) const { 
         double val=0.; 
-        for (int i=0; i<poly.size(); i++) val += pow( x, i ) * poly[i]; 
+        for (int i=0; i<poly.size(); i++) val += pow( x_fp, i ) * poly[i]; 
         return val; 
     }; 
 }; 
+
+//this will contian all the data we need to make a sieve-hole output. 
+struct HoleSaveData { 
+
+    //average react vertex for these events (Sieve-Coordinate System)
+    TVector3 position_vtx_scs; 
+
+    //sieve-coords for this hole
+    ApexOptics::Trajectory_t Xsv; 
+
+    //data for the focal-plane coordinates 
+    FPcoordPolynomial y_fp{}, dxdz_fp{}, dydz_fp{}; 
+};
 
 #define DOUBLE_NAN std::numeric_limits<double>::quiet_NaN()
 
@@ -52,15 +66,24 @@ struct SieveHoleData {
         : hole{shd.hole}, 
         cut_x{shd.cut_x}, cut_y{shd.cut_y},
         cut_width{shd.cut_width}, cut_height{shd.cut_height}, 
-        y_fp{shd.y_fp}, dxdz_fp{shd.dxdz_fp}, dydz_fp{shd.dydz_fp},
+        hole_save_data{shd.hole_save_data},
         x_fp_min{shd.x_fp_min}, x_fp_max{shd.x_fp_max}, 
         is_evaluated{shd.is_evaluated}, 
         draw_circ{nullptr}, hole_cut{nullptr} 
         {}; 
 
-    ~SieveHoleData() { 
-        if (draw_circ) delete draw_circ; 
-        if (hole_cut)  delete hole_cut; 
+    ~SieveHoleData() {}; 
+
+    //clear all data for a clean slate
+    void Clear() {
+        cut_x=DOUBLE_NAN; 
+        cut_y=DOUBLE_NAN; 
+        cut_width=DOUBLE_NAN; 
+        cut_height=DOUBLE_NAN; 
+        hole_save_data={};
+        x_fp_min=DOUBLE_NAN; 
+        x_fp_max=DOUBLE_NAN; 
+        is_evaluated=false;
     }; 
 
     SieveHole hole; 
@@ -70,7 +93,7 @@ struct SieveHoleData {
     double cut_width {DOUBLE_NAN};
     double cut_height{DOUBLE_NAN}; 
     
-    FPcoordPolynomial y_fp{}, dxdz_fp{}, dydz_fp{}; 
+    std::vector<HoleSaveData> hole_save_data{}; 
 
     double x_fp_min{DOUBLE_NAN}; 
     double x_fp_max{DOUBLE_NAN};

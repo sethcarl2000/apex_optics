@@ -141,14 +141,13 @@ void SaveOutputFrame::DoSave()
     if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
 
     ROOT::RDataFrame df(fSavedHoles.size()); 
-    
+
     int i_elem =0; 
 
     const unsigned long int n_events = (unsigned long)fNumEntry_nEvents->GetNumber(); 
 
     cout << "\nCreating outfile of hole-fits: '" << path_outfile << "' with " << n_events <<  " events..." << flush; 
-    return; 
-
+    
 #if 0 
     auto snapshot = df 
 
