@@ -108,11 +108,31 @@ SaveOutputFrame::SaveOutputFrame(   const TGWindow *p,
 //_________________________________________________________________________________________________________________________________
 void SaveOutputFrame::DoSave() 
 { 
-    if (!fTextEntry_outPath) return; 
-    
-    const char* prefix_outfile     = fTextEntry_outPath->GetBuffer()->GetString(); 
+    const char* const here = "SaveOutputFrame::DoSave"; 
 
-    const char* path_outfile_holes = Form("%s-holes.root", prefix_outfile);
+    if (!fTextEntry_outPath) {
+        throw logic_error("in <SaveOutputFrame::DoSave>: fTextEntry_outPath ptr is null!"); 
+        return; 
+    }
+    if (!fNumEntry_nEvents)  {
+        throw logic_error("in <SaveOutputFrame::DoSave>: fNumberEntry_nEvents ptr is null!"); 
+        return; 
+    }
+    
+    const char* path_outfile = fTextEntry_outPath->GetBuffer()->GetString(); 
+
+    //check to see if the '.root' file extension is present 
+    if (string(path_outfile).find(".root") == string::npos) {
+        fprintf(stderr, "\nWarning - the desired file path '%s' does NOT have a '.root' extension... Save anyway? [y/N]: ", path_outfile);  
+        string ans; cin >> ans; 
+        //if they answer anything but 'yes', then abord this save. 
+        if (ans.find("y")==string::npos && ans.find("Y")==string::npos) {
+            cout << ans << " - Ok, we won't save this time." << endl; 
+            return; 
+        } else {
+            cout << ans << " - Ok, saving anyway..." << endl; 
+        }
+    }
 
     //get the react vertex from the parent
     const TVector3 rvtx = fReactVertex; 
@@ -121,11 +141,15 @@ void SaveOutputFrame::DoSave()
     if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
 
     ROOT::RDataFrame df(fSavedHoles.size()); 
-
+    
     int i_elem =0; 
 
-    cout << "Creating outfile of hole-fits: '" << path_outfile_holes << "..." << flush; 
+    const unsigned long int n_events = (unsigned long)fNumEntry_nEvents->GetNumber(); 
 
+    cout << "\nCreating outfile of hole-fits: '" << path_outfile << "' with " << n_events <<  " events..." << flush; 
+    return; 
+
+#if 0 
     auto snapshot = df 
 
         .Define("hole_data", [this, &i_elem]()
@@ -157,7 +181,7 @@ void SaveOutputFrame::DoSave()
 
         .Define("position_vtx_scs", [rvtx](){ return rvtx; }, {})
 
-        .Snapshot("hole_data", path_outfile_holes, {
+        .Snapshot("hole_data", path_outfile, {
             "x_sv",
             "y_sv",
             "dxdz_sv",
@@ -183,7 +207,7 @@ void SaveOutputFrame::DoSave()
         }); 
 
     //now, create the output parameters we want to make
-    auto file = new TFile(path_outfile_holes, "UPDATE"); 
+    auto file = new TFile(path_outfile, "UPDATE"); 
     if (!file || file->IsZombie()) {
         throw logic_error("in <SaveOutputFrame::DoSave>: putput file file is null/zombie. check path."); 
         return; 
@@ -196,7 +220,7 @@ void SaveOutputFrame::DoSave()
 
     cout << "done" << endl; 
 
-    cout << "saved (hole) file: " << path_outfile_holes << endl; 
+    cout << "saved (hole) file: " << path_outfile << endl; 
 
     const double focalplane_cut_width = 0.0055; 
 
@@ -303,7 +327,7 @@ void SaveOutputFrame::DoSave()
     param_is_RHRS->Write();
     file->Close();
     delete file; 
-
+#endif 
 
     DoExit(); 
 }
