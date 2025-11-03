@@ -5,6 +5,9 @@
 #include <cmath> 
 #include <optional>
 #include <ApexOptics.h> 
+#include <TRandom3.h> 
+#include <TFile.h> 
+#include <TParameter.h> 
 
 using namespace std; 
 using ApexOptics::Trajectory_t; 
@@ -105,6 +108,13 @@ SaveOutputFrame::SaveOutputFrame(   const TGWindow *p,
     Resize(GetDefaultSize());
     MapWindow();
 }
+//simple helper function to define tparameters to TFiles 
+template<typename T> void Add_TParameter_to_TFile(const char* name, T val)
+{
+    auto param = new TParameter<T>(name, val); 
+    param->Write(); 
+}
+
 //_________________________________________________________________________________________________________________________________
 void SaveOutputFrame::DoSave() 
 { 
@@ -140,7 +150,7 @@ void SaveOutputFrame::DoSave()
     //now, we save the output file 
     if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
 
-    ROOT::RDataFrame df(fSavedHoles.size()); 
+    //ROOT::RDataFrame df(fSavedHoles.size()); 
 
     int i_elem =0; 
 
@@ -148,6 +158,87 @@ void SaveOutputFrame::DoSave()
 
     cout << "\nCreating outfile of hole-fits: '" << path_outfile << "' with " << n_events <<  " events..." << flush; 
     
+    ROOT::RDataFrame df(n_events); 
+
+    const size_t n_holes = fSavedHoles.size(); 
+    TRandom3 rand(0); 
+
+    df 
+        .Define("hole_data", [n_holes, this, &rand]()
+        {   
+            //pick a random sieve hole
+            return this->fSavedHoles[ rand.Integer(n_holes) ];
+        }, {})
+
+        .Define("hole_save_data", [&rand](const SieveHoleData& hd)
+        {   
+            //pick a random raster partition
+            return hd.hole_save_data[ rand.Integer(hd.hole_save_data.size()) ]; 
+        }, {"hole_data"})
+
+        .Define("Xfp", [&rand](const SieveHoleData& hd, const HoleSaveData& hsd)
+        {
+            const double x_fp = rand.Uniform( hd.x_fp_min, hd.x_fp_max ); 
+
+            return Trajectory_t{
+                x_fp, 
+                hsd.y_fp.Eval(x_fp),
+                hsd.dxdz_fp.Eval(x_fp),
+                hsd.dydz_fp.Eval(x_fp)
+            }; 
+        }, {"hole_data", "hole_save_data"})
+
+        .Define("Xsv", [](const HoleSaveData& hsd)
+        {
+            return hsd.Xsv; 
+        }, {"hole_save_data"})
+
+        .Define("position_vtx_scs", [](const HoleSaveData& hsd)
+        {
+            return hsd.position_vtx_scs; 
+        }, {"hole_save_data"})
+
+        .Define("x_fp",     [](Trajectory_t X){ return X.x; },      {"Xfp"})
+        .Define("y_fp",     [](Trajectory_t X){ return X.y; },      {"Xfp"})
+        .Define("dxdz_fp",  [](Trajectory_t X){ return X.dxdz; },   {"Xfp"})
+        .Define("dydz_fp",  [](Trajectory_t X){ return X.dydz; },   {"Xfp"})
+        
+        .Define("x_sv",     [](Trajectory_t X){ return X.x; },      {"Xsv"})
+        .Define("y_sv",     [](Trajectory_t X){ return X.y; },      {"Xsv"})
+        .Define("dxdz_sv",  [](Trajectory_t X){ return X.dxdz; },   {"Xsv"})
+        .Define("dydz_sv",  [](Trajectory_t X){ return X.dydz; },   {"Xsv"})
+        .Define("dpp_sv",   [](Trajectory_t X){ return X.dpp; },    {"Xsv"})
+
+        .Define("position_vtx", [this](TVector3 vtx_scs)
+        {
+            return ApexOptics::SCS_to_HCS(this->fIsRHRS, vtx_scs);
+        }, {"position_vtx_scs"})
+
+        .Snapshot("tracks_fp", path_outfile, {
+            "x_fp",
+            "y_fp",
+            "dxdz_fp",
+            "dydz_fp",
+
+            "x_sv",
+            "y_sv",
+            "dxdz_sv",
+            "dydz_sv",
+            "dpp_sv",
+
+            "position_vtx",
+            "position_vtx_scs"
+        }); 
+
+    auto file = new TFile(path_outfile, "UPDATE"); 
+
+    Add_TParameter_to_TFile<bool>("is_RHRS", fIsRHRS); 
+
+    file->Close(); 
+    delete file; 
+
+    cout << "done." << endl; 
+
 #if 0 
     auto snapshot = df 
 

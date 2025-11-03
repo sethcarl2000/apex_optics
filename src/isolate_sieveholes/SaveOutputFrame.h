@@ -50,7 +50,6 @@ private:
     TGHorizontalFrame   *fHFrame_buttons; 
     TGTextButton        *fButton_Save; 
     TGTextButton        *fButton_Exit; 
-    
 
     std::vector<SieveHoleData> fSavedHoles; 
 

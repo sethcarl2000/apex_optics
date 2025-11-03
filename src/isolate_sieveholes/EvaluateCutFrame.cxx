@@ -134,8 +134,9 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
         auto hdxdz_fp = TH2D("h_dxdz_temp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025); 
         auto hdydz_fp = TH2D("h_dydz_temp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040); 
 
-        double x_avg, y_avg, z_avg; 
+        double x_avg{0.}, y_avg{0.}, z_avg{0.}; 
 
+        long int n_kept =0; 
         for (const auto& ev : data) {
 
             //make hole-cuts, as well as raster cuts
@@ -146,15 +147,21 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
             hdxdz_fp.Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
             hdydz_fp.Fill( ev.Xfp.x, ev.Xfp.dydz ); 
 
-            x_avg += ev.vtx_scs[0];
-            y_avg += ev.vtx_scs[1];
-            z_avg += ev.vtx_scs[2];
+            x_avg += ev.vtx_scs.x();
+            y_avg += ev.vtx_scs.y();
+            z_avg += ev.vtx_scs.z();
+
+            n_kept++; 
         }
 
+#ifdef DEBUG 
+        printf("events in raster partition %i = %li/%zi\n", i, n_kept, data.size()); 
+#endif 
+
         hsd.position_vtx_scs = TVector3(
-            x_avg/((double)data.size()), 
-            y_avg/((double)data.size()), 
-            z_avg/((double)data.size())
+            x_avg/((double)n_kept), 
+            y_avg/((double)n_kept), 
+            z_avg/((double)n_kept)
         );
 
         hsd.Xsv = Trajectory_t{

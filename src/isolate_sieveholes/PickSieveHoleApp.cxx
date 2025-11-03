@@ -321,6 +321,7 @@ void PickSieveHoleApp::DrawSieveHoles()
                 draw_rad
             ); 
         } 
+
        
         //set line/fill style based on the status of the hole (has it been selected / drawn / etc.)
         if ((fSelectedSieveHole != nullptr) && (hole_data == *fSelectedSieveHole)) {
@@ -455,6 +456,11 @@ void PickSieveHoleApp::DrawHoleCuts()
             Info(here, "Circ already exists.");
         } 
 #endif 
+        circ->SetX1(hole_data.cut_x); 
+        circ->SetY1(hole_data.cut_y); 
+
+        circ->SetR1(hole_data.cut_width); 
+        circ->SetR2(hole_data.cut_height); 
 
         circ->SetLineColor(line_color); 
 
