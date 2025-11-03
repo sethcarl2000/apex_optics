@@ -58,7 +58,7 @@ private:
 public: 
     EvaluateCutFrame(   const TGWindow *p, 
                         PickSieveHoleApp *_parent, 
-                        ROOT::RDF::RNode *_rdf, 
+                        const std::vector<EventData>& data, 
                         SieveHoleData *_hd,
                         const double fp_cut_width, 
                         const int n_raster_partitions, 

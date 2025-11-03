@@ -8,6 +8,13 @@ project(ApexOpticsLibrary VERSION 0.1
         LANGUAGES CXX)  
 
 #---------------------------------------------------------
+#   Define this preprocessor macro to enable debug statements 
+option(DEBUG "Enable debug printing" OFF)
+if (DEBUG)
+    add_compile_definitions(DEBUG)
+endif()
+
+#---------------------------------------------------------
 #   Which include directories to use. 
 set(CMAKE_CXX_STANDARD
     20

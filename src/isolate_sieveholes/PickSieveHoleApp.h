@@ -105,6 +105,8 @@ private:
     //RDF node, with which we will do analysis 
     ROOT::RDF::RNode* fRDF{nullptr};  
 
+    std::vector<EventData> fEventData{}; 
+
     const std::string fTreeName = "tracks_fp"; 
     const bool f_is_RHRS; 
 

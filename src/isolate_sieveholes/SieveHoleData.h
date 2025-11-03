@@ -55,6 +55,17 @@ struct HoleSaveData {
 
 #define DOUBLE_NAN std::numeric_limits<double>::quiet_NaN()
 
+struct EventData {
+    //This will be coordinates in the sieve & focal plane 
+    ApexOptics::Trajectory_t Xsv, Xfp; 
+
+    //this is the 'raster index', which is defined as =0 for the minimum y-raster event, and =1 for the maximum y-raster event
+    double raster_index;
+
+    //this will be the react vertex, in the Sieve Coordinate System (SCS). 
+    TVector3 vtx_scs;  
+}; 
+
 //stores information about 
 struct SieveHoleData {
     

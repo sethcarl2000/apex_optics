@@ -14,7 +14,7 @@ using ApexOptics::Trajectory_t;
 
 EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p, 
                                     PickSieveHoleApp *_parent, 
-                                    ROOT::RDF::RNode *_rdf, 
+                                    const vector<EventData>& data, 
                                     SieveHoleData *_hd,
                                     const double fp_cut_width, 
                                     const int n_raster_partitions, 
@@ -24,7 +24,7 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
                                     const unsigned int palette )
     : TGMainFrame( p, 1400, 800 ), 
     fParent{_parent},
-    fRDF{_rdf}, 
+    fRDF{nullptr}, 
     fSelectedSieveHole{_hd}, 
     fFpcoord_cut_width{fp_cut_width}
 {   
@@ -35,7 +35,6 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
 #endif
 
     const int polynomial_degree =3; 
-
 
     //setup the window
     SetCleanup(kDeepCleanup); 
@@ -49,31 +48,32 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     const double cut_width  = fSelectedSieveHole->cut_width; 
     const double cut_height = fSelectedSieveHole->cut_height; 
 
-    auto hist_xy = (*fRDF).Histo2D<double>({"h_xy_temp", "", 
-            80, xsv_draw_range[0], xsv_draw_range[1],
-            80, ysv_draw_range[0], ysv_draw_range[1] }, branch_x, branch_y);     
-
-    fHist_holes = (TH2D*)hist_xy->Clone("h_xy"); 
-
-    auto df_output = (*fRDF)
-
-        .Filter([cut_x, cut_y, cut_width, cut_height](double x, double y)
-        {
-            return pow( (x - cut_x)/cut_width, 2 ) + pow( (y - cut_y)/cut_height, 2 ) < 1.; 
-        }, {branch_x, branch_y}) 
-
-        .Define("y_hcs", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}); 
+    fHist_holes = new TH2D("h_xy_temp", "", 
+        75, xsv_draw_range[0], xsv_draw_range[1],
+        75, ysv_draw_range[0], ysv_draw_range[1] 
+    ); 
+    fY_fp    = HistAndLimit(new TH2D("h_y_fp",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055)); 
+    fDxdz_fp = HistAndLimit(new TH2D("h_dxdz_fp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025)); 
+    fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040)); 
     
-    auto hist_y_fp    = df_output.Histo2D<double>({"h_yfp_temp",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055}, "x_fp", "y_fp"); 
-    auto hist_dxdz_fp = df_output.Histo2D<double>({"h_dxdzfp_temp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025}, "x_fp", "dxdz_fp"); 
-    auto hist_dydz_fp = df_output.Histo2D<double>({"h_dydzfp_temp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040}, "x_fp", "dydz_fp"); 
-    
+    for (const auto& ev : data) {
+
+        if (pow((ev.Xsv.dxdz-cut_x)/cut_width, 2) + pow((ev.Xsv.dydz-cut_y)/cut_height, 2) < 1.) { 
+            fY_fp.hist   ->Fill( ev.Xfp.x, ev.Xfp.y );
+            fDxdz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
+            fDydz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dydz ); 
+        }
+        
+        fHist_holes->Fill( ev.Xsv.dxdz, ev.Xsv.dydz );
+    }
+
 #ifdef DEBUG
-    printf("Number of events in cut: %li\n", *df_output.Count()); 
+    printf("Number of events in cut: %zi\n", data.size()); 
 #endif 
 
+    //create the histograms
     TCanvas *canv = fEcanvas->GetCanvas(); 
-   
+
     gStyle->SetPalette(palette); 
     
     canv->cd(); 
@@ -95,12 +95,6 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
 #ifdef DEBUG
     cout << "Cut histogram drawn" << endl;  
 #endif
-    
-    //create the histograms
-    fY_fp    = HistAndLimit((TH2D*)hist_y_fp    ->Clone("h_yfp")); 
-    fDxdz_fp = HistAndLimit((TH2D*)hist_dxdz_fp ->Clone("h_dxdzfp")); 
-    fDydz_fp = HistAndLimit((TH2D*)hist_dydz_fp ->Clone("h_dydzfp")); 
-    
     //gStyle->SetOptStat(0); 
     canv->cd(2); fY_fp.hist     ->Draw(draw_option); 
     canv->cd(3); fDxdz_fp.hist  ->Draw(draw_option); 
@@ -109,29 +103,11 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
 #ifdef DEBUG
     cout << "FP-histograms drawn" << endl; 
 #endif
-    
-    auto Draw_and_fit = [&](TH2D* hist, ROOT::RVec<double>& poly)
-    {
-        auto points = CreatePointsFromHist(hist); 
-        poly = FitPolynomialToPoints(points, polynomial_degree); 
-        Draw_Hist_Points_Poly(hist, points, poly, draw_option); 
-    }; 
 
-    //get the min/max of the raster, and split it up into 'n_raster_partitions' 
-    const double y_hcs_min = *df_output.Min("y_hcs"); 
-    const double y_hcs_max = *df_output.Max("y_hcs");     
+    //get the min/max of the raster, and split it up into 'n_raster_partitions'  
 
     //this 'raster index' is defined so that the event with the minimum-raster is =0, and the maximum-raster is =1. 
-    auto df_raster = df_output
-
-        .Define("rast_index", [y_hcs_min, y_hcs_max](double y_hcs)
-        {
-            return ( y_hcs - y_hcs_min )/( y_hcs_max - y_hcs_min ); 
-        }, {"y_hcs"}); 
-
     fSelectedSieveHole->hole_save_data.clear(); 
-    
-    
 
     //colors to draw lines of different fits 
     const int line_draw_colors[] = {1, 2, 4, 5, 6}; 
@@ -151,40 +127,42 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
         HoleSaveData hsd; 
 
         //get a copy of the sieve hole we've selected 
-        auto hole = fSelectedSieveHole->hole; 
+        const auto hole = fSelectedSieveHole->hole; 
 
+        //now, let's do a fit of the focal-plane polynomials. 
+        auto hy_fp    = TH2D("h_y_temp",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055); 
+        auto hdxdz_fp = TH2D("h_dxdz_temp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025); 
+        auto hdydz_fp = TH2D("h_dydz_temp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040); 
 
-        //make a cut on events in this raster window. 
-        auto df_window = df_raster
-            .Filter([rast_min,rast_max](double rast_index)
-            { 
-                return (rast_index >= rast_min && rast_index < rast_max); 
+        double x_avg, y_avg, z_avg; 
 
-            }, {"rast_index"})
+        for (const auto& ev : data) {
 
-            .Define("x_vtx_scs", [](TVector3 vtx){ return vtx.x(); }, {"position_vtx_scs"})
-            .Define("y_vtx_scs", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx_scs"})
-            .Define("z_vtx_scs", [](TVector3 vtx){ return vtx.z(); }, {"position_vtx_scs"}); 
+            //make hole-cuts, as well as raster cuts
+            if (pow((ev.Xsv.dxdz-cut_x)/cut_width, 2) + pow((ev.Xsv.dydz-cut_y)/cut_height, 2) > 1.) continue; 
+            if (ev.raster_index < rast_min || ev.raster_index > rast_max) continue; 
 
-        //take the average react vertex (in the Sieve Coordinate System) for the events in this raster window. 
-        TVector3 vtx_scs( 
-            *df_window.Mean("x_vtx_scs"),
-            *df_window.Mean("y_vtx_scs"),
-            *df_window.Mean("z_vtx_scs")
-        ); 
-        hsd.position_vtx_scs = vtx_scs; 
+            hy_fp   .Fill( ev.Xfp.x, ev.Xfp.y ); 
+            hdxdz_fp.Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
+            hdydz_fp.Fill( ev.Xfp.x, ev.Xfp.dydz ); 
+
+            x_avg += ev.vtx_scs[0];
+            y_avg += ev.vtx_scs[1];
+            z_avg += ev.vtx_scs[2];
+        }
+
+        hsd.position_vtx_scs = TVector3(
+            x_avg/((double)data.size()), 
+            y_avg/((double)data.size()), 
+            z_avg/((double)data.size())
+        );
 
         hsd.Xsv = Trajectory_t{
             hole.x,
             hole.y, 
-            (hole.x - vtx_scs.x())/(0. - vtx_scs.z()), 
-            (hole.y - vtx_scs.y())/(0. - vtx_scs.z())
+            (hole.x - hsd.position_vtx_scs.x())/(0. - hsd.position_vtx_scs.z()), 
+            (hole.y - hsd.position_vtx_scs.y())/(0. - hsd.position_vtx_scs.z())
         }; 
-
-        //now, let's do a fit of the focal-plane polynomials. 
-        auto h_y_fp    = (TH2D*)df_window.Histo2D<double>({"h_y_temp",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055}, "x_fp", "y_fp")   ->Clone(); 
-        auto h_dxdz_fp = (TH2D*)df_window.Histo2D<double>({"h_dxdz_temp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025}, "x_fp", "dxdz_fp")->Clone(); 
-        auto h_dydz_fp = (TH2D*)df_window.Histo2D<double>({"h_dydz_temp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040}, "x_fp", "dydz_fp")->Clone(); 
 
         auto FitHistAndDraw = [&](TH2D* h){
 
@@ -218,13 +196,9 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
             return fpcoordpoly;
         }; 
 
-        canv->cd(2); hsd.y_fp    = FitHistAndDraw(h_y_fp); 
-        canv->cd(3); hsd.dxdz_fp = FitHistAndDraw(h_dxdz_fp); 
-        canv->cd(4); hsd.dydz_fp = FitHistAndDraw(h_dydz_fp); 
-
-        delete h_y_fp; 
-        delete h_dxdz_fp; 
-        delete h_dydz_fp; 
+        canv->cd(2); hsd.y_fp    = FitHistAndDraw(&hy_fp); 
+        canv->cd(3); hsd.dxdz_fp = FitHistAndDraw(&hdxdz_fp); 
+        canv->cd(4); hsd.dydz_fp = FitHistAndDraw(&hdydz_fp); 
 
         fSelectedSieveHole->hole_save_data.push_back(hsd); 
     }
@@ -274,9 +248,9 @@ void EvaluateCutFrame::HandleCanvasClicked()
     if (!canvas) return;
 
     const map<string,int> hist_names_canv_map {
-        {"h_yfp",    2},
-        {"h_dxdzfp", 3},
-        {"h_dydzfp", 4}
+        {"h_y_fp",    2},
+        {"h_dxdz_fp", 3},
+        {"h_dydz_fp", 4}
     }; 
     
     //new event registered 

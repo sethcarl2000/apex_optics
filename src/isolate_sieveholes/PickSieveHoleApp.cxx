@@ -11,6 +11,7 @@
 #include <ApexOptics.h> 
 
 using namespace std; 
+using ApexOptics::Trajectory_t; 
 
 //______________________________________________________________________________________________________________________
 PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p, 
@@ -58,18 +59,48 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     canvas->cd(); 
     //first things first, lets set up & draw the histogram: 
     if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
-
+    //ROOT::EnableImplicitMT(); 
     fRDF = (ROOT::RDF::RNode*)(new ROOT::RDataFrame(fTreeName.c_str(), path_infile)); 
+    ROOT::RDataFrame df(fTreeName.data(), path_infile);
+    
+    const double rast_min = *df.Define("y", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}).Min("y");
+    const double rast_max = *df.Define("y", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}).Max("y");
 
-    fSieveHist = (TH2D*)fRDF->Histo2D<double>({
+    
+    //get all of the data, and stick it in a vector. 
+    fEventData = *df 
+
+        .Define("Xsv", [](double x, double y, double dxdz, double dydz, double dpp)
+        {
+            return Trajectory_t{x,y,dxdz,dydz,dpp}; 
+        }, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"})
+
+        .Define("Xfp", [](double x, double y, double dxdz, double dydz)
+        {
+            return Trajectory_t{x,y,dxdz,dydz}; 
+        }, {"x_fp","y_fp","dxdz_fp","dydz_fp"}) 
+
+        .Define("rast_index", [rast_min,rast_max](TVector3 vtx)
+        {
+            return (vtx.y() - rast_min) / (rast_max - rast_min); 
+        }, {"position_vtx"})
+
+        .Define("EventData", [](Trajectory_t Xsv, Trajectory_t Xfp, double rast_index, TVector3 vtx_scs)
+        {
+            return EventData{ .Xsv=Xsv, .Xfp=Xfp, .raster_index=rast_index, .vtx_scs=vtx_scs }; 
+        }, {"Xsv", "Xfp", "rast_index", "position_vtx_scs"})
+
+        .Take<EventData>("EventData"); 
+    
+
+    fSieveHist = new TH2D(
         "h_sieve_cpy", 
         "Sieve-coordinates;dx/dz_{sv};dy/dz_{sv}", 
         200, xsv_draw_range[0], xsv_draw_range[1], 
         200, ysv_draw_range[0], ysv_draw_range[1]
-    }, 
-        coordname_x, 
-        coordname_y
-    )->Clone("h_sieve_cpy"); 
+    ); 
+    
+    for (const auto& ev : fEventData) fSieveHist->Fill( ev.Xsv.dxdz, ev.Xsv.dydz ); 
 
     //compute the react-vertex
     fReactVertex = TVector3(
@@ -111,8 +142,8 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fHoleDrawingHist = new TH2D(
         "h_hole_drawing", 
         "Sieve-hole positions;x_{sv};y_{sv}", 
-        200, -0.050, 0.050, 
-        200, -0.045, 0.045
+        200, -0.050, +0.050, 
+        200, -0.045, +0.045
     ); 
     //draw thie histogram, draw the canvas
     fHoleDrawingHist->SetDirectory(0); 
@@ -138,7 +169,6 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fButton_Evaluate = new TGTextButton(fFrame_PickHoleButtons, "&Evaluate", 1); 
     fButton_Evaluate->Connect("Clicked()", "PickSieveHoleApp", this, "DoEvaluate()"); 
     fFrame_PickHoleButtons->AddFrame(fButton_Evaluate, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)); 
-
     
     //this frame contains all the hole size parameters
     fFrame_numbers = new TGHorizontalFrame(fFrame_PickHoleButtons, 500, 50); 
@@ -473,7 +503,7 @@ void PickSieveHoleApp::DoEvaluate()
     new EvaluateCutFrame(
         gClient->GetRoot(), 
         this, 
-        fRDF, 
+        fEventData, 
         fSelectedSieveHole, 
         fFpcoord_cut_width, 
         fNRastPartitions, 
