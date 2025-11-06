@@ -6,6 +6,7 @@
 #include "include/RDFNodeAccumulator.h"
 #include "include/Add_TParameter_to_TFile.h"
 #include "include/Add_branch_from_Trajectory_t.h"
+#include "include/Get_TParameter_from_TFile.h"
 //ROOT headers
 #include <ROOT/RDataFrame.hxx>
 #include <TCanvas.h> 
@@ -129,7 +130,7 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_H3
 
 
     //try and make the RDataFrame
-    RDFNodeAccumulator rna(tree_name, path_infile); 
+    RDFNodeAccumulator rna(ROOT::RDataFrame(tree_name, path_infile)); 
 
     rna.Define("Xsv", [](double x, double y, double dxdz, double dydz, double dpp)
         {
@@ -205,8 +206,6 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_H3
             .dydz_sv = 0.5*(dydz_front + dydz_back)
         }); 
     }
-
-    
 
     
     auto hist_dx_dy_ptr = rna.Get().Histo2D<double>({"h", "hist xy", 100, -0.05,0.05, 200, -0.04,0.03}, "dxdz_sv","dydz_sv"); 

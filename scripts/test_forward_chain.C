@@ -167,8 +167,8 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     ChainedOpticsModel* model = new ChainedOpticsModel(is_RHRS); 
     model->CreateChainRev({
 
-        /*/ sv <= [Poly] <= fp
-        {"data/csv/poly_prod_fp_sv_L_4ord.dat", branches_sv, 4} //*/ 
+        // sv <= [Poly] <= fp
+        {"data/poly/V123-rast-partition_fp_sv_L_4ord.dat", branches_sv, 4} //*/ 
 
         /*/ sv <= [Poly] <= fp-fwd <= _Poly_ <= fp
         {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
@@ -180,8 +180,8 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
         {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
 
         // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
-        {"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
-        {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
+        //{"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
+        //{"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
 
         /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
         {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
@@ -190,7 +190,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     model->CreateChainFwd({
 
         // sv => [Poly] => fp
-        {"data/csv/poly_prod_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
+        {"data/poly/V123-H3-cuts_sv_fp_4ord.dat", branches_fp, 5} //*/ 
 
         /*/ sv => _Poly_ => fp
         {"data/csv/poly_fits_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
@@ -261,69 +261,10 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
             return Trajectory_t{ x, y, dxdz, dydz };
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"});
 
-    //reconstruct 'Xsv' using the 'fp=>sv' chain 
-    rna.Define("Xsv_first_guess",  [&chain_rev](const Trajectory_t& Xfp)
+    rna.Overwrite("Xsv_first_guess", [&model](Trajectory_t Xfp)
         {
-            RVec<double>&& Xfp_rvec = ApexOptics::Trajectory_t_to_RVec(Xfp); 
-
-            RVec<double>&& Xsv_rvec = chain_rev.Eval(Xfp_rvec); 
-
-            return ApexOptics::RVec_to_Trajectory_t(Xsv_rvec); 
+            return model->Compute_Xsv_first_guess(Xfp); 
         }, {"Xfp"});
- 
-    //now, use the 'sv=>fp' model to determine where the 'wiggle room' is in dp/p 
-    const double d_dpp = 1e-3; 
-    rna.Define("dXsv", [&chain_fwd, d_dpp](const Trajectory_t& Xsv)
-        {
-            //the jacobian of the fwd-model
-            RMatrix&& J = chain_fwd.Jacobian( ApexOptics::Trajectory_t_to_RVec(Xsv) ); 
-
-            RMatrix Ji(4,4, {
-                J.get(0,0), J.get(0,1), J.get(0,2), J.get(0,3), 
-                J.get(1,0), J.get(1,1), J.get(1,2), J.get(1,3), 
-                J.get(2,0), J.get(2,1), J.get(2,2), J.get(2,3), 
-                J.get(3,0), J.get(3,1), J.get(3,2), J.get(3,3)
-            }); 
-
-            Ji.Set_report_singular(false);
-            
-            RVec<double> J4{ 
-                J.get(0,4), 
-                J.get(1,4), 
-                J.get(2,4), 
-                J.get(3,4) 
-            }; 
-
-            RVec<double>&& dX = Ji.Solve( J4*(-1.) ); 
-            
-            //check for NaN / invalid result 
-            if (dX.size() != 4)                return Trajectory_t{numeric_limits<double>::quiet_NaN()}; 
-            for (double& x : dX) { if (x != x) return Trajectory_t{numeric_limits<double>::quiet_NaN()}; } 
-
-            dX.push_back( 1. ); 
-
-            return ApexOptics::RVec_to_Trajectory_t( dX ); 
-
-        }, {"Xsv_first_guess"}); 
-
-    rna.Define("dp", [is_RHRS, d_dpp](Trajectory_t Xsv, Trajectory_t dXsv, TVector3 vtx) 
-        {
-            //first, let's reconstruct the vectors in the HCS
-            Trajectory_t Xhcs    = ApexOptics::SCS_to_HCS(is_RHRS, Xsv); 
-            Trajectory_t Xhcs_dp = ApexOptics::SCS_to_HCS(is_RHRS, Xsv + dXsv); 
-
-            double y0 = Xhcs.y    + (Xhcs.dydz    * vtx.z()); 
-            double y1 = Xhcs_dp.y + (Xhcs_dp.dydz * vtx.z()); 
-            
-            return ( vtx.y() - y0 )/( y1 - y0 ); 
-
-        }, {"Xsv_first_guess", "dXsv", "position_vtx"});
-    
-    rna.Define("Xsv_reco", [](Trajectory_t Xsv, Trajectory_t dXsv, double dp)
-        {
-            return Xsv + ( dXsv * dp ); 
-
-        }, {"Xsv_first_guess", "dXsv", "dp"}); 
 
     rna.Overwrite("Xsv_reco", [&model](Trajectory_t Xfp, TVector3 vtx_hcs)
         {

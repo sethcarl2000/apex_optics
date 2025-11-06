@@ -9,5 +9,4 @@ template<typename T> void Add_TParameter_to_TFile(const char* name, T val)
     param->Write(); 
 }
 
-
 #endif 
