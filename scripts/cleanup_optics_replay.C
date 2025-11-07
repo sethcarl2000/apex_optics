@@ -46,10 +46,10 @@ const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dy
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
 int cleanup_optics_replay(  const bool is_RHRS          = false,
-                            const char* path_infile     = "data/replay/replay.4775.root",
-                            const char* target_name     = "O7",
-                            const char* path_outfile    = "data/replay/real_L_O7-dp.root",
-                            const char* path_polycut    = "data/csv/polycut_L_O7-new.dat",
+                            const char* path_infile     = "data/replay/replay.4766.root",
+                            const char* target_name     = "V1",
+                            const char* path_outfile    = "data/sieve_holes/fits_6Nov/real_L_V1.root",
+                            const char* path_polycut    = "",//"data/csv/polycut_L_O7-new.dat",
                             const char* tree_name       = "track_data" ) 
 {
     const char* const here = "cleanup_optics_replay";
@@ -119,8 +119,9 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
 
     try {
         model->CreateChainRev({ // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
-            {"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
-            {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} 
+            {"data/poly/V123-rast-partition_fp_sv_L_4ord.dat", branches_sv, 4}
+            //{"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
+            //{"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} 
         }); 
 
         model->CreateChainFwd({ // sv => [Poly] => fp
