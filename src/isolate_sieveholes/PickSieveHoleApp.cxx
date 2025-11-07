@@ -112,9 +112,9 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     ); 
 
     printf("avg. react vertex: (% 4.1f, % 4.1f, % 4.1f) (mm)", 
-        fReactVertex.x(), 
-        fReactVertex.y(), 
-        fReactVertex.z()
+        fReactVertex.x() *1e3, 
+        fReactVertex.y() *1e3, 
+        fReactVertex.z() *1e3
     ); cout << endl; 
 
     //make sure this histogram is not 'attached' to anything (won't be deleted by anything else). 
