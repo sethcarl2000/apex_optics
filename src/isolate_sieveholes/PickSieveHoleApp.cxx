@@ -106,9 +106,9 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
 
     //compute the react-vertex
     fReactVertex = TVector3(
-        *(fRDF->Define("x", [](const TVector3& v){ return v.x(); }, {"position_vtx_scs"}).Mean("x")),
-        *(fRDF->Define("y", [](const TVector3& v){ return v.y(); }, {"position_vtx_scs"}).Mean("y")),
-        *(fRDF->Define("z", [](const TVector3& v){ return v.z(); }, {"position_vtx_scs"}).Mean("z"))
+        *(fRDF->Define("x", [](const TVector3& v){ return v.x(); }, {"position_vtx"}).Mean("x")),
+        *(fRDF->Define("y", [](const TVector3& v){ return v.y(); }, {"position_vtx"}).Mean("y")),
+        *(fRDF->Define("z", [](const TVector3& v){ return v.z(); }, {"position_vtx"}).Mean("z"))
     ); 
 
     printf("avg. react vertex: (% 4.1f, % 4.1f, % 4.1f) (mm)", 

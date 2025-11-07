@@ -181,287 +181,116 @@ void SaveOutputFrame::DoSave()
     const size_t n_holes = fSavedHoles.size(); 
     TRandom3 rand(0); 
 
-    df 
-        .Define("hole_data", [n_holes, this, &rand]()
-        {   
-            //pick a random sieve hole
-            return this->fSavedHoles[ rand.Integer(n_holes) ];
-        }, {})
+    try {
+        df 
+            .Define("hole_data", [n_holes, this, &rand]()
+            {   
+                //pick a random sieve hole
+                return this->fSavedHoles[ rand.Integer(n_holes) ];
+            }, {})
 
-        .Define("rast_param", [&rand]()
-        {   
-            //pick a random raster position
-            return rand.Uniform(-1., +1.);  
-        }, {})
+            .Define("rast_param", [&rand]()
+            {   
+                //pick a random raster position
+                return rand.Uniform(-1., +1.);  
+            }, {})
 
-        .Define("Xfp", [&rand](const SieveHoleData& hd, double rast_param)
-        {
-            const double x_fp = rand.Uniform( hd.x_fp_min, hd.x_fp_max ); 
+            .Define("Xfp", [&rand](const SieveHoleData& hd, double rast_param)
+            {
+                const double x_fp = rand.Uniform( hd.x_fp_min, hd.x_fp_max ); 
 
-            return Trajectory_t{
-                x_fp, 
-                hd.y_fp   .Eval({x_fp, rast_param}),
-                hd.dxdz_fp.Eval({x_fp, rast_param}),
-                hd.dydz_fp.Eval({x_fp, rast_param})
-            }; 
-        }, {"hole_data", "rast_param"})
+                return Trajectory_t{
+                    x_fp, 
+                    hd.y_fp   .Eval({x_fp, rast_param}),
+                    hd.dxdz_fp.Eval({x_fp, rast_param}),
+                    hd.dydz_fp.Eval({x_fp, rast_param})
+                }; 
+            }, {"hole_data", "rast_param"})
 
-        .Define("position_vtx", [this](double rast_param)
-        {
-            //so we used the average react-vertex, but let's put accurate y-raster information back into it. 
-            TVector3 position_vtx = this->fReactVertex; 
+            .Define("position_vtx", [this](double rast_param)
+            {
+                //so we used the average react-vertex, but let's put accurate y-raster information back into it. 
+                TVector3 position_vtx = this->fReactVertex; 
 
-            double y_hcs = 0.5*(this->fRastMax + this->fRastMin); //middle of raster span
+                double y_hcs = 0.5*(this->fRastMax + this->fRastMin); //middle of raster span
+                
+                y_hcs += 0.5*(this->fRastMax - this->fRastMin) * rast_param;  
+
+                return TVector3(
+                    position_vtx.x(),
+                    y_hcs,
+                    position_vtx.z()
+                ); 
+
+            }, {"rast_param"})
+
+
+            .Define("position_vtx_scs", [this](const TVector3& vtx_hcs)
+            {
+                return ApexOptics::HCS_to_SCS(this->fIsRHRS, vtx_hcs); 
+            }, {"position_vtx"})
+
+            .Define("Xsv", [this, &poly_dpp](const TVector3& vtx_scs, Trajectory_t Xfp, SieveHoleData& hd)
+            {   
+                //placeholder estimate of dp/p_sv
+                double dpp_est = poly_dpp.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}); 
+
+                const SieveHole& hole = hd.hole; 
+
+                double dxdz = (hole.x - vtx_scs.x()) / (0. - vtx_scs.z()); 
+                double dydz = (hole.y - vtx_scs.y()) / (0. - vtx_scs.z()); 
+
+                return Trajectory_t{
+                    hd.hole.x, 
+                    hd.hole.y, 
+                    dxdz, 
+                    dydz, 
+                    dpp_est
+                }; 
+            }, {"position_vtx_scs", "Xfp", "hole_data"})
+
+            .Define("x_fp",     [](Trajectory_t X){ return X.x; },      {"Xfp"})
+            .Define("y_fp",     [](Trajectory_t X){ return X.y; },      {"Xfp"})
+            .Define("dxdz_fp",  [](Trajectory_t X){ return X.dxdz; },   {"Xfp"})
+            .Define("dydz_fp",  [](Trajectory_t X){ return X.dydz; },   {"Xfp"})
             
-            y_hcs += 0.5*(this->fRastMax - this->fRastMin) * rast_param;  
+            .Define("x_sv",     [](Trajectory_t X){ return X.x; },      {"Xsv"})
+            .Define("y_sv",     [](Trajectory_t X){ return X.y; },      {"Xsv"})
+            .Define("dxdz_sv",  [](Trajectory_t X){ return X.dxdz; },   {"Xsv"})
+            .Define("dydz_sv",  [](Trajectory_t X){ return X.dydz; },   {"Xsv"})
+            .Define("dpp_sv",   [](Trajectory_t X){ return X.dpp; },    {"Xsv"})
 
-            position_vtx[1] = y_hcs; 
+            .Snapshot("tracks_fp", path_outfile, {
+                "x_fp",
+                "y_fp",
+                "dxdz_fp",
+                "dydz_fp",
 
-            return position_vtx; 
+                "x_sv",
+                "y_sv",
+                "dxdz_sv",
+                "dydz_sv",
+                "dpp_sv",
 
-        }, {"rast_param"})
+                "position_vtx",
+                "position_vtx_scs"
+            }); 
 
+        auto file = new TFile(path_outfile, "UPDATE"); 
 
-        .Define("position_vtx_scs", [this](const TVector3& vtx_hcs)
-        {
-            return ApexOptics::HCS_to_SCS(this->fIsRHRS, vtx_hcs); 
-        }, {"hole_save_data"})
+        Add_TParameter_to_TFile<bool>("is_RHRS", fIsRHRS); 
 
-        .Define("Xsv", [this, &poly_dpp](const TVector3& vtx_scs, Trajectory_t Xfp, SieveHoleData& hd)
-        {   
-            //placeholder estimate of dp/p_sv
-            double dpp_est = poly_dpp.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}); 
-
-            const SieveHole& hole = hd.hole; 
-
-            double dxdz = (hole.x - vtx_scs.x()) / (0. - vtx_scs.z()); 
-            double dydz = (hole.y - vtx_scs.y()) / (0. - vtx_scs.z()); 
-
-            return Trajectory_t{
-                hd.hole.x, 
-                hd.hole.y, 
-                dxdz, 
-                dydz, 
-                dpp_est
-            }; 
-        }, {"position_vtx_scs", "Xfp", "hole_data"})
-
-        .Define("x_fp",     [](Trajectory_t X){ return X.x; },      {"Xfp"})
-        .Define("y_fp",     [](Trajectory_t X){ return X.y; },      {"Xfp"})
-        .Define("dxdz_fp",  [](Trajectory_t X){ return X.dxdz; },   {"Xfp"})
-        .Define("dydz_fp",  [](Trajectory_t X){ return X.dydz; },   {"Xfp"})
-        
-        .Define("x_sv",     [](Trajectory_t X){ return X.x; },      {"Xsv"})
-        .Define("y_sv",     [](Trajectory_t X){ return X.y; },      {"Xsv"})
-        .Define("dxdz_sv",  [](Trajectory_t X){ return X.dxdz; },   {"Xsv"})
-        .Define("dydz_sv",  [](Trajectory_t X){ return X.dydz; },   {"Xsv"})
-        .Define("dpp_sv",   [](Trajectory_t X){ return X.dpp; },    {"Xsv"})
-
-        .Snapshot("tracks_fp", path_outfile, {
-            "x_fp",
-            "y_fp",
-            "dxdz_fp",
-            "dydz_fp",
-
-            "x_sv",
-            "y_sv",
-            "dxdz_sv",
-            "dydz_sv",
-            "dpp_sv",
-
-            "position_vtx",
-            "position_vtx_scs"
-        }); 
-
-    auto file = new TFile(path_outfile, "UPDATE"); 
-
-    Add_TParameter_to_TFile<bool>("is_RHRS", fIsRHRS); 
-
-    file->Close(); 
-    delete file; 
+        file->Close(); 
+        delete file; 
+    
+    } catch (const std::exception& e) {
+        cerr << endl; 
+        Error(here, "Something went wrong trying to create the output file.\n what(): %s", e.what()); 
+        DoExit(); 
+        return;
+    } 
 
     cout << "done." << endl; 
-
-#if 0 
-    auto snapshot = df 
-
-        .Define("hole_data", [this, &i_elem]()
-        { 
-            printf("element %4i/%zi", i_elem, this->fSavedHoles.size()); cout << endl; 
-            return this->fSavedHoles.at(i_elem++); 
-        }, {})
-
-        .Define("x_sv",     [](const SieveHoleData& hd){ return hd.hole.x; }, {"hole_data"})
-        .Define("y_sv",     [](const SieveHoleData& hd){ return hd.hole.y; }, {"hole_data"}) 
-        .Define("dxdz_sv",  [rvtx](const SieveHoleData& hd){ return ( hd.hole.x - rvtx.x() ) / ( 0. - rvtx.z() ); }, {"hole_data"})
-        .Define("dydz_sv",  [rvtx](const SieveHoleData& hd){ return ( hd.hole.y - rvtx.y() ) / ( 0. - rvtx.z() ); }, {"hole_data"})
-
-        .Define("a_y_fp",      [](const SieveHoleData& hd){ return hd.y_fp.poly; },    {"hole_data"})        
-        .Define("a_dxdz_fp",   [](const SieveHoleData& hd){ return hd.dxdz_fp.poly; }, {"hole_data"})
-        .Define("a_dydz_fp",   [](const SieveHoleData& hd){ return hd.dydz_fp.poly; }, {"hole_data"})
-
-        .Define("hole_row",   [](const SieveHoleData& hd){ return hd.hole.row; },  {"hole_data"})
-        .Define("hole_col",   [](const SieveHoleData& hd){ return hd.hole.col; },  {"hole_data"})
-
-        .Define("x_fp_min",   [](const SieveHoleData& hd){ return hd.x_fp_min; },  {"hole_data"})
-        .Define("x_fp_max",   [](const SieveHoleData& hd){ return hd.x_fp_max; },  {"hole_data"})
-
-        .Define("hole_cut_x",   [](const SieveHoleData& hd){ return hd.cut_x; },  {"hole_data"})
-        .Define("hole_cut_y",   [](const SieveHoleData& hd){ return hd.cut_y; },  {"hole_data"})
-
-        .Define("hole_cut_width",  [](const SieveHoleData& hd){ return hd.cut_width;  },  {"hole_data"})
-        .Define("hole_cut_height", [](const SieveHoleData& hd){ return hd.cut_height; },  {"hole_data"})
-
-        .Define("position_vtx_scs", [rvtx](){ return rvtx; }, {})
-
-        .Snapshot("hole_data", path_outfile, {
-            "x_sv",
-            "y_sv",
-            "dxdz_sv",
-            "dydz_sv",
-
-            "a_y_fp",
-            "a_dxdz_fp",
-            "a_dydz_fp",
-
-            "x_fp_min",
-            "x_fp_max",
-
-            "hole_cut_x",
-            "hole_cut_y",
-
-            "hole_cut_width",
-            "hole_cut_height",
-
-            "hole_row",
-            "hole_col",
-
-            "position_vtx_scs"
-        }); 
-
-    //now, create the output parameters we want to make
-    auto file = new TFile(path_outfile, "UPDATE"); 
-    if (!file || file->IsZombie()) {
-        throw logic_error("in <SaveOutputFrame::DoSave>: putput file file is null/zombie. check path."); 
-        return; 
-    }
-    auto param_is_RHRS = new TParameter<bool>("is_RHRS", fIsRHRS);  
-    param_is_RHRS->Write();
-
-    file->Close();
-    delete file; 
-
-    cout << "done" << endl; 
-
-    cout << "saved (hole) file: " << path_outfile << endl; 
-
-    const double focalplane_cut_width = 0.0055; 
-
-    const char* path_outfile_cuts = Form("%s-cutdata.root", prefix_outfile); 
-
-    cout << "Creating outfile of cuts: '" << path_outfile_cuts << "..." << flush; 
-
-    auto df_cuts = (*fNode)
-
-        //now save all the 'cut' data (actual events)
-        .Define("holedata_selected_opt", [this](  double dxdz_sv, //sieve coords
-                                                                        double dydz_sv, 
-                                                                        double x_fp, //target coords
-                                                                        double y_fp, 
-                                                                        double dxdz_fp, 
-                                                                        double dydz_fp, 
-                                                                        TVector3 vtx_scs    
-                                                                    )
-        {   
-            std::optional<SieveHoleData> holedata_selected(std::nullopt); 
-
-            for (const auto & holedata : this->fSavedHoles) {
-
-                double dxdz_hole = (holedata.hole.x - vtx_scs.x())/(0. - vtx_scs.z()); 
-                double dydz_hole = (holedata.hole.y - vtx_scs.y())/(0. - vtx_scs.z()); 
-
-                //make cut on hole coords in fp 
-                double hole_rad2 = 
-                    pow( (dxdz_hole - dxdz_sv)/holedata.cut_width,  2) + 
-                    pow( (dydz_hole - dydz_sv)/holedata.cut_height, 2);
-                    
-                if (hole_rad2 > 1.) continue; 
-                
-                //now, make a cut on event in the focal plane 
-                //printf(" y_fp (polynomial vs real): %+.4f  %+.4f\n", holedata.y_fp.Eval(x_fp), y_fp); 
-                const double& fp_cut = this->fFpcoord_cut_width; 
-
-                if (fabs( holedata.y_fp   .Eval(x_fp) - y_fp )    > fp_cut) continue; 
-                if (fabs( holedata.dxdz_fp.Eval(x_fp) - dxdz_fp ) > fp_cut) continue; 
-                if (fabs( holedata.dydz_fp.Eval(x_fp) - dydz_fp ) > fp_cut) continue; 
-                
-                //make a copy for us to keep
-                holedata_selected = optional<SieveHoleData>(SieveHoleData{holedata});
-            }
-
-            return holedata_selected; 
-
-        }, {fBranch_horiz.c_str(), 
-            fBranch_vert.c_str(), 
-            "x_fp", "y_fp", "dxdz_fp", "dydz_fp", 
-            "position_vtx_scs"})
-        
-        //filter out events which were not selected for a particular hole
-        .Filter([](std::optional<SieveHoleData> holedata_opt){ return holedata_opt.has_value(); }, {"holedata_selected_opt"})
-
-        .Define("Xsv", [](std::optional<SieveHoleData> holedata_opt, TVector3 vtx_scs)
-        {   
-            SieveHole hole = holedata_opt.value().hole; 
-
-            //take the 'average' bewtween the front and back centers of the sieve hole 
-            double dxdz_front = (hole.x - vtx_scs.x())/(0. - vtx_scs.z()); 
-            double dydz_front = (hole.y - vtx_scs.y())/(0. - vtx_scs.z());
-
-            double dxdz_back  = (hole.x - vtx_scs.x())/(0.0125 - vtx_scs.z()); 
-            double dydz_back  = (hole.y - vtx_scs.y())/(0.0125 - vtx_scs.z());
-
-            return Trajectory_t{ 
-                .x      = hole.x, 
-                .y      = hole.y, 
-                .dxdz   = 0.5*(dxdz_front + dxdz_back), 
-                .dydz   = 0.5*(dydz_front + dydz_back)
-            }; 
-        }, {"holedata_selected_opt", "position_vtx_scs"})
-
-        .Redefine("x_sv",     [](Trajectory_t Xsv){ return Xsv.x;     }, {"Xsv"})
-        .Redefine("y_sv",     [](Trajectory_t Xsv){ return Xsv.y;     }, {"Xsv"})
-        .Redefine("dxdz_sv",  [](Trajectory_t Xsv){ return Xsv.dxdz;  }, {"Xsv"})
-        .Redefine("dydz_sv",  [](Trajectory_t Xsv){ return Xsv.dydz;  }, {"Xsv"})
-        
-        .Snapshot("tracks_fp_cut", path_outfile_cuts, {
-            "x_sv", 
-            "y_sv",
-            "dxdz_sv",
-            "dydz_sv",
-            "dpp_sv",
-
-            "x_fp",
-            "y_fp",
-            "dxdz_fp",
-            "dydz_fp",
-
-            "position_vtx_scs"
-        }); 
-
-    cout << "done." << endl; 
-
-    //now, create the output parameters we want to make
-    file = new TFile(path_outfile_cuts, "UPDATE"); 
-    if (!file || file->IsZombie()) {
-        throw logic_error("in <SaveOutputFrame::DoSave>: putput file file is null/zombie. check path."); 
-        return; 
-    }
-    param_is_RHRS = new TParameter<bool>("is_RHRS", fIsRHRS);  
-    param_is_RHRS->Write();
-    file->Close();
-    delete file; 
-#endif 
-
     DoExit(); 
 }
 //_________________________________________________________________________________________________________________________________
