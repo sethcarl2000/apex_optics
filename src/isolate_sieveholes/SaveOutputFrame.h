@@ -60,7 +60,12 @@ private:
     const double fFpcoord_cut_width; 
 
     TVector3 fReactVertex; 
+    double fRastMin, fRastMax; 
+
     bool fIsRHRS; 
+
+    //polynomial which will provide an estimate for dpp_sv 
+    std::string fPath_to_dppPoly{"data/csv/poly_prod_fp_sv_L_4ord.dat"};
 
 public: 
     SaveOutputFrame(const TGWindow *p, 
@@ -70,6 +75,7 @@ public:
                     ROOT::RDF::RNode *df, 
                     bool is_RHRS,
                     TVector3 vtx, 
+                    double rast_min, double rast_max, 
                     const double fpcoord_cut_width = 0.0055,
                     const char* branch_horiztonal="dxdz_sv",
                     const char* branch_vertical="dydz_sv"     

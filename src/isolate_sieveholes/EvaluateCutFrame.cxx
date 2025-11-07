@@ -8,6 +8,13 @@
 #include <TBox.h>
 #include <ApexOptics.h> 
 #include <TGraphErrors.h> 
+#include <RMatrix.h> 
+#include <Math/Minimizer.h>
+#include <Math/Functor.h> 
+#include <Math/Factory.h> 
+#include <NPoly.h> 
+#include <RMatrix.h> 
+#include <ROOT/RVec.hxx>
 
 using namespace std; 
 using ApexOptics::Trajectory_t; 
@@ -52,9 +59,9 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
         75, xsv_draw_range[0], xsv_draw_range[1],
         75, ysv_draw_range[0], ysv_draw_range[1] 
     ); 
-    fY_fp    = HistAndLimit(new TH2D("h_y_fp",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055)); 
-    fDxdz_fp = HistAndLimit(new TH2D("h_dxdz_fp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025)); 
-    fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040)); 
+    fY_fp    = HistAndLimit(new TH2D("h_y_fp",    "y_fp vs x_fp",     75, -0.65, 0.65, 75, -0.070, 0.055)); 
+    fDxdz_fp = HistAndLimit(new TH2D("h_dxdz_fp", "dx/dz_fp vs x_fp", 75, -0.65, 0.65, 75, -0.035, 0.025)); 
+    fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 75, -0.65, 0.65, 75, -0.060, 0.040)); 
     
     for (const auto& ev : data) {
 
@@ -91,128 +98,63 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     circ->SetLineWidth(2); 
     circ->Draw(); 
 
-    //
+    auto is_inside_cut = [=](const EventData& event)
+    {
+        return pow((event.Xsv.dxdz-cut_x)/cut_width, 2) + pow((event.Xsv.dydz-cut_y)/cut_height, 2) < 1.; 
+    };
+    
+    //draws the results of the fits on the tcanavs
+    auto DrawFitsOnCanvas = [this](NPoly poly)
+    {   
+        auto fcn_poly = [poly](double *x, double *par){
+            return poly.Eval({x[0], par[0]}); 
+        };
+        auto tf1_poly = new TF1("poly", fcn_poly, this->fXfp_draw_min, this->fXfp_draw_max, 1);
+
+        tf1_poly->SetLineWidth(1); 
+
+        //draw the minimum raster value of our fit
+        tf1_poly->SetParameter(0, -1.); 
+        tf1_poly->SetLineColor(kRed); 
+        tf1_poly->DrawCopy("SAME");
+
+        //draw the maximum raster value of our fit
+        tf1_poly->SetParameter(0, +1.);
+        tf1_poly->SetLineColor(kBlack); 
+        tf1_poly->DrawCopy("SAME");
+
+        delete tf1_poly; 
+    }; 
+
+    //get the min/max of the raster, and split it up into 'n_raster_partitions'  
+    cout << "Fitting polynomials___{ y... " << flush; 
+    auto poly_y_fp    = FitPolynomialToFP(data, is_inside_cut, &Trajectory_t::y); 
+    cout << "dx/dz... " << flush; 
+    auto poly_dxdz_fp = FitPolynomialToFP(data, is_inside_cut, &Trajectory_t::dxdz); 
+    cout << "dy/dz... " << flush; 
+    auto poly_dydz_fp = FitPolynomialToFP(data, is_inside_cut, &Trajectory_t::dydz); 
+    cout << "}. done"<< endl; 
+    
+    
 #ifdef DEBUG
     cout << "Cut histogram drawn" << endl;  
 #endif
     //gStyle->SetOptStat(0); 
-    canv->cd(2); fY_fp.hist     ->Draw(draw_option); 
-    canv->cd(3); fDxdz_fp.hist  ->Draw(draw_option); 
-    canv->cd(4); fDydz_fp.hist  ->Draw(draw_option); 
+    canv->cd(2); fY_fp.hist     ->Draw(draw_option); DrawFitsOnCanvas(poly_y_fp); 
+    canv->cd(3); fDxdz_fp.hist  ->Draw(draw_option); DrawFitsOnCanvas(poly_dxdz_fp); 
+    canv->cd(4); fDydz_fp.hist  ->Draw(draw_option); DrawFitsOnCanvas(poly_dydz_fp); 
 
 #ifdef DEBUG
     cout << "FP-histograms drawn" << endl; 
 #endif
 
-    //get the min/max of the raster, and split it up into 'n_raster_partitions'  
-
-    //this 'raster index' is defined so that the event with the minimum-raster is =0, and the maximum-raster is =1. 
-    fSelectedSieveHole->hole_save_data.clear(); 
-
-    //colors to draw lines of different fits 
-    const int line_draw_colors[] = {1, 2, 4, 5, 6}; 
-
-    const double rast_window_size = 1./((double)n_raster_partitions); 
-    
-    for (int i=0; i<n_raster_partitions; i++) {
-        
-        const double rast_min = rast_window_size*((double)i);
-        const double rast_max = rast_window_size*((double)i+1);
-
-#ifdef DEBUG
-        printf("fitting partition %i...\n",i); cout << flush;  
-#endif
-
-        //all the data from this hole / raster window that we will need to generate events with later on. 
-        HoleSaveData hsd; 
-
-        //get a copy of the sieve hole we've selected 
-        const auto hole = fSelectedSieveHole->hole; 
-
-        //now, let's do a fit of the focal-plane polynomials. 
-        auto hy_fp    = TH2D("h_y_temp",    "y_fp vs x_fp",     30, -0.65, 0.65, 75, -0.070, 0.055); 
-        auto hdxdz_fp = TH2D("h_dxdz_temp", "dx/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.035, 0.025); 
-        auto hdydz_fp = TH2D("h_dydz_temp", "dy/dz_fp vs x_fp", 30, -0.65, 0.65, 75, -0.060, 0.040); 
-
-        double x_avg{0.}, y_avg{0.}, z_avg{0.}; 
-
-        long int n_kept =0; 
-        for (const auto& ev : data) {
-
-            //make hole-cuts, as well as raster cuts
-            if (pow((ev.Xsv.dxdz-cut_x)/cut_width, 2) + pow((ev.Xsv.dydz-cut_y)/cut_height, 2) > 1.) continue; 
-            if (ev.raster_index < rast_min || ev.raster_index > rast_max) continue; 
-
-            hy_fp   .Fill( ev.Xfp.x, ev.Xfp.y ); 
-            hdxdz_fp.Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
-            hdydz_fp.Fill( ev.Xfp.x, ev.Xfp.dydz ); 
-
-            x_avg += ev.vtx_scs.x();
-            y_avg += ev.vtx_scs.y();
-            z_avg += ev.vtx_scs.z();
-
-            n_kept++; 
-        }
-
-#ifdef DEBUG 
-        printf("events in raster partition %i = %li/%zi\n", i, n_kept, data.size()); 
-#endif 
-
-        hsd.position_vtx_scs = TVector3(
-            x_avg/((double)n_kept), 
-            y_avg/((double)n_kept), 
-            z_avg/((double)n_kept)
-        );
-
-        hsd.Xsv = Trajectory_t{
-            hole.x,
-            hole.y, 
-            (hole.x - hsd.position_vtx_scs.x())/(0. - hsd.position_vtx_scs.z()), 
-            (hole.y - hsd.position_vtx_scs.y())/(0. - hsd.position_vtx_scs.z())
-        }; 
-
-        auto FitHistAndDraw = [&](TH2D* h){
-
-            auto points = CreatePointsFromHist(h); 
-            vector<double> vec_x, vec_y, vec_yerr; 
-            for (auto pt: points) { 
-                vec_x   .push_back(pt.x);  
-                vec_y   .push_back(pt.y); 
-                vec_yerr.push_back(pt.sigma); 
-            }; 
-            //this is for the x-error (which is zero)
-            vector<double> zeros(vec_x.size(), 0.); 
-            
-            auto g = new TGraphErrors(vec_x.size(), vec_x.data(), vec_y.data(), zeros.data(), vec_yerr.data()); 
-            g->SetLineStyle(kDotted); 
-            g->SetLineColor(line_draw_colors[i]);
-            g->SetLineWidth(1); 
-            //g->Draw("SAME"); 
-
-            auto fpcoordpoly = FPcoordPolynomial{FitPolynomialToPoints(points, polynomial_degree)}; 
-            
-            auto my_fcn = [fpcoordpoly](double *x, double *par){
-                return fpcoordpoly.Eval(x[0]); 
-            }; 
-            auto f = new TF1("pol", my_fcn, h->GetXaxis()->GetXmin(), h->GetXaxis()->GetXmax(), 0); 
-            //f->SetParameters(fpcoordpoly.poly.data()); 
-            f->SetLineColor(line_draw_colors[i]); 
-            f->SetLineWidth(1); 
-            f->DrawCopy("SAME");
-            
-            return fpcoordpoly;
-        }; 
-
-        canv->cd(2); hsd.y_fp    = FitHistAndDraw(&hy_fp); 
-        canv->cd(3); hsd.dxdz_fp = FitHistAndDraw(&hdxdz_fp); 
-        canv->cd(4); hsd.dydz_fp = FitHistAndDraw(&hdydz_fp); 
-
-        fSelectedSieveHole->hole_save_data.push_back(hsd); 
-    }
-    
     canv->Modified(); 
     canv->Update(); 
     canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked()"); 
+
+    fSelectedSieveHole->y_fp    = poly_y_fp; 
+    fSelectedSieveHole->dxdz_fp = poly_dxdz_fp; 
+    fSelectedSieveHole->dydz_fp = poly_dydz_fp; 
 
     fFrame_canv->AddFrame(fEcanvas, new TGLayoutHints(kLHintsExpandX | kLHintsExpandY, 10,10,10,10)); 
 
@@ -536,6 +478,131 @@ void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t
     } 
 }
 //_____________________________________________________________________________________________________________________________________
+NPoly EvaluateCutFrame::FitPolynomialToFP(const vector<EventData>& data, function<bool(const EventData&)> is_inside_cut, double Trajectory_t::*coord)
+{
+    using namespace ROOT::VecOps; 
+#ifdef DEBUG
+    Info("FitPolynomialToFP", "In body..."); 
+#endif
+
+    //first, let's assemble our polynomial. 
+    //create an empty polynomial (no elements) with 2 input DoF. 
+    NPoly poly(2); 
+
+    //add the elements which are functions of x-fp only.
+    // the first element of 'powers' of each element is the exponent to which x_fp is raised. 
+    // the second element is the power to which 'rast_param' is raised. 
+    for (int i=0; i<=fPolynomialOrder; i++) poly.Add_element({.powers={i,0}, .coeff=1.}); 
+    for (int i=0; i<=fRasterPolyOrder; i++) poly.Add_element({.powers={i,1}, .coeff=1.}); 
+    
+    //one quadratic element for 'rast_param' (i'm guessing here...). 
+    poly.Add_element({.powers={0,2}, .coeff=1.}); 
+
+    const unsigned int n_elems = poly.Get_nElems(); 
+
+    //now, let's do a chi-square fit 
+    RVec<double> B(n_elems, 0.);
+    RMatrix A(n_elems,n_elems, 0.); 
+    
+    for (const auto& event : data) {
+
+        //see if this event is inside the cut
+        if (is_inside_cut(event)==false) continue; 
+
+        auto&& Xmu = poly.Eval_noCoeff({event.Xfp.x, event.raster_index}); 
+        
+        double z = event.Xfp.*coord; 
+
+        for (int i=0; i<n_elems; i++) {
+
+            B[i] += z * Xmu[i]; 
+
+            for (int j=0; j<n_elems; j++) A.get(i,j) += Xmu[i] * Xmu[j]; 
+        }
+    }   
+
+    A.Set_report_singular(false); 
+    auto&& coeffs = A.Solve(B); 
+
+    //something went wrong with the chi-square 
+    if (coeffs.size() != n_elems) { 
+        return NPoly(0); 
+#ifdef DEBUG
+        cout << "Fit failed." << endl; 
+#endif
+    }
+    //set the coeffs in our polynomial: 
+    for (int i=0; i<n_elems; i++) { poly.Get_elem(i)->coeff = coeffs[i]; }
+
+#ifdef DEBUG
+    cout << "Fit succeeded." << endl; 
+    Info("FitPolynomialToFP", "Printing polynomial..."); 
+    poly.Print(); 
+#endif
+
+    //this chi2 fit is nice... but we are anticipating a lot of outlier data. 
+    //thus, we need to find a way to cancel out this noise. 
+
+    NPoly poly_objective(poly);     
+
+    const double objective_sigma = 0.0025; 
+
+    //____________________________________________________________________________________________
+    auto objective_fcn = [n_elems,objective_sigma,&poly_objective,&data,&is_inside_cut,coord](const double *par)
+    {
+        //set the parameters of the polynomal
+        for (int i=0; i<n_elems; i++) poly_objective.Get_elem(i)->coeff = par[i]; 
+
+        double val=0.; 
+
+        for (const auto& event : data) {
+
+            //check if this event is inside the cut
+            if (is_inside_cut(event)==false) continue;  
+
+            //if we just added this to the objective function sum, it would be a regular chi2-fit... 
+            double arg = ( event.Xfp.*coord - poly_objective.Eval({event.Xfp.x, event.raster_index}) ) / objective_sigma;
+
+            //but we stick it in the arg of a gaussian, so that we can mitigate the influence of outlier events. 
+            val += -exp( -0.5*arg*arg ); 
+        }
+
+        return val; 
+    };
+    //____________________________________________________________________________________________
+    
+    ROOT::Math::Minimizer *minimizer = ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"); 
+    
+    minimizer->SetMaxFunctionCalls(1e7); 
+    minimizer->SetMaxIterations(1e6); 
+    minimizer->SetTolerance(1e-3);
+#ifdef DEBUG
+    minimizer->SetPrintLevel(2); 
+#else 
+    minimizer->SetPrintLevel(0); 
+#endif 
+
+    auto objective_functor = ROOT::Math::Functor(objective_fcn, n_elems);
+    
+    minimizer->SetFunction(objective_functor);
+
+    //set the list of variables
+    int i_var=0; 
+    for (int i=0; i<n_elems; i++) {
+        minimizer->SetVariable(i, Form("elem_%i",i), poly.Get_elem(i)->coeff, 1e-5);
+    }
+    
+    bool fit_status = minimizer->Minimize();
+
+    //if the fancy minuit fit fails, then just return the chi2-fit one. 
+    if (!fit_status) return poly; 
+
+    const double *coeffs_minuit = minimizer->X(); 
+
+    for (int i=0; i<n_elems; i++) poly.Get_elem(i)->coeff = coeffs_minuit[i];
+
+    return poly; 
+}
 //_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
@@ -544,6 +611,11 @@ void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t
 EvaluateCutFrame::~EvaluateCutFrame() { 
     
     //delete histograms
+    if (fHist_holes)   delete fHist_holes;
+    if (fY_fp.hist)    delete fY_fp.hist; 
+    if (fDxdz_fp.hist) delete fDxdz_fp.hist; 
+    if (fDydz_fp.hist) delete fDydz_fp.hist; 
+
     Cleanup(); 
 }
 //_____________________________________________________________________________________________________________________________________

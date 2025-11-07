@@ -16,6 +16,7 @@
 #include <SieveHole.h> 
 #include <ApexOptics.h>
 #include <TVector3.h>  
+#include <NPoly.h> 
 
 //this just lists a few possible return values from the 'TCanvas::GetEvent()' method. 
 enum ECanvasEventType { 
@@ -39,19 +40,6 @@ struct FPcoordPolynomial {
         return val; 
     }; 
 }; 
-
-//this will contian all the data we need to make a sieve-hole output. 
-struct HoleSaveData { 
-
-    //average react vertex for these events (Sieve-Coordinate System)
-    TVector3 position_vtx_scs; 
-
-    //sieve-coords for this hole
-    ApexOptics::Trajectory_t Xsv; 
-
-    //data for the focal-plane coordinates 
-    FPcoordPolynomial y_fp{}, dxdz_fp{}, dydz_fp{}; 
-};
 
 #define DOUBLE_NAN std::numeric_limits<double>::quiet_NaN()
 
@@ -77,7 +65,7 @@ struct SieveHoleData {
         : hole{shd.hole}, 
         cut_x{shd.cut_x}, cut_y{shd.cut_y},
         cut_width{shd.cut_width}, cut_height{shd.cut_height}, 
-        hole_save_data{shd.hole_save_data},
+        y_fp{shd.y_fp}, dxdz_fp{shd.dxdz_fp}, dydz_fp{shd.dydz_fp},
         x_fp_min{shd.x_fp_min}, x_fp_max{shd.x_fp_max}, 
         is_evaluated{shd.is_evaluated}, 
         draw_circ{nullptr}, hole_cut{nullptr} 
@@ -91,7 +79,7 @@ struct SieveHoleData {
         cut_y=DOUBLE_NAN; 
         cut_width=DOUBLE_NAN; 
         cut_height=DOUBLE_NAN; 
-        hole_save_data={};
+        y_fp=NPoly(2); dxdz_fp=NPoly(2); dydz_fp=NPoly(2); 
         x_fp_min=DOUBLE_NAN; 
         x_fp_max=DOUBLE_NAN; 
         is_evaluated=false;
@@ -104,7 +92,9 @@ struct SieveHoleData {
     double cut_width {DOUBLE_NAN};
     double cut_height{DOUBLE_NAN}; 
     
-    std::vector<HoleSaveData> hole_save_data{}; 
+    //These polynomials will be used to fit x_fp and rast_param to the fp-coordinates. 
+    //the first coordinate is x_fp, the second coordinate is rast_param. 
+    NPoly y_fp{2}, dxdz_fp{2}, dydz_fp{2}; 
 
     double x_fp_min{DOUBLE_NAN}; 
     double x_fp_max{DOUBLE_NAN};

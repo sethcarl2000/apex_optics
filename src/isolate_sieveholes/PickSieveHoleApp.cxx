@@ -65,8 +65,10 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     
     const double rast_min = *df.Define("y", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}).Min("y");
     const double rast_max = *df.Define("y", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}).Max("y");
-
     
+    fRastMin = rast_min;
+    fRastMax = rast_max; 
+
     //get all of the data, and stick it in a vector. 
     fEventData = *df 
 
@@ -82,7 +84,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
 
         .Define("rast_index", [rast_min,rast_max](TVector3 vtx)
         {
-            return (vtx.y() - rast_min) / (rast_max - rast_min); 
+            return  ( vtx.y() - 0.5*(rast_max+rast_min) )/( 0.5*(rast_max-rast_min) ); 
         }, {"position_vtx"})
 
         .Define("EventData", [](Trajectory_t Xsv, Trajectory_t Xfp, double rast_index, TVector3 vtx_scs)
@@ -109,7 +111,11 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
         *(fRDF->Define("z", [](const TVector3& v){ return v.z(); }, {"position_vtx_scs"}).Mean("z"))
     ); 
 
-    printf("avg. react vertex: (% 4.1f, % 4.1f, % 4.1f) (mm)", fReactVertex.x(), fReactVertex.y(), fReactVertex.z()); cout << endl; 
+    printf("avg. react vertex: (% 4.1f, % 4.1f, % 4.1f) (mm)", 
+        fReactVertex.x(), 
+        fReactVertex.y(), 
+        fReactVertex.z()
+    ); cout << endl; 
 
     //make sure this histogram is not 'attached' to anything (won't be deleted by anything else). 
     fSieveHist->SetDirectory(0); 
@@ -130,7 +136,8 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     ); 
 
     //construct the vector of sieve holes...
-    for (const SieveHole& hole : ApexOptics::ConstructSieveHoles(f_is_RHRS)) fSieveHoleData.emplace_back(hole); 
+    for (const SieveHole& hole : ApexOptics::ConstructSieveHoles(f_is_RHRS)) fSieveHoleData.emplace_back(hole);
+    
 
     fEcanvas_drawing = new TRootEmbeddedCanvas("ECanvas_drawing", fFrame_canvPick, 700, 700);
     fFrame_canvPick->AddFrame(fEcanvas_drawing, new TGLayoutHints(kLHintsRight | kLHintsExpandX | kLHintsExpandY, 0, 0, 0, 0)); 
@@ -656,6 +663,7 @@ void PickSieveHoleApp::WriteOutput() {
             fRDF,
             Get_IsRHRS(),
             GetReactVertex(),
+            fRastMin, fRastMax, 
             fFpcoord_cut_width
         );
 }

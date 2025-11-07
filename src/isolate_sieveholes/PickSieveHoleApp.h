@@ -110,6 +110,8 @@ private:
     const std::string fTreeName = "tracks_fp"; 
     const bool f_is_RHRS; 
 
+    double fRastMin, fRastMax; 
+
     const char* fDrawingOption; 
     unsigned int fPalette;
 

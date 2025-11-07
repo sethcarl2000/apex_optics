@@ -8,6 +8,7 @@
 #include <TRandom3.h> 
 #include <TFile.h> 
 #include <TParameter.h> 
+#include <stdexcept> 
 
 using namespace std; 
 using ApexOptics::Trajectory_t; 
@@ -20,6 +21,7 @@ SaveOutputFrame::SaveOutputFrame(   const TGWindow *p,
                                     ROOT::RDF::RNode *df, 
                                     bool is_RHRS,
                                     TVector3 vtx, 
+                                    double rast_min, double rast_max, 
                                     const double fpcoord_cut_width,
                                     const char* branch_horizontal, 
                                     const char* branch_vertical
@@ -28,12 +30,12 @@ SaveOutputFrame::SaveOutputFrame(   const TGWindow *p,
     fFpcoord_cut_width{fpcoord_cut_width},
     fNode{df},
     fBranch_horiz{branch_horizontal}, 
-    fBranch_vert{branch_vertical}
+    fBranch_vert{branch_vertical},
+    fRastMin{rast_min}, fRastMax{rast_max},
+    fIsRHRS{is_RHRS},
+    fReactVertex{vtx}
 {
     if (shd.empty()) CloseWindow(); 
-
-    fIsRHRS = is_RHRS; 
-    fReactVertex = vtx; 
 
     //check if node is ok
     if (fNode == nullptr) {
@@ -118,7 +120,7 @@ template<typename T> void Add_TParameter_to_TFile(const char* name, T val)
 //_________________________________________________________________________________________________________________________________
 void SaveOutputFrame::DoSave() 
 { 
-    const char* const here = "SaveOutputFrame::DoSave"; 
+    const char* const here = "DoSave"; 
 
     if (!fTextEntry_outPath) {
         throw logic_error("in <SaveOutputFrame::DoSave>: fTextEntry_outPath ptr is null!"); 
@@ -144,6 +146,22 @@ void SaveOutputFrame::DoSave()
         }
     }
 
+    //parse a polynomial to estimate dpp_sv 
+    NPoly poly_dpp(4); 
+    try {
+        ApexOptics::Parse_NPoly_from_file(fPath_to_dppPoly.c_str(), "dpp_sv", &poly_dpp); 
+    } catch (const std::exception& e) {
+        throw logic_error(Form(
+            "in <SaveOutputFrame::DoSave>: something went wrong trying to parse polynomial from file "
+            "'%s'.\n"
+            " what(): %s"
+            ,
+            fPath_to_dppPoly.c_str(),
+            e.what()
+        )); 
+        return; 
+    }
+    
     //get the react vertex from the parent
     const TVector3 rvtx = fReactVertex; 
 
@@ -170,33 +188,63 @@ void SaveOutputFrame::DoSave()
             return this->fSavedHoles[ rand.Integer(n_holes) ];
         }, {})
 
-        .Define("hole_save_data", [&rand](const SieveHoleData& hd)
+        .Define("rast_param", [&rand]()
         {   
-            //pick a random raster partition
-            return hd.hole_save_data[ rand.Integer(hd.hole_save_data.size()) ]; 
-        }, {"hole_data"})
+            //pick a random raster position
+            return rand.Uniform(-1., +1.);  
+        }, {})
 
-        .Define("Xfp", [&rand](const SieveHoleData& hd, const HoleSaveData& hsd)
+        .Define("Xfp", [&rand](const SieveHoleData& hd, double rast_param)
         {
             const double x_fp = rand.Uniform( hd.x_fp_min, hd.x_fp_max ); 
 
             return Trajectory_t{
                 x_fp, 
-                hsd.y_fp.Eval(x_fp),
-                hsd.dxdz_fp.Eval(x_fp),
-                hsd.dydz_fp.Eval(x_fp)
+                hd.y_fp   .Eval({x_fp, rast_param}),
+                hd.dxdz_fp.Eval({x_fp, rast_param}),
+                hd.dydz_fp.Eval({x_fp, rast_param})
             }; 
-        }, {"hole_data", "hole_save_data"})
+        }, {"hole_data", "rast_param"})
 
-        .Define("Xsv", [](const HoleSaveData& hsd)
+        .Define("position_vtx", [this](double rast_param)
         {
-            return hsd.Xsv; 
+            //so we used the average react-vertex, but let's put accurate y-raster information back into it. 
+            TVector3 position_vtx = this->fReactVertex; 
+
+            double y_hcs = 0.5*(this->fRastMax + this->fRastMin); //middle of raster span
+            
+            y_hcs += 0.5*(this->fRastMax - this->fRastMin) * rast_param;  
+
+            position_vtx[1] = y_hcs; 
+
+            return position_vtx; 
+
+        }, {"rast_param"})
+
+
+        .Define("position_vtx_scs", [this](const TVector3& vtx_hcs)
+        {
+            return ApexOptics::HCS_to_SCS(this->fIsRHRS, vtx_hcs); 
         }, {"hole_save_data"})
 
-        .Define("position_vtx_scs", [](const HoleSaveData& hsd)
-        {
-            return hsd.position_vtx_scs; 
-        }, {"hole_save_data"})
+        .Define("Xsv", [this, &poly_dpp](const TVector3& vtx_scs, Trajectory_t Xfp, SieveHoleData& hd)
+        {   
+            //placeholder estimate of dp/p_sv
+            double dpp_est = poly_dpp.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz}); 
+
+            const SieveHole& hole = hd.hole; 
+
+            double dxdz = (hole.x - vtx_scs.x()) / (0. - vtx_scs.z()); 
+            double dydz = (hole.y - vtx_scs.y()) / (0. - vtx_scs.z()); 
+
+            return Trajectory_t{
+                hd.hole.x, 
+                hd.hole.y, 
+                dxdz, 
+                dydz, 
+                dpp_est
+            }; 
+        }, {"position_vtx_scs", "Xfp", "hole_data"})
 
         .Define("x_fp",     [](Trajectory_t X){ return X.x; },      {"Xfp"})
         .Define("y_fp",     [](Trajectory_t X){ return X.y; },      {"Xfp"})
@@ -208,11 +256,6 @@ void SaveOutputFrame::DoSave()
         .Define("dxdz_sv",  [](Trajectory_t X){ return X.dxdz; },   {"Xsv"})
         .Define("dydz_sv",  [](Trajectory_t X){ return X.dydz; },   {"Xsv"})
         .Define("dpp_sv",   [](Trajectory_t X){ return X.dpp; },    {"Xsv"})
-
-        .Define("position_vtx", [this](TVector3 vtx_scs)
-        {
-            return ApexOptics::SCS_to_HCS(this->fIsRHRS, vtx_scs);
-        }, {"position_vtx_scs"})
 
         .Snapshot("tracks_fp", path_outfile, {
             "x_fp",

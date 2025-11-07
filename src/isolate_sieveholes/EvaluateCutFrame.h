@@ -12,6 +12,9 @@
 #include <ROOT/RDataFrame.hxx>
 #include <ROOT/RVec.hxx> 
 #include <vector> 
+#include <NPoly.h> 
+#include <ApexOptics.h>
+#include <functional> 
 
 class EvaluateCutFrame : public TGMainFrame {
 private: 
@@ -53,7 +56,22 @@ private:
     //type of canvas event passed to 'fEventType' 
     int fEventType{-1}; 
 
+    //order of polynomial we're fitting FP-coordinates with (the higest exponent in the polynomial)
+    int fPolynomialOrder{3}; 
+    int fRasterPolyOrder{2}; 
+
+    //minimum draw range of x_fp
+    const double fXfp_draw_min{-0.65}; 
+    //maximum draw range of x_fp
+    const double fXfp_draw_max{+0.65}; 
+
     double fX_min{DOUBLE_NAN}, fX_max{DOUBLE_NAN}; 
+
+    NPoly FitPolynomialToFP(
+        const std::vector<EventData>& data,                     // input all events for this wire-run
+        std::function<bool(const EventData&)> is_inside_cut,    // the cut for events on this particular hole
+        double ApexOptics::Trajectory_t::*coord                 // the coordinate we're fitting to (y, dxdz, dydz)
+    ); 
 
 public: 
     EvaluateCutFrame(   const TGWindow *p, 
