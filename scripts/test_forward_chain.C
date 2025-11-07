@@ -124,51 +124,12 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
 
     struct NPolyArrayConstructor_t { string path{}; vector<string> coords{}; int input_DoF{0}; }; 
 
-    const vector<ChainedOpticsModel::ChainConstructor_t> path_and_coords_rev{
-
-        /*/ sv <= [Poly] <= fp
-        {"data/csv/poly_prod_fp_sv_L_4ord.dat", branches_sv, 4} //*/ 
-
-        /*/ sv <= [Poly] <= fp-fwd <= _Poly_ <= fp
-        {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
-        {"data/csv/poly_prod_fp_sv_L_4ord.dat",     branches_sv,     4} //*/ 
-
-        /*/ sv <= [Poly] q1 <= [Poly] <= fp-fwd <= _Poly_ <= fp 
-        {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
-        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4},
-        {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
-
-        // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
-        {"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
-        {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
-
-        /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
-        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
-        {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
-    }; 
-
-    const vector<ChainedOpticsModel::ChainConstructor_t> path_and_coords_fwd{
-
-        // sv => [Poly] => fp
-        {"data/csv/poly_prod_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
-
-        /*/ sv => _Poly_ => fp
-        {"data/csv/poly_fits_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
-
-        /*/ sv => [Poly] q1-fwd => _Poly_ => fp 
-        {"data/csv/poly_prod_sv_q1_L_3ord.dat",     branches_q1, 5},
-        {"data/csv/poly_fits_q1-fwd_fp_L_2ord.dat", branches_fp, 5} //*/ 
-
-        /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
-        {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
-        {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
-    };
 
     ChainedOpticsModel* model = new ChainedOpticsModel(is_RHRS); 
     model->CreateChainRev({
 
         // sv <= [Poly] <= fp
-        {"data/poly/V123-rast-partition_fp_sv_L_4ord.dat", branches_sv, 4} //*/ 
+        {"data/poly/fits_6Nov/V123_fp_sv_4ord.dat", branches_sv, 4} //*/ 
 
         /*/ sv <= [Poly] <= fp-fwd <= _Poly_ <= fp
         {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
@@ -179,9 +140,9 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
         {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4},
         {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
 
-        // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
-        //{"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
-        //{"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
+        /*/ sv <= [Poly] q1-fwd <= _Poly_ <= fp 
+        {"data/poly/fits_6Nov/V123_fp_q1-fwd_4ord.dat", branches_fwd_q1, 4}, 
+        {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} //*/ 
 
         /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
         {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
@@ -189,22 +150,28 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     }); 
     model->CreateChainFwd({
 
-        // sv => [Poly] => fp
-        {"data/poly/V123-H3-cuts_sv_fp_4ord.dat", branches_fp, 5} //*/ 
+        /*/ sv => [Poly] => fp
+        {"data/csv/poly_prod_sv_fp_L_3ord.dat", branches_fp, 5} //*/ 
 
         /*/ sv => _Poly_ => fp
         {"data/csv/poly_fits_sv_fp_L_4ord.dat", branches_fp, 5} //*/ 
 
         /*/ sv => [Poly] q1-fwd => _Poly_ => fp 
-        {"data/csv/poly_prod_sv_q1_L_3ord.dat",     branches_q1, 5},
-        {"data/csv/poly_fits_q1-fwd_fp_L_2ord.dat", branches_fp, 5} //*/ 
+        {"data/poly/fits_6Nov/V123_fp_q1-fwd_4ord.dat", branches_fwd_q1, 4}, 
+        {"data/csv/poly_prod_q1_sv_L_4ord.dat",         branches_sv,     5} //*/ 
 
-        /*/ sv <= _Poly_ q1-rev <= [Poly] <= fp 
+        /*/ sv => _Poly_ q1-rev => [Poly] => fp 
         {"data/csv/poly_prod_fp_q1_L_4ord.dat",     branches_q1,     4}, 
         {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
+    
+        // sv => [Poly] => fp-fwd => _Poly_ => fp 
+        {"data/csv/poly_prod_sv_fp_L_4ord.dat",         branches_fp, 5},
+        {"data/poly/fits_6Nov/V123_fp-fwd_fp_1ord.dat", branches_fp, 4} 
+         //*/ 
+    
     }); 
 
-    NPolyArrayChain chain_rev, chain_fwd; 
+    /*NPolyArrayChain chain_rev, chain_fwd; 
     
     //try to parse all polys from files
     try {
@@ -231,7 +198,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
 
         Error(here, "Something went wrong parsing one of the NPolyArrays.\n what(): %s", e.what()); 
         return -1; 
-    }
+    }*/
 
 
     cout << "parsing done." << endl; 
@@ -398,6 +365,11 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     //set the color pallete
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
+
+
+    TestAngleReco(is_RHRS, rna.Get(), target, 4,12, 0,4, 1.10, 0.65, "reco_dxdz_sv", "reco_dydz_sv", "position_vtx"); 
+
+    return 0; 
 
 
     auto c_z_dy = new TCanvas("c_z_reco", c_title, 1200, 700); 
