@@ -17,6 +17,8 @@
 #include <iostream>
 #include <algorithm>
 #include <iostream> 
+#include <stdexcept>
+#include <limits> 
 
 using namespace ROOT::VecOps; 
 using vecd = RVec<double>; 
@@ -31,6 +33,15 @@ NPoly::NPoly(const int nDoF, const int order) :
     fOrder = order;
     AutoConstructPoly(order,nDoF);
   }
+}
+//_____________________________________________________________________________
+// Copy constructor
+NPoly::NPoly(const NPoly& rhs) :
+  fnDoF(rhs.Get_nDoF()), f_maxPower(rhs.Get_maxPower())
+{  
+  fElems.clear(); 
+  fElems.reserve(rhs.Get_nElems()); 
+  for (int i=0; i<rhs.Get_nElems(); i++) fElems.push_back(*rhs.Get_elem(i)); 
 }
 //_____________________________________________________________________________
 NPoly::~NPoly() {/*destructor*/};
@@ -123,13 +134,15 @@ double NPoly::Eval(const vecd &X) const
   //same as above, but use the coefficients 'hard-coded' to each element
   
   if ((int)X.size() != Get_nDoF()) { 
-    Error("Eval(vecd)", "Size of input vector (%i) does not match poly nDoF (%i)",
-	  (int)X.size(), (int)Get_nDoF());
-    return -1e30;
+    throw logic_error(Form(
+      "in <NPoly::Eval(vecd)>: Size of input vector (%zi) does not match poly nDoF (%u)",
+	    X.size(), Get_nDoF()
+    )); 
+    return std::numeric_limits<double>::quiet_NaN();
   }
       
   //now, actually evaluate
-  double val=0.; 
+  double val=0.;
 
   const int max_pow = Get_maxPower(); 
   double X_pows[Get_nDoF()][max_pow + 1]; 

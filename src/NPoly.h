@@ -22,7 +22,10 @@ class NPoly : public TObject {
   
  public:
 
+  //default constructor 
   NPoly() {}; 
+  //copy constructor
+  NPoly(const NPoly& rhs); 
   NPoly(int nDoF, int order=0); 
   ~NPoly();
   
