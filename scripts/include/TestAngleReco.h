@@ -126,8 +126,13 @@ std::optional<AngleFitResult_t> TestAngleReco(  const bool is_RHRS,         //ar
     const double dxdz_cut_width = (sieve_hole_spacing_x * row_cut_width) / fabs(react_vtx_scs.z()); 
     const double dydz_cut_width = (sieve_hole_spacing_y * col_cut_width) / fabs(react_vtx_scs.z()); 
 
-    auto c_holes = new TCanvas("c_holes", "Angle Reco", 800, 600); 
+    auto c_dyTest = new TCanvas("c_holes", "Angle Reco", 1600, 800); 
+    c_dyTest->Divide(2,1);
+
+    auto cdyTest_2d         = c_dyTest->cd(1);
+    auto cdyTest_profiles   = c_dyTest->cd(2);
     
+    //let's give names to each subcanvas: 
     const int canvId_dx_dy = 1; 
 
     gStyle->SetPalette(kBird);
@@ -157,25 +162,22 @@ std::optional<AngleFitResult_t> TestAngleReco(  const bool is_RHRS,         //ar
     for (const auto& ev : data) {
         h_dx_dy->Fill( ev.dxdz, ev.dydz ); 
     }
+    cdyTest_2d->cd(); 
     h_dx_dy->Draw("col"); 
 
 
     size_t n_holes_measured =0; 
     
     //here, we're testing vertical wires.     
-    auto c_cuts = new TCanvas("c_cuts", "", 1600, 800); 
-    c_cuts->Divide( 1, last_row - first_row + 1, 0.01,0.); 
+    cdyTest_profiles->Divide( 1, last_row - first_row + 1, 0.01,0.); 
 
     int i_canv=1;
 
     //row counter
     int i_row=1; 
 
-    //should be even! 
+    //order of polynomial to fit the backgroudn with.  
     const int background_polynomial_order = 10; 
-
-
-
     
     AngleFitResult_t fit_result; 
 
@@ -205,8 +207,6 @@ std::optional<AngleFitResult_t> TestAngleReco(  const bool is_RHRS,         //ar
         // get the dxdz-value of the row
         const double row_dxdz = hole_angles.front().dxdz; 
         
-        c_cuts->cd(i_row); 
-
         // create and fill the row histogram
         auto hist_row = new TH1D(Form("h_row_%i",row-first_row), "dy/dz_{sv}", 200, dydz_min, dydz_max); 
         auto hist_row_bg = (TH1D*)hist_row->Clone("h_row_bg"); 
@@ -218,7 +218,8 @@ std::optional<AngleFitResult_t> TestAngleReco(  const bool is_RHRS,         //ar
         }
 
         printf("Drawing row %i...",row); cout << flush; 
-
+        
+        cdyTest_profiles->cd(i_row); 
         hist_row->GetYaxis()->SetNdivisions(0); 
         hist_row->DrawCopy(); 
         auto x_axis = hist_row->GetXaxis(); 
@@ -246,7 +247,10 @@ std::optional<AngleFitResult_t> TestAngleReco(  const bool is_RHRS,         //ar
         int i_col =0; 
         for (size_t i=0; i<row_holes.size(); i++) {
 
+            //the 'SieveHole' struct associated with this hole
             const auto& hole  = row_holes[i]; 
+
+            //the 'Trajectory_t' struct associated with this hole
             const auto& angle = hole_angles[i]; 
 
             auto fcn_gauss_offset = [background_fcn](double *x, double *par) { 
@@ -286,11 +290,13 @@ std::optional<AngleFitResult_t> TestAngleReco(  const bool is_RHRS,         //ar
             if (hole_dydz - dydz_cut_width/2. > dydz_max) continue; 
             if (hole_dydz + dydz_cut_width/2. < dydz_min) continue; 
 
+            //our TF1 which we will fit our hole-peak with. 
             auto fit = unique_ptr<TF1>(new TF1(
                 "holefit", 
                 fcn_gauss_offset, 
-                max<double>( dydz_min, hole_dydz - dydz_cut_width/2. ), 
-                min<double>( dydz_max, hole_dydz + dydz_cut_width/2. ), 
+                //take a close look here at the fit-ranges of our function. if it's a big-hole, we extend the fit range by 25%. 
+                max<double>( dydz_min, hole_dydz - (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2. ), 
+                min<double>( dydz_max, hole_dydz + (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2. ), 
                 3
             ));              
 
@@ -328,7 +334,7 @@ std::optional<AngleFitResult_t> TestAngleReco(  const bool is_RHRS,         //ar
             //we're counting this hole as having been 'measured'
             n_holes_measured++;
 
-            c_cuts->cd(i_row);
+            cdyTest_profiles->cd(i_row);
 
             fit->SetLineColor(kRed); 
             fit->DrawCopy("SAME");  
@@ -348,13 +354,13 @@ std::optional<AngleFitResult_t> TestAngleReco(  const bool is_RHRS,         //ar
             //draw the box that represents the cut used 
             auto box = new TBox(
                 angle.dxdz - dxdz_cut_width/2., 
-                angle.dydz - dydz_cut_width/2.,
+                angle.dydz - (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.,
                 angle.dxdz + dxdz_cut_width/2., 
-                angle.dydz + dydz_cut_width/2.
+                angle.dydz + (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.
             );
             //make the box have no fill (transparent), and draw it.
              
-            c_holes->cd();
+            cdyTest_2d->cd();
 
             box->SetFillStyle(0); 
             box->Draw(); 
@@ -468,23 +474,6 @@ std::function<double(double*,double*)> FitBackground(TH1D* hist, const vector<pa
 
     normalization = max_point.y/exp(normalization); 
 
-    
-   
-    
-    //now, let's try to do a chi-square fit
-    //_________________________________________________________________________________________________
-    auto gaus_background_fcn = [order](double x, const double *par) {
-        
-        //use homer's method to compute the argument of the exponential 
-        x = x - par[1];
-
-        double arg=par[order+2]; 
-        for (int i=order; i>=0; i--) arg = par[i+2] + (x*arg); 
-        
-        return par[0] * exp( arg ); 
-    };   
-    //_________________________________________________________________________________________________
-
     //_________________________________________________________________________________________________
     auto result_fcn = [coeffs,normalization](double* xptr, double* par) {
         
@@ -496,98 +485,8 @@ std::function<double(double*,double*)> FitBackground(TH1D* hist, const vector<pa
         return normalization * exp( arg ); 
     };
     //_________________________________________________________________________________________________
-    printf(
-        "normalization: %+.3e\n", normalization
-    );
-    for (int i=0; i<coeffs.size(); i++) {
-        printf(
-            "element %-3i : %+.3e\n", i, coeffs[i]
-        ); 
-    }
 
     return result_fcn; 
-    //____________________________________________________________________________________________________
-    auto LogLiklihood = [&bin_points, &gaus_background_fcn](const double* par) {
-
-        double log_liklihood = 0.;
-
-        double chi2=0.; 
-
-        for (const auto& bin : bin_points) {
-            double fcn_val = gaus_background_fcn(bin.x, par);
-            double arg = (fcn_val - bin.y) / max<double>( 1., bin.err ); 
-            chi2 += arg*arg; 
-        }
-
-        return chi2; 
-#if 0 
-        //array of x-vals which we will pass as the fcn argument
-        double X[] = {0., 0.}; 
-
-        //loop thru all bins
-        for (const auto& bin : bin_points) {
-
-            double fcn_val  = gaus_background_fcn(bin.x, par);// //fcn->Eval(bin.x, bin.y);  //fcn_2d_gauss(X, par);
-
-            //histogram bin counting starts from '1' and goes to 'ninbs', inclusive. 
-
-            //use stirling's approx 
-            double log_nfact = bin.y > 0. ? bin.y * log(bin.y) - bin.y : 0.; 
-
-            //this is just the log of the poisson dist, taken with n=hist_val, and <n>=fcn_val
-            log_liklihood += (bin.y * log(fcn_val)) - fcn_val - log_nfact; 
-        }
-        return -log_liklihood; 
-#endif 
-    };
-    //___________________________________________________________________________________________________________
-
-
-    ROOT::Math::Minimizer *minimizer = ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"); 
-    
-    auto null_fcn = [](double*x,double*y){ return numeric_limits<double>::quiet_NaN(); }; 
-
-    if (!minimizer) return null_fcn; 
-    
-    minimizer->SetMaxFunctionCalls(1e7); 
-    minimizer->SetMaxIterations(1e6); 
-    minimizer->SetTolerance(1e-3);
-    minimizer->SetPrintLevel(2);    
-    
-    auto f_minimizer = ROOT::Math::Functor(LogLiklihood, order+2);
-    
-    minimizer->SetFunction(f_minimizer);
-
-    //set the list of variables
-
-    //get a reasonable estimate for the amplitude: 
-    minimizer->SetVariable(0, "amplitude", normalization, 1.e-3);
-    minimizer->SetVariable(1, "offset",    0.,            1e-5);
-    for (int i=0; i<coeffs.size(); i++) {
-        minimizer->SetVariable(i+2, Form("coeff_x%i",i), coeffs[i], 1.e-3 * pow(1., i));
-    }
-
-    bool fit_status = minimizer->Minimize();
-
-    if (!fit_status) return result_fcn; 
-
-    const double* par_result = minimizer->X(); 
-    const double* par_errors = minimizer->Errors(); 
-    
-    coeffs.clear(); coeffs.reserve(order+2); 
-    for (int i=0; i<order+2; i++) coeffs.push_back(par_result[i+1]); 
-    
-    auto ret_fcn = [coeffs, order](double* xptr, double* par) {
-
-        double x = xptr[0];
-        //usr homer's method to compute the argument of the exponential 
-        double arg=coeffs.back(); 
-        for (int i=coeffs.size()-2; i>=1; i--) arg = coeffs[i] + (x*arg); 
-        
-        return coeffs[0] * exp( arg ); 
-    }; 
-
-    return ret_fcn; 
 }
 
 #endif 
