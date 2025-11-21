@@ -23,8 +23,9 @@
 
 using namespace std; 
 using namespace ROOT::VecOps; 
-
+using ApexOptics::OpticsTarget_t; 
 using ApexOptics::Trajectory_t; 
+
 
 //_______________________________________________________________________________________________________________________________________________
 //this is a helper function which automates the creation of branches, which are just members of the Trajectory_t struct. 
@@ -69,6 +70,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
                         const char* path_dbfile ="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                         const char* tree_name   ="tracks_fp" ) 
 {
+
     const char* const here = "test_forward_chain"; 
 
     auto infile = new TFile(path_infile, "READ");
@@ -276,42 +278,6 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
 
     rna.Define("y_pos", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}); 
 
-    /*
-    //launch the interactive hist app
-    new Interactive3dHist(rna.Get(), 
-        {"fg_dxdz_sv", 150, -0.055,  +0.055}, 
-        {"fg_dydz_sv", 150, -0.040,  +0.030},
-        {"y_pos",      150, +1.0e-3, +3.5e-3}, 
-        900, 800, kSunset, gClient->GetRoot()    
-    ); 
-
-    return 0; 
-    
-    const int center_row = 8; 
-    const int n_side_rows = 4; 
-
-    const int center_col = 5; 
-    const int n_side_cols = 4; 
-
-    auto fit_result_ret = TestAngleReco(is_RHRS, rna.Get(), target, center_row, n_side_rows, center_col, n_side_cols); 
-
-    AngleFitResult_t fit; 
-
-    if (fit_result_ret) {
-        fit = fit_result_ret.value(); 
-    } else {
-        Error(here, "Something went wrong with the fitresult."); 
-        return -1; 
-    }
-
-    printf("position error: %.4e\n", fit.sigma_dydz_position );
-    printf("smearing error: %.4e\n", fit.sigma_dydz_smearing );  
-
-    printf("total error: %.4e\n", fit.sigma_dydz_overall); 
-
-    return 0; 
-    */ 
-
     //check the status of the RDFNodeAccumulator obejct before proceeding
     if (rna.GetStatus() != RDFNodeAccumulator::kGood) {
         Error(here, "RDFNodeAccumulator reached error status when defining branches.\n Message: %s", rna.GetErrorMsg().c_str()); 
@@ -339,9 +305,8 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
             }, {"E_sh_p_ratio","E_ps_p_ratio"})
     ); 
 
-    auto hist_z_dy_cut = rna_pidcut.Get()
-
-        .Histo2D<double>({"h_z_dy_cut", "PID cut;z_{tg};dy/dz_{sv}", 200, -0.4, +0.4, 200, -0.04, 0.03}, "z_reco_vertical", "reco_dydz_sv"); 
+    auto hist_z = rna_pidcut.Get()
+        .Histo1D<double>({"h_z", "Z_{hcs} reconstruction;z_{tg};", 200, -0.4, +0.4}, "z_reco_vertical"); 
 
     
     //create both histograms
@@ -367,31 +332,47 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     gStyle->SetOptStat(0); 
 
 
-    TestAngleReco(is_RHRS, rna.Get(), target, 4,12, 0,4, 1.10, 0.65, "reco_dxdz_sv", "reco_dydz_sv", "position_vtx"); 
+    /*/Measure lab-horizontal angle (dydz)
+    TestAngleReco(is_RHRS, kTestAngle_dydz, rna.Get(), target, 
+        4,13, 
+        0,10, 
+        1.25, 0.50, 0.20,
+        "reco_dxdz_sv", "reco_dydz_sv",
+        -0.045, +0.055,
+        -0.035, +0.020
+    ); 
+    //*/
+    
+    //Measure lab-vertical angle (dxdz)
+    TestAngleReco(is_RHRS, kTestAngle_dxdz, rna.Get(), target, 
+        4,13, 
+        1,8, 
+        1.25, 0.50, 1.00,
+        "reco_dxdz_sv", "reco_dydz_sv",
+        -0.045, +0.055,
+        -0.035, +0.020
+    ); 
+    //*/ 
 
-    return 0; 
+    return 0;  
+
+    TCanvas *c; 
+    c = new TCanvas("c_z_reco", c_title, 700, 700); 
+    hist_z->DrawCopy(); 
 
 
-    auto c_z_dy = new TCanvas("c_z_reco", c_title, 1200, 700); 
-    c_z_dy->Divide(2,1, 0.01,0.01); 
-    c_z_dy->SetLeftMargin(0.22); c_z_dy->SetRightMargin(0.05); 
-
-    c_z_dy->cd(1); hist_z_dy_nocut->DrawCopy("col"); 
-    c_z_dy->cd(2); hist_z_dy_cut->DrawCopy("col"); 
-
-
-    auto c = new TCanvas("c1", c_title, 1200, 600); 
+    c = new TCanvas("c1", c_title, 1200, 600); 
     c->SetLeftMargin(0.12); c->SetRightMargin(0.05); 
     c->Divide(2,1, 0.01,0.01); 
 
     c->cd(1); hist_fg_xy->DrawCopy("col2"); 
     c->cd(2); hist_xy->DrawCopy("col2");
     
-    auto c1 = new TCanvas("c2", c_title, 1200, 600); 
-    c1->Divide(2,1, 0.01,0.01); 
+    c = new TCanvas("c2", c_title, 1200, 600); 
+    c->Divide(2,1, 0.01,0.01); 
 
-    c1->cd(1); hist_fg_angles->DrawCopy("col2"); 
-    c1->cd(2); hist_angles->DrawCopy("col2"); 
+    c->cd(1); hist_fg_angles->DrawCopy("col2"); 
+    c->cd(2); hist_angles->DrawCopy("col2"); 
 
     return 0; 
 }
