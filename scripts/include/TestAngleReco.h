@@ -318,7 +318,7 @@ namespace TestAngleReco {
                 if (fabs(ev.*dv_ap - center_dv) < bg_cut_width*dv_cut_width/2.) hist_slice_bg->Fill( ev.*du_ap ); 
             }
 
-            if (!kQuiet) printf("Drawing slice %i...",icanv_profile); cout << flush; 
+            //if (!kQuiet) printf("Drawing slice %i...",icanv_profile); cout << flush; 
             
             if (kDrawing) {
                 hist_slice->GetYaxis()->SetNdivisions(0); 
@@ -336,7 +336,7 @@ namespace TestAngleReco {
                     hole_angles[i].*du_trj + du_cut_width/2.
                 });
             }
-            if (!kQuiet) cout << "Fitting background..." << flush; 
+            //if (!kQuiet) cout << "Fitting background..." << flush; 
 
             //fit the background with a polynomial, 
             auto background_fcn_unnormalized = FitBackground(hist_slice_bg, exclusions, background_polynomial_order);
@@ -348,7 +348,7 @@ namespace TestAngleReco {
             if (kDrawing) { c_profiles->cd(icanv_profile); tf1_bg->DrawCopy("SAME"); } 
             
 
-            if (!kQuiet) cout << "done." << endl; 
+            //if (!kQuiet) cout << "done." << endl; 
 
             for (size_t i=0; i<holes.size(); i++) {
 
@@ -490,15 +490,15 @@ namespace TestAngleReco {
                 });
             }
 
-            if (!kQuiet) printf("Done with row %2i/%i\n", icanv_profile, v1-v0+1); cout << flush; 
+            //if (!kQuiet) printf("Done with row %2i/%i\n", icanv_profile, v1-v0+1); cout << flush; 
 
             icanv_profile--; 
         }
         //this will actually store the errors computed
 
-        double amplitude_total  = 0.; 
-        double pos_error        = 0.; 
-        double smear_error      = 0.; 
+        double pos_offset_RMS             = 0.; 
+        double avg_peak_width             = 0.; 
+        double avg_pos_offset_uncertainty = 0.; 
 
         double max_pos_err =0.;
         for (auto holefit : fit_result.fits) {
@@ -506,16 +506,15 @@ namespace TestAngleReco {
             if (err > max_pos_err) max_pos_err = err; 
         }
 
-        auto h_pos_err_dist = new TH1D(Form("h_pos_dist_%s",test_name), Form("Distribution of hole position-offsets / statistical error from fit (%s);position offset / fit RMS;",test_dydz?"dy/dz":"dx/dz"), 100, -10, 10); 
+        auto h_pos_err_dist = new TH1D(Form("h_pos_dist_%s",test_name), Form("Distribution of hole position-offsets (%s);position offset (mrad);",test_dydz?"dy/dz":"dx/dz"), 100, -1.5, 1.5); 
 
         for (auto holefit : fit_result.fits) {
 
-            pos_error       += pow(holefit.angle_fit - holefit.angle_real, 2);// * holefit.amplitude; 
-            amplitude_total += 1.;//holefit.amplitude; 
-
-            smear_error     += holefit.angle_sigma; 
+            pos_offset_RMS  += pow(holefit.angle_fit - holefit.angle_real, 2); 
+            avg_peak_width  += holefit.angle_sigma; 
+            avg_pos_offset_uncertainty += holefit.angle_fit_staterr; 
             
-            h_pos_err_dist->Fill((holefit.angle_fit - holefit.angle_real)/holefit.angle_fit_staterr); 
+            h_pos_err_dist->Fill(1.e3*(holefit.angle_fit - holefit.angle_real)); 
         }
 
         if (kDrawing) {
@@ -523,27 +522,32 @@ namespace TestAngleReco {
             h_pos_err_dist->SetStats(1);
             h_pos_err_dist->Draw(); 
         }
-        
-        pos_error = sqrt( pos_error / amplitude_total );
-        smear_error = smear_error / (double)n_holes_measured; 
+
+        const double n_holes_measured_d = (double)n_holes_measured; 
+
+        pos_offset_RMS = sqrt( pos_offset_RMS / n_holes_measured_d );
+        avg_peak_width *= 1. / n_holes_measured_d;
+        avg_pos_offset_uncertainty *= 1. / n_holes_measured_d; 
         //fit_result.sigma_dydz_position = sqrt( pos_error / amplitude_total ); 
         //fit_result.sigma_dydz_smearing = smear_error / (double)n_holes_measured; 
 
         if (!kQuiet) {
             printf(
                 "%s:\n"
-                " ~~ position error: %.4e\n"
-                " ~~ smearing error: %.4e\n",
+                " ~~ Position offset RMS: %.6f (mrad)\n"
+                " ~~ Mean peak width:     %.6f (mrad)\n"
+                " ~~ Average pos offset uncertainty from Minuit: %.6f (mrad)\n",
 
                 (test_dydz?"dy/dz_sv {Phi-tg}":"dx/dz_sv {Theta-tg}"),
-                pos_error,
-                smear_error
+                pos_offset_RMS * 1e3,
+                avg_peak_width * 1e3,
+                avg_pos_offset_uncertainty * 1e3
             );
         }
         
 
-        fit_result.RMS_position = pos_error; 
-        fit_result.RMS_smearing = smear_error; 
+        fit_result.RMS_position = pos_offset_RMS; 
+        fit_result.RMS_smearing = avg_peak_width; 
 
         return fit_result; 
     }
