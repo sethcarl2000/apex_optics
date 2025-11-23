@@ -31,6 +31,7 @@
 //APEX-otpics headers
 #include <ApexOptics.h> 
 #include <RMatrix.h>
+#include "RDFNodeAccumulator.h"
 
 namespace TestAngleReco {
     //this stores the results of the fit 
@@ -46,6 +47,9 @@ namespace TestAngleReco {
         double angle_sigma; 
         //the amplitude of the gaussian fit (with background subtracted). 
         double amplitude; 
+        //statistical error associated with hole-fit
+        double angle_fit_staterr; 
+        
     }; 
 
 
@@ -100,6 +104,8 @@ namespace TestAngleReco {
 
         const char* const here = "TestHorizontalAngle"; 
 
+        const char* const test_name = test_dydz ? "dydz" : "dxdz"; 
+
         char c_title[255]; 
         
         //check that the target given is a V-wire
@@ -111,12 +117,27 @@ namespace TestAngleReco {
             return std::nullopt; 
         }
 
-        //get the react vertex
-        const double vtx_y_hcs = *df.Define("y", [](TVector3 v){ return v.y(); }, {name_react_vtx}).Mean("y"); 
+        RDFNodeAccumulator rna(df); 
 
+        rna.DefineIfMissing("position_vtx_scs", [is_RHRS](const TVector3& vtx_hcs)
+        {
+            return ApexOptics::HCS_to_SCS(is_RHRS, vtx_hcs); 
+        }, {"position_vtx"});
+
+        const double vtx_z = *rna.Get().Define("vtx_z", [](const TVector3& v){ return v.z(); }, {"position_vtx_scs"}).Mean("vtx_z"); 
+
+        //get the react vertex
+        if (test_dydz) { rna.Define("vtx_u", [](const TVector3& v){ return v.y(); }, {"position_vtx_scs"}); }
+        else           { rna.Define("vtx_u", [](const TVector3& v){ return v.x(); }, {"position_vtx_scs"}); }
+
+        const double vtx_y_hcs = *rna.Get().Define("y_hcs", [](const TVector3& v){ return v.y(); }, {"position_vtx"}).Mean("y_hcs"); 
         const TVector3 react_vtx_scs = ApexOptics::HCS_to_SCS( is_RHRS, TVector3(target.x_hcs, vtx_y_hcs, target.z_hcs) ); 
 
         const double vtx_u = test_dydz ? react_vtx_scs.y() : react_vtx_scs.x(); 
+        
+        const double min_vtx_u = *rna.Get().Min("vtx_u");
+        const double max_vtx_u = *rna.Get().Max("vtx_u");
+         
 
         //set the color pallete
         if (kDrawing) {
@@ -146,8 +167,8 @@ namespace TestAngleReco {
         const double sieve_hole_spacing_x = 5.842e-3; 
         
         //in radians
-        const double dxdz_cut_width = (sieve_hole_spacing_x * row_cut_width) / fabs(react_vtx_scs.z()); 
-        const double dydz_cut_width = (sieve_hole_spacing_y * col_cut_width) / fabs(react_vtx_scs.z()); 
+        const double dxdz_cut_width = (sieve_hole_spacing_x * row_cut_width) / fabs(vtx_z); 
+        const double dydz_cut_width = (sieve_hole_spacing_y * col_cut_width) / fabs(vtx_z); 
 
         // 'u' is the direction we're evaluating accuracy in, and 'v' is the other direction we're not fitting in. 
         const double du_cut_width = test_dydz ? dydz_cut_width : dxdz_cut_width; 
@@ -155,7 +176,7 @@ namespace TestAngleReco {
         
         if (kDrawing) {
             gStyle->SetPalette(kBird);
-            gStyle->SetOptStat(0); 
+            gStyle->SetOptStat(1); 
         }
 
         //Stores a single dx/dz and dy/dz data point
@@ -175,17 +196,18 @@ namespace TestAngleReco {
 
         if (!kQuiet) std::cout << "done." << endl; 
 
+            
         TCanvas* c{nullptr};
         TVirtualPad *c_2d{nullptr}, *c_profiles{nullptr};  
         if (kDrawing) {
-            c = new TCanvas("ctest_dy", "Angle Reco - dy/dz", 1600, 800); 
+            c = new TCanvas(Form("ctest_%s",test_name), "Angle Reco - dy/dz", 1600, 800); 
             c->Divide(2,1);
         
             c_2d         = c->cd(1);
             c_profiles   = c->cd(2);
         
             //create, fill, and draw the 2d-hist
-            auto h_dx_dy = new TH2D("h", "dx/dz_{sv} vs dy/dz_{sv} (rad)", 200, dxdz_min, dxdz_max, 200, dydz_min, dydz_max); 
+            auto h_dx_dy = new TH2D(Form("h_2d_%s",test_name), "dx/dz_{sv} vs dy/dz_{sv} (rad)", 200, dxdz_min, dxdz_max, 200, dydz_min, dydz_max); 
             
             for (const auto& ev : data) {
                 h_dx_dy->Fill( ev.dxdz, ev.dydz ); 
@@ -272,8 +294,8 @@ namespace TestAngleReco {
                 hole_angles.emplace_back(Trajectory_t{
                     hole.x, 
                     hole.y,
-                    ( hole.x - react_vtx_scs.x() )/( 0. - react_vtx_scs.z() ),
-                    ( hole.y - react_vtx_scs.y() )/( 0. - react_vtx_scs.z() ) 
+                    ( hole.x - react_vtx_scs.x() )/( 0. - vtx_z ),
+                    ( hole.y - react_vtx_scs.y() )/( 0. - vtx_z ) 
                 }); 
             }
                     
@@ -282,7 +304,7 @@ namespace TestAngleReco {
             // this is needed for testing dx/dz 
 
             // create and fill the row histogram
-            auto hist_slice = new TH1D(Form("h_slice_%i",icanv_profile), "", 200, du_min, du_max); 
+            auto hist_slice = unique_ptr<TH1D>(new TH1D(Form("h_slice_%i",icanv_profile), "", 200, du_min, du_max)); 
             
             auto hist_slice_bg = (TH1D*)hist_slice->Clone("h_row_bg"); 
 
@@ -361,12 +383,20 @@ namespace TestAngleReco {
 
                 //upper edge of sieve hole, accounting for paralax, assuming that the tungsten material of the sieve is impenitrable
                 // (which is known not to be true!!)
-                const double du_hi = ( hole.*u_sh - vtx_u ) / ( sieve_thickness_z - react_vtx_scs.z() ); 
+                const double R_hole = hole.radius_front; 
+                
+                double hole_du_min = hole.*u_sh - R_hole - max_vtx_u; 
+                hole_du_min *= max_vtx_u < hole.*u_sh - R_hole ? 1./(0. - vtx_z) : 1./(sieve_thickness_z - vtx_z); 
 
-                const double du_lo = ( hole.*u_sh - vtx_u ) / ( 0.                - react_vtx_scs.z() ); 
+                double hole_du_max = hole.*u_sh + R_hole - min_vtx_u; 
+                hole_du_max *= min_vtx_u < hole.*u_sh + R_hole ? 1./(sieve_thickness_z - vtx_z) : 1./(0. - vtx_z); 
+                
 
-                const double hole_radius = hole.radius_front / fabs(react_vtx_scs.z());
-                const double hole_du     = (du_hi + du_lo) / 2.;
+                //aparent width of the hole (if sieve is impermiable)
+                const double hole_angle_width = hole_du_max - hole_du_min;
+                
+                //aparent centroid of this hole (under the assumption that the sieve is impenitrable)
+                const double hole_du = (hole_du_max + hole_du_min) / 2.;
                     
                 //auto fit = unique_ptr<TF1>(new TF1("holefit", gaussian_semicircle, hole_dydz -2.5e-3, hole_dydz +2.5e-3, 5));              
                 
@@ -387,7 +417,7 @@ namespace TestAngleReco {
 
                 fit->SetParameter(0, maxval - background_fcn(bin_center,nullptr)); 
                 fit->SetParameter(1, hole_du);
-                fit->SetParameter(2, hole_radius / 2.5);
+                fit->SetParameter(2, hole_angle_width / 2.5);
 
                 auto fitresult = hist_slice->Fit("holefit", "S R B Q N L"); 
 
@@ -396,6 +426,7 @@ namespace TestAngleReco {
 
                 //error of the dy/dz position of the hole
                 const double hole_du_fit        = fitresult->Parameter(1);
+                const double hole_du_staterr    = fitresult->ParError(1);
                 const double hole_sigma_fit     = fabs(fitresult->Parameter(2)); 
                 const double hole_amplitude_fit = fitresult->Parameter(0); 
 
@@ -451,10 +482,11 @@ namespace TestAngleReco {
                 //add this result to the fitresult 
                 fit_result.fits.push_back({
                     .hole           = hole, 
-                    .angle_real     = angle.*du_trj, 
+                    .angle_real     = hole_du, 
                     .angle_fit      = hole_du_fit, 
                     .angle_sigma    = hole_sigma_fit,
-                    .amplitude      = hole_n_events
+                    .amplitude      = hole_n_events, 
+                    .angle_fit_staterr = hole_du_staterr
                 });
             }
 
@@ -468,14 +500,30 @@ namespace TestAngleReco {
         double pos_error        = 0.; 
         double smear_error      = 0.; 
 
+        double max_pos_err =0.;
         for (auto holefit : fit_result.fits) {
-
-            pos_error       += pow(holefit.angle_fit - holefit.angle_real, 2) * holefit.amplitude; 
-            amplitude_total += holefit.amplitude; 
-
-            smear_error     += holefit.angle_sigma; 
+            double err = fabs(holefit.angle_fit - holefit.angle_real); 
+            if (err > max_pos_err) max_pos_err = err; 
         }
 
+        auto h_pos_err_dist = new TH1D(Form("h_pos_dist_%s",test_name), Form("Distribution of hole position-offsets / statistical error from fit (%s);position offset / fit RMS;",test_dydz?"dy/dz":"dx/dz"), 100, -10, 10); 
+
+        for (auto holefit : fit_result.fits) {
+
+            pos_error       += pow(holefit.angle_fit - holefit.angle_real, 2);// * holefit.amplitude; 
+            amplitude_total += 1.;//holefit.amplitude; 
+
+            smear_error     += holefit.angle_sigma; 
+            
+            h_pos_err_dist->Fill((holefit.angle_fit - holefit.angle_real)/holefit.angle_fit_staterr); 
+        }
+
+        if (kDrawing) {
+            new TCanvas(Form("h_pos_err_dist_%s",test_dydz?"dydz":"dxdz"), "dist. of hole-position error"); 
+            h_pos_err_dist->SetStats(1);
+            h_pos_err_dist->Draw(); 
+        }
+        
         pos_error = sqrt( pos_error / amplitude_total );
         smear_error = smear_error / (double)n_holes_measured; 
         //fit_result.sigma_dydz_position = sqrt( pos_error / amplitude_total ); 
