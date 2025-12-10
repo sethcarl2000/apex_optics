@@ -65,8 +65,8 @@ const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dy
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut.root",
-                        const char* target_name ="V2",
+int test_forward_chain( const char* path_infile ="data/replay/real_L_V1-dp.root",
+                        const char* target_name ="V1",
                         const char* path_dbfile ="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                         const char* tree_name   ="tracks_fp" ) 
 {
@@ -131,7 +131,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     model->CreateChainRev({
 
         // sv <= [Poly] <= fp
-        {"data/poly/fits_6Nov/V123_fp_sv_4ord.dat", branches_sv, 4} //*/ 
+        {"data/poly/fits_5Dec/V123_fp_sv_4ord.dat", branches_sv, 4} //*/ 
 
         /*/ sv <= [Poly] <= fp-fwd <= _Poly_ <= fp
         {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
@@ -331,30 +331,30 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2_noPIDcut
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
 
-
-    /*/Measure lab-horizontal angle (dydz)
-    TestAngleReco(is_RHRS, kTestAngle_dydz, rna.Get(), target, 
+    
+    //Measure lab-horizontal angle (dydz)
+    TestAngleReco::Evaluate(is_RHRS, TestAngleReco::kDydz, rna.Get(), target, 
         4,13, 
         0,10, 
         1.25, 0.50, 0.20,
         "reco_dxdz_sv", "reco_dydz_sv",
+        true, 
         -0.045, +0.055,
         -0.035, +0.020
     ); 
-    //*/
     
     //Measure lab-vertical angle (dxdz)
-    TestAngleReco(is_RHRS, kTestAngle_dxdz, rna.Get(), target, 
+    TestAngleReco::Evaluate(is_RHRS, TestAngleReco::kDxdz, rna.Get(), target, 
         4,13, 
         1,8, 
         1.25, 0.50, 1.00,
         "reco_dxdz_sv", "reco_dydz_sv",
+        false, 
         -0.045, +0.055,
         -0.035, +0.020
     ); 
-    //*/ 
 
-    return 0;  
+    return 0;  //*/ 
 
     TCanvas *c; 
     c = new TCanvas("c_z_reco", c_title, 700, 700); 

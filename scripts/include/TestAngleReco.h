@@ -45,11 +45,12 @@ namespace TestAngleReco {
         double angle_fit; 
         //the sigma of the gaussian fit
         double angle_sigma; 
+        //the slope of the hole's tilt: d[phi]/d[theta], where phi=dy/dz theta=dx/dz
+        double angle_slope; 
         //the amplitude of the gaussian fit (with background subtracted). 
         double amplitude; 
         //statistical error associated with hole-fit
         double angle_fit_staterr; 
-        
     }; 
 
 
@@ -75,28 +76,32 @@ namespace TestAngleReco {
     //if false, then output will be printed to stdout. otherwise, operation is quiet. 
     static bool kQuiet = false; 
 
+    struct SlopeFit { double m, m_err, b; }; 
+    SlopeFit MeasureSlope(TH2D* h_data, const double x0, const double y0, const std::array<double,2>& xlim, const std::array<double,2>& ylim);
 
     std::function<double(double*,double*)> FitBackground(TH1D* hist, const vector<pair<double,double>>& exclusions, const int order); 
 
     //test the horizontal angle reconstruction efficiency
-    std::optional<AngleFitResult_t> Evaluate     (  const bool is_RHRS,         //arm to use
-                                                    const bool test_dydz,       //which angle to test
-                                                    ROOT::RDF::RNode df,        //RDataFrame to get our data from 
-                                                    ApexOptics::OpticsTarget_t target,      //optics target to use  
-                                                    const int first_row,        //first row to start at
-                                                    const int last_row,         //Last row to end at       
-                                                    const int first_col,        //first column to start at
-                                                    const int last_col,         //Last column to end at
-                                                    const double row_cut_width=1.2,     //width to make vertical cut, expressed as a fraction of the row spacing 
-                                                    const double col_cut_width=0.80,    //width to make cut around hole, in fraction of inter-column spacing
-                                                    const double bg_cut_width=1.00,     //fraction of row_cut_width to use to fit the background with
-                                                    const char* name_dxdz="reco_dxdz_sv", 
-                                                    const char* name_dydz="reco_dydz_sv", 
-                                                    const double dxdz_min = -0.04,
-                                                    const double dxdz_max = +0.04, 
-                                                    const double dydz_min = -0.04, 
-                                                    const double dydz_max = +0.04, 
-                                                    const char* name_react_vtx="position_vtx" )
+    //________________________________________________________________________________________________________________________________________________________________
+    std::optional<AngleFitResult_t> Evaluate(   const bool is_RHRS,         //arm to use
+                                                const bool test_dydz,       //which angle to test
+                                                ROOT::RDF::RNode df,        //RDataFrame to get our data from 
+                                                ApexOptics::OpticsTarget_t target,      //optics target to use  
+                                                const int first_row,        //first row to start at
+                                                const int last_row,         //Last row to end at       
+                                                const int first_col,        //first column to start at
+                                                const int last_col,         //Last column to end at
+                                                const double row_cut_width=1.2,     //width to make vertical cut, expressed as a fraction of the row spacing 
+                                                const double col_cut_width=0.80,    //width to make cut around hole, in fraction of inter-column spacing
+                                                const double bg_cut_width=1.00,     //fraction of row_cut_width to use to fit the background with
+                                                const char* name_dxdz="reco_dxdz_sv", 
+                                                const char* name_dydz="reco_dydz_sv", 
+                                                const bool measure_slopes=false, //should we test the slopes? 
+                                                const double dxdz_min = -0.04,
+                                                const double dxdz_max = +0.04, 
+                                                const double dydz_min = -0.04, 
+                                                const double dydz_max = +0.04, 
+                                                const char* name_react_vtx="position_vtx" )
     {
         using namespace std; 
         using ApexOptics::Trajectory_t; 
@@ -199,19 +204,20 @@ namespace TestAngleReco {
             
         TCanvas* c{nullptr};
         TVirtualPad *c_2d{nullptr}, *c_profiles{nullptr};  
+
+        //create, fill, and draw the 2d-hist
+        auto h_dx_dy = new TH2D(Form("h_2d_%s",test_name), "dx/dz_{sv} vs dy/dz_{sv} (rad)", 200, dxdz_min, dxdz_max, 200, dydz_min, dydz_max); 
+        
+        for (const auto& ev : data) { h_dx_dy->Fill( ev.dxdz, ev.dydz ); }
+
         if (kDrawing) {
+
             c = new TCanvas(Form("ctest_%s",test_name), "Angle Reco - dy/dz", 1600, 800); 
             c->Divide(2,1);
         
             c_2d         = c->cd(1);
             c_profiles   = c->cd(2);
-        
-            //create, fill, and draw the 2d-hist
-            auto h_dx_dy = new TH2D(Form("h_2d_%s",test_name), "dx/dz_{sv} vs dy/dz_{sv} (rad)", 200, dxdz_min, dxdz_max, 200, dydz_min, dydz_max); 
             
-            for (const auto& ev : data) {
-                h_dx_dy->Fill( ev.dxdz, ev.dydz ); 
-            }
             c_2d->cd(); h_dx_dy->DrawCopy("col"); 
         }
 
@@ -253,6 +259,9 @@ namespace TestAngleReco {
 
         for (int iv = v0; iv <= v1; iv++) {
 
+            //Backstory - I made a terrible decision a few years ago when I decided that sieve-holes on adjacent, staggered rows 
+            // ought to have the same column-index, and so we need to enage in this funny business of fitting TWO histogram slices per row, 
+            // but ONLY if we're cheking dx/dz (because for dy/dz all holes are in the same column)
             if (test_dydz) {
                 //for testing dy/dz, all holes are in-line with each other
                 vector<SieveHole> slice{}; 
@@ -308,9 +317,6 @@ namespace TestAngleReco {
             
             auto hist_slice_bg = (TH1D*)hist_slice->Clone("h_row_bg"); 
 
-            //Backstory - I made a terrible decision a few years ago when I decided that sieve-holes on adjacent, staggered rows 
-            // ought to have the same column-index, and so we need to enage in this funny business of fitting TWO histogram slices per row, 
-            // but ONLY if we're cheking dx/dz (because all holes in the same column )
             for (const auto& ev : data) {
                 
                 //all holes are in a straight line
@@ -385,11 +391,8 @@ namespace TestAngleReco {
                 // (which is known not to be true!!)
                 const double R_hole = hole.radius_front; 
                 
-                double hole_du_min = hole.*u_sh - R_hole - max_vtx_u; 
-                hole_du_min *= max_vtx_u < hole.*u_sh - R_hole ? 1./(0. - vtx_z) : 1./(sieve_thickness_z - vtx_z); 
-
-                double hole_du_max = hole.*u_sh + R_hole - min_vtx_u; 
-                hole_du_max *= min_vtx_u < hole.*u_sh + R_hole ? 1./(sieve_thickness_z - vtx_z) : 1./(0. - vtx_z); 
+                double hole_du_min = (hole.*u_sh - R_hole - max_vtx_u) / ( (max_vtx_u < hole.*u_sh - R_hole ? 0. : sieve_thickness_z) - vtx_z ); 
+                double hole_du_max = (hole.*u_sh + R_hole - min_vtx_u) / ( (min_vtx_u < hole.*u_sh + R_hole ? sieve_thickness_z : 0.) - vtx_z ); 
                 
 
                 //aparent width of the hole (if sieve is impermiable)
@@ -445,6 +448,26 @@ namespace TestAngleReco {
                 //
                 double hole_n_events = 2.50662827463 * hole_sigma_fit * hole_amplitude_fit * du_bin; 
 
+
+                //now, let's try to measure the slope 
+                SlopeFit slope; 
+
+                if (measure_slopes) {
+                    if (test_dydz) {
+                        slope = MeasureSlope(h_dx_dy, center_dv, hole_du_fit, 
+                            { center_dv - dv_cut_width, center_dv + dv_cut_width }, 
+                            { hole_du   - du_cut_width, hole_du   + du_cut_width }
+                        );
+                    } else {
+                        slope = MeasureSlope(h_dx_dy, hole_du_fit, center_dv, 
+                            { hole_du   - du_cut_width, hole_du   + du_cut_width },
+                            { center_dv - dv_cut_width, center_dv + dv_cut_width } 
+                        );
+                    }
+                }
+
+                //cout << "slope: " << slope.m << endl; //" +/- " << slope.m_err << endl; 
+
                 //we're counting this hole as having been 'measured'
                 n_holes_measured++;
 
@@ -472,9 +495,32 @@ namespace TestAngleReco {
                         angle.dydz + (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.
                     );
                     //make the box have no fill (transparent), and draw it.
+
+                    double x0 = test_dydz ? center_dv : hole_du_fit; 
+                    double y0 = test_dydz ? hole_du_fit : center_dv;  
+
+                    //draw the slope-line
+                    if (measure_slopes && slope.m == slope.m) {
+                        cout << "drawing slope... (" << slope.m << ")" << endl; 
+                        auto slope_line = new TF1("slope_line", 
+                            [slope, x0,y0](double *X, double *par)
+                            {
+                                return slope.m*(X[0] - x0) + y0 + slope.b;
+                            }, 
+                            angle.dxdz - dxdz_cut_width/2., 
+                            angle.dxdz + dxdz_cut_width/2., 
+                            0
+                        ); 
+
+                        slope_line->SetLineWidth(2); 
+                        slope_line->SetLineColor(kBlack);
+                         
+
+                        c_2d->cd();
+                        slope_line->DrawCopy("SAME"); 
+                    }
                     
                     c_2d->cd();
-
                     box->SetFillStyle(0); 
                     box->Draw(); 
                 }
@@ -485,6 +531,7 @@ namespace TestAngleReco {
                     .angle_real     = hole_du, 
                     .angle_fit      = hole_du_fit, 
                     .angle_sigma    = hole_sigma_fit,
+                    .angle_slope    = measure_slopes ? slope.m : numeric_limits<double>::quiet_NaN(),
                     .amplitude      = hole_n_events, 
                     .angle_fit_staterr = hole_du_staterr
                 });
@@ -551,7 +598,8 @@ namespace TestAngleReco {
 
         return fit_result; 
     }
-        
+    //________________________________________________________________________________________________________________________________________________________________
+    
     std::function<double(double*,double*)> FitBackground(
         TH1D* hist, 
         const vector<pair<double,double>>& exclusions, 
@@ -633,6 +681,93 @@ namespace TestAngleReco {
 
         return result_fcn; 
     }
+    //________________________________________________________________________________________________________________________________________________________________
+
+    //measures the d[phi]/d[theta] slope of a given hole, returns the measured slope (and fit uncertainty)
+    SlopeFit MeasureSlope(TH2D* h_data, const double x0, const double y0, const std::array<double,2>& xlim, const std::array<double,2>& ylim)
+    {
+        using namespace std; 
+
+        //Get the histogram data
+        
+        //get TAxis ptrs
+        auto xax = h_data->GetXaxis(); 
+        auto yax = h_data->GetYaxis(); 
+
+        //bin widths x/y 
+        const double sigma = (yax->GetXmax() - yax->GetXmin())/((double)yax->GetNbins()-1); 
+
+            
+        ROOT::Math::Minimizer *minimizer = ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"); 
+        
+        minimizer->SetMaxFunctionCalls(1e7); 
+        minimizer->SetMaxIterations(1e6); 
+        minimizer->SetTolerance(1e-4);
+        minimizer->SetPrintLevel(0);    
+
+        const int bins_x[] = { xax->FindBin(xlim[0]), xax->FindBin(xlim[1]) }; 
+        const int bins_y[] = { yax->FindBin(ylim[0]), yax->FindBin(ylim[1]) }; 
+
+        auto f_minimizer = ROOT::Math::Functor([h_data, &bins_x,&bins_y, xax,yax, x0,y0, sigma](const double* par)
+        {
+            const double m = par[0]; 
+            const double b = par[1]; 
+            double gaus_sum =0.; 
+
+            for (int bx=bins_x[0]; bx<=bins_x[1]; bx++) { 
+                const double x = xax->GetBinCenter(bx); 
+
+                for (int by=bins_y[0]; by<=bins_y[1]; by++) { 
+                    const double y = yax->GetBinCenter(by); 
+
+                    double error = ( y - (m*(x-x0) + b+y0) )/sigma;
+
+                    //printf("gaus_sum: x, y | N:      %+.4f, %+.4f | %.0f\n", x,y,h_data->GetBinContent(bx,by)); 
+
+                    gaus_sum += h_data->GetBinContent(bx,by) * exp( -error*error ); 
+                }
+            }
+            
+            return -gaus_sum; 
+        }, 2);
+
+        minimizer->SetFunction(f_minimizer); 
+
+        minimizer->SetVariable(0, "m", 0., 0.1); 
+        minimizer->SetVariable(1, "b", 0., 0.001); 
+        
+        bool fit_status = minimizer->Minimize(); 
+
+        if (!fit_status) return {
+            numeric_limits<double>::quiet_NaN(), 
+            numeric_limits<double>::quiet_NaN(), 
+            numeric_limits<double>::quiet_NaN()
+        }; 
+
+        return { 
+            minimizer->X()[0], 
+            minimizer->Errors()[0], 
+            minimizer->X()[1] 
+        }; 
+
+        /*
+        //range of x-y bins 
+
+        const int nbins_x{ bins_x[1] - bins_x[0] + 1 }; 
+        const int nbins_y{ bins_y[1] - bins_y[0] + 1 }; 
+        
+        vector<XYpt> bin_data; bin_data.reserve(nbins_x*nbins_y);
+
+        for (int bx=bins_x[0]; bx<=bins_x[1]; bx++) {
+            for (int by=bins_y[0]; by<=bins_y[1]; by++) {
+
+                bin_data.push_back({ xax->GetBinCenter(bx), yax->GetBinCenter(by), h_data->Get })
+            }
+        }
+        */ 
+    }
+    //________________________________________________________________________________________________________________________________________________________________
+
 };
 
 
