@@ -77,7 +77,7 @@ namespace TestAngleReco {
     static bool kQuiet = false; 
 
     struct SlopeFit { double m, m_err, b; }; 
-    SlopeFit MeasureSlope(TH2D* h_data, const double x0, const double y0, const std::array<double,2>& xlim, const std::array<double,2>& ylim);
+    SlopeFit MeasureSlope(TH2D* h_data, const double x0, const double y0, const std::array<double,2>& xlim, const std::array<double,2>& ylim, const std::function<double(double*,double*)>& bg_fcn);
 
     std::function<double(double*,double*)> FitBackground(TH1D* hist, const vector<pair<double,double>>& exclusions, const int order); 
 
@@ -167,9 +167,9 @@ namespace TestAngleReco {
         }; 
 
         //all units in meters
-        const double sieve_thickness_z = 12e-3; 
-        const double sieve_hole_spacing_y = 4.826e-3; 
-        const double sieve_hole_spacing_x = 5.842e-3; 
+        const double sieve_thickness_z = 12e-3;         //sieve thickness (m)
+        const double sieve_hole_spacing_y = 4.826e-3;   //sieve-hole spacing, m
+        const double sieve_hole_spacing_x = 5.842e-3;   //sieve-hole spacing, m
         
         //in radians
         const double dxdz_cut_width = (sieve_hole_spacing_x * row_cut_width) / fabs(vtx_z); 
@@ -181,14 +181,14 @@ namespace TestAngleReco {
         
         if (kDrawing) {
             gStyle->SetPalette(kBird);
-            gStyle->SetOptStat(1); 
         }
 
+        
         //Stores a single dx/dz and dy/dz data point
         struct AnglePair_t { double dxdz,dydz; }; 
 
         //make a vector of all events 
-        if (!kQuiet) std::cout << "Making copy of data..." << flush; 
+        //if (!kQuiet) std::cout << "Making copy of data..." << flush; 
 
         std::vector<AnglePair_t> data = *df 
 
@@ -199,26 +199,36 @@ namespace TestAngleReco {
             
             .Take<AnglePair_t>("event");  
 
-        if (!kQuiet) std::cout << "done." << endl; 
+        //if (!kQuiet) std::cout << "done." << endl; 
 
             
         TCanvas* c{nullptr};
-        TVirtualPad *c_2d{nullptr}, *c_profiles{nullptr};  
+        
+        //come up with an appropriate histogram title
+        const char* dxdy_hist_name = test_dydz
+            ? "Test of dy/dz (theta-tg, lab-horizontal);dx/dz (rad);dy/dz (rad)" 
+            : "Test of dx/dz (phi-tg, lab-vertical);dx/dz (rad);dy/dz (rad)"; 
+        
 
         //create, fill, and draw the 2d-hist
-        auto h_dx_dy = new TH2D(Form("h_2d_%s",test_name), "dx/dz_{sv} vs dy/dz_{sv} (rad)", 200, dxdz_min, dxdz_max, 200, dydz_min, dydz_max); 
+        auto h_dx_dy = new TH2D(Form("h_2d_%s",test_name), dxdy_hist_name, 200, dxdz_min, dxdz_max, 200, dydz_min, dydz_max); 
         
         for (const auto& ev : data) { h_dx_dy->Fill( ev.dxdz, ev.dydz ); }
 
+        //we use these variables do easily switch between our different sub-pads
+        TVirtualPad *c_2d, *c_profiles;  
         if (kDrawing) {
 
             c = new TCanvas(Form("ctest_%s",test_name), "Angle Reco - dy/dz", 1600, 800); 
             c->Divide(2,1);
-        
+
             c_2d         = c->cd(1);
             c_profiles   = c->cd(2);
             
-            c_2d->cd(); h_dx_dy->DrawCopy("col"); 
+            c_2d->cd(); 
+            c_2d->SetLeftMargin(0.15); 
+            c_2d->SetRightMargin(0.02); 
+            h_dx_dy->DrawCopy("col"); 
         }
 
         size_t n_holes_measured =0; 
@@ -456,16 +466,20 @@ namespace TestAngleReco {
                     if (test_dydz) {
                         slope = MeasureSlope(h_dx_dy, center_dv, hole_du_fit, 
                             { center_dv - dv_cut_width, center_dv + dv_cut_width }, 
-                            { hole_du   - du_cut_width, hole_du   + du_cut_width }
+                            { hole_du   - du_cut_width, hole_du   + du_cut_width }, 
+                            background_fcn
                         );
                     } else {
                         slope = MeasureSlope(h_dx_dy, hole_du_fit, center_dv, 
                             { hole_du   - du_cut_width, hole_du   + du_cut_width },
-                            { center_dv - dv_cut_width, center_dv + dv_cut_width } 
+                            { center_dv - dv_cut_width, center_dv + dv_cut_width },
+                            background_fcn
                         );
                     }
-                }
 
+                    //don't record this hole if its slope measurement failed 
+                    if (slope.m != slope.m) continue; 
+                }
                 //cout << "slope: " << slope.m << endl; //" +/- " << slope.m_err << endl; 
 
                 //we're counting this hole as having been 'measured'
@@ -501,7 +515,6 @@ namespace TestAngleReco {
 
                     //draw the slope-line
                     if (measure_slopes && slope.m == slope.m) {
-                        cout << "drawing slope... (" << slope.m << ")" << endl; 
                         auto slope_line = new TF1("slope_line", 
                             [slope, x0,y0](double *X, double *par)
                             {
@@ -553,15 +566,36 @@ namespace TestAngleReco {
             if (err > max_pos_err) max_pos_err = err; 
         }
 
-        auto h_pos_err_dist = new TH1D(Form("h_pos_dist_%s",test_name), Form("Distribution of hole position-offsets (%s);position offset (mrad);",test_dydz?"dy/dz":"dx/dz"), 100, -1.5, 1.5); 
+        auto h_pos_err_dist = new TH1D(Form("h_pos_dist_%s",test_name), Form("Distribution of hole RMS values (%s);hole RMS (mrad);",test_dydz?"dy/dz":"dx/dz"), 35, 0., 1.1); 
+
+        //spacing bewtween sieve holes in the dx/dz (theta) direction
+        const double dTheta = sieve_hole_spacing_x / vtx_z; 
 
         for (auto holefit : fit_result.fits) {
 
-            pos_offset_RMS  += pow(holefit.angle_fit - holefit.angle_real, 2); 
+            if (test_dydz) { 
+                //if we're testing phi (dy/dz), we must account for hole-slopes
+                double phi0 = holefit.angle_fit - holefit.angle_real; 
+                double m    = holefit.angle_slope; 
+
+                //this is the result of integrating the square-error over the range [-dTheta/2, +dTheta/2]. 
+                //where the error of any region is [phi0 + m*dTheta]
+                double hole_square_error = (pow(phi0 + m*dTheta/2., 3) - pow(phi0 - m*dTheta/2., 3))/(3.*m*dTheta);
+
+                pos_offset_RMS += hole_square_error;
+
+                h_pos_err_dist->Fill(1.e3*sqrt(hole_square_error)); 
+            } else {
+
+                //otherwise, just compute the RMS of each hole's centroid
+                double hole_square_error = pow(holefit.angle_fit - holefit.angle_real, 2); 
+                pos_offset_RMS += hole_square_error; 
+
+                h_pos_err_dist->Fill(1e3*sqrt(hole_square_error)); 
+            }
             avg_peak_width  += holefit.angle_sigma; 
-            avg_pos_offset_uncertainty += holefit.angle_fit_staterr; 
+            avg_pos_offset_uncertainty += holefit.angle_fit_staterr;   
             
-            h_pos_err_dist->Fill(1.e3*(holefit.angle_fit - holefit.angle_real)); 
         }
 
         if (kDrawing) {
@@ -581,18 +615,16 @@ namespace TestAngleReco {
         if (!kQuiet) {
             printf(
                 "%s:\n"
-                " ~~ Position offset RMS: %.6f (mrad)\n"
-                " ~~ Mean peak width:     %.6f (mrad)\n"
-                " ~~ Average pos offset uncertainty from Minuit: %.6f (mrad)\n",
-
+                " ~~ %s %.6f (mrad)\n"
+                " ~~ Mean peak width: ................. %.6f (mrad)\n",
+               
                 (test_dydz?"dy/dz_sv {Phi-tg}":"dx/dz_sv {Theta-tg}"),
+                (test_dydz?"centroid offset + slope RMS: .....":"centroid offset RMS: ............."),
                 pos_offset_RMS * 1e3,
-                avg_peak_width * 1e3,
-                avg_pos_offset_uncertainty * 1e3
+                avg_peak_width * 1e3
             );
         }
         
-
         fit_result.RMS_position = pos_offset_RMS; 
         fit_result.RMS_smearing = avg_peak_width; 
 
@@ -684,7 +716,7 @@ namespace TestAngleReco {
     //________________________________________________________________________________________________________________________________________________________________
 
     //measures the d[phi]/d[theta] slope of a given hole, returns the measured slope (and fit uncertainty)
-    SlopeFit MeasureSlope(TH2D* h_data, const double x0, const double y0, const std::array<double,2>& xlim, const std::array<double,2>& ylim)
+    SlopeFit MeasureSlope(TH2D* h_data, const double x0, const double y0, const std::array<double,2>& xlim, const std::array<double,2>& ylim, const std::function<double(double*,double*)>& bg_fcn)
     {
         using namespace std; 
 
@@ -708,14 +740,18 @@ namespace TestAngleReco {
         const int bins_x[] = { xax->FindBin(xlim[0]), xax->FindBin(xlim[1]) }; 
         const int bins_y[] = { yax->FindBin(ylim[0]), yax->FindBin(ylim[1]) }; 
 
-        auto f_minimizer = ROOT::Math::Functor([h_data, &bins_x,&bins_y, xax,yax, x0,y0, sigma](const double* par)
+        //we have to re-nomralized the background function, as we're looking at a single bin-width
+
+        const double bg_normalization = ( (xax->GetXmax() - xax->GetXmin())/((double)xax->GetNbins()-1) ) / (xlim[1] - xlim[0]); 
+
+        auto f_minimizer = ROOT::Math::Functor([h_data, &bins_x,&bins_y, xax,yax, x0,y0, sigma, &bg_fcn, bg_normalization](const double* par)
         {
             const double m = par[0]; 
             const double b = par[1]; 
             double gaus_sum =0.; 
 
-            for (int bx=bins_x[0]; bx<=bins_x[1]; bx++) { 
-                const double x = xax->GetBinCenter(bx); 
+            for (int bx=bins_x[0]; bx<=bins_x[1]; bx++) {
+                const double x = xax->GetBinCenter(bx);     
 
                 for (int by=bins_y[0]; by<=bins_y[1]; by++) { 
                     const double y = yax->GetBinCenter(by); 
@@ -724,7 +760,12 @@ namespace TestAngleReco {
 
                     //printf("gaus_sum: x, y | N:      %+.4f, %+.4f | %.0f\n", x,y,h_data->GetBinContent(bx,by)); 
 
-                    gaus_sum += h_data->GetBinContent(bx,by) * exp( -error*error ); 
+                    double X[] = {y}; 
+                    double bin_signal = h_data->GetBinContent(bx,by) - bg_normalization*bg_fcn(X, nullptr); 
+
+                    if (bin_signal < 0.) continue; 
+
+                    gaus_sum += bin_signal * exp( -error*error ); 
                 }
             }
             
