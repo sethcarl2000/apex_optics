@@ -32,24 +32,31 @@ using namespace ROOT::VecOps;
 using ApexOptics::Trajectory_t; 
 using ApexOptics::OpticsTarget_t; 
 
-const vector<string> branches_sv{"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"};
-const vector<string> branches_q1{"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"};
-const vector<string> branches_fp{"x_fp","y_fp","dxdz_fp","dydz_fp"};
+namespace {
+    const vector<string> branches_sv{"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"};
+    const vector<string> branches_q1{"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"};
+    const vector<string> branches_fp{"x_fp","y_fp","dxdz_fp","dydz_fp"};
 
-const vector<string> branches_fwd_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"};
-const vector<string> branches_fwd_fp{"fwd_x_fp","fwd_y_fp","fwd_dxdz_fp","fwd_dydz_fp"};
+    const vector<string> branches_fwd_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"};
+    const vector<string> branches_fwd_fp{"fwd_x_fp","fwd_y_fp","fwd_dxdz_fp","fwd_dydz_fp"};
 
-const vector<string> branches_rev_sv{"fwd_x_sv","fwd_y_sv","fwd_dxdz_sv","fwd_dydz_sv","fwd_dpp_sv"};
-const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"};
+    const vector<string> branches_rev_sv{"fwd_x_sv","fwd_y_sv","fwd_dxdz_sv","fwd_dydz_sv","fwd_dpp_sv"};
+    const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"};
+
+    inline bool is_nan(double _val) { return _val != _val; }
+ 
+};
+
+
 
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
 int cleanup_optics_replay(  const bool is_RHRS          = false,
-                            const char* path_infile     = "data/replay/replay.4766.root",
-                            const char* target_name     = "V1",
-                            const char* path_outfile    = "data/sieve_holes/fits_6Nov/real_L_V1.root",
-                            const char* path_polycut    = "",//"data/csv/polycut_L_O7-new.dat",
+                            const char* path_infile     = "data/replay/replay.4768.root",
+                            const char* target_name     = "V2",
+                            const char* path_outfile    = "data/replay/real_L_V2.root",
+                            const char* path_polycut    = "",//"data/replay/fits_6Nov/polycut-V3.dat",
                             const char* tree_name       = "track_data" ) 
 {
     const char* const here = "cleanup_optics_replay";
@@ -119,13 +126,12 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
 
     try {
         model->CreateChainRev({ // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
-            {"data/poly/V123-rast-partition_fp_sv_L_4ord.dat", branches_sv, 4}
-            //{"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
-            //{"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} 
+            {"data/poly/fits_6Nov/V123_fp_sv_4ord.dat", branches_sv, 4}
         }); 
 
         model->CreateChainFwd({ // sv => [Poly] => fp
-            {"data/csv/poly_prod_sv_fp_L_4ord.dat", branches_fp, 5} 
+            {"data/csv/poly_prod_sv_fp_L_4ord.dat",         branches_fp, 5},
+            {"data/poly/fits_6Nov/V123_fp-fwd_fp_1ord.dat", branches_fp, 4} 
         }); 
     
     } catch (const std::exception& e) {
@@ -252,9 +258,9 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
     rna.Define("position_vtx", [&](TVector3 vtx, double y_BPM)
         {
             //fix the y-value, unless this is an H-wire run, in which case we should NOT fix it. 
-            if (target.x_hcs==target.x_hcs) { vtx[0] = target.x_hcs; }  
-            if (target.y_hcs==target.y_hcs) { vtx[1] = target.y_hcs; } else { vtx[1] += Phase_correction(vtx.y(), y_BPM); }  
-            if (target.z_hcs==target.z_hcs) { vtx[2] = target.z_hcs; }  
+            if (!is_nan(target.x_hcs)) { vtx[0] = target.x_hcs; }  
+            if (!is_nan(target.y_hcs)) { vtx[1] = target.y_hcs; } else { vtx[1] += Phase_correction(vtx.y(), y_BPM) + y_correction; }  
+            if (!is_nan(target.z_hcs)) { vtx[2] = target.z_hcs; }  
 
             return vtx; 
 
@@ -283,16 +289,6 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
         {
             return ApexOptics::HCS_to_SCS(is_RHRS, vtx_hcs); 
         }, {"position_vtx"}); 
-    
-    //fix the dx/dz_sv slope, according to y-correction
-    rna.Overwrite("Xsv_reco", [y_correction](Trajectory_t Xsv, TVector3 vtx_scs)
-        { 
-            //the x_sv-axis points down to the hall floor, 
-            // so we need to apply the y-correction in the opposite direction 
-            Xsv.dxdz += - (y_correction/vtx_scs.z()); 
-            return Xsv;  
-            
-        }, {"Xsv_reco", "position_vtx_scs"}); 
 
 
     //perform a very basic cut on sum of cerenkov ADCs 
