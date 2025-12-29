@@ -10,7 +10,7 @@
 //_______________________________________________________________________________________________________
 template<typename T> std::optional<T> Get_TParameter_from_TFile(const char* path_file, const char* param_name)
 {
-    const char* const here = "Get_TParameter_from_TFile"
+    const char* const here = "Get_TParameter_from_TFile";
     //try to open the file in read-only mode    
     TFile* file; 
     TParameter<T> *param_ptr; 
@@ -19,10 +19,10 @@ template<typename T> std::optional<T> Get_TParameter_from_TFile(const char* path
 
     try{ 
         file = new TFile(path_file, "READ");
-        if (!file) throw std::exception(Form("Unable to open TFile under path '%s'", path_file)); 
+        if (!file) throw invalid_argument(Form("Unable to open TFile under path '%s'", path_file)); 
 
         param_ptr = (TParameter<T>*)file->Get(param_name); 
-        if (!param_ptr) throw std::exception(Form("Unable to find parameter '%s' in file '%s'", param_name, path_file)); 
+        if (!param_ptr) throw invalid_argument(Form("Unable to find parameter '%s' in file '%s'", param_name, path_file)); 
             
         param = param_ptr->GetVal();
         
