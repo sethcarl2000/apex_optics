@@ -237,8 +237,22 @@ void SaveOutputFrame::DoSave()
 
                 const SieveHole& hole = hd.hole; 
 
-                double dxdz = (hole.x - vtx_scs.x()) / (0. - vtx_scs.z()); 
-                double dydz = (hole.y - vtx_scs.y()) / (0. - vtx_scs.z()); 
+                
+                constexpr double sieve_thickness = 12.5e-3; //sieve thickness, in meters
+                const double R = hole.radius_front; //hole radius, in meters
+
+                // We are going to use this algorithm to compute dxdz and dydz, which accounts
+                // for parallax effects between the react-vertex and the finite thicknesss of the sieve-hole.
+                // Also, this assumes that the sieve is perfectly impenetrable; that's why we have to choose between
+                // projecting to the front or the back of the sieve-hole.
+                double dxdz_min = (hole.x - R - vtx_scs.x()) / ( (hole.x - R > vtx_scs.x() ? sieve_thickness : 0.) - vtx_scs.z() ); 
+                double dxdz_max = (hole.x + R - vtx_scs.x()) / ( (hole.x + R > vtx_scs.x() ? 0. : sieve_thickness) - vtx_scs.z() ); 
+                
+                double dydz_min = (hole.y - R - vtx_scs.y()) / ( (hole.y - R > vtx_scs.y() ? sieve_thickness : 0.) - vtx_scs.z() ); 
+                double dydz_max = (hole.y + R - vtx_scs.y()) / ( (hole.y + R > vtx_scs.y() ? 0. : sieve_thickness) - vtx_scs.z() ); 
+                
+                double dxdz = (dxdz_min + dxdz_max)/2.; 
+                double dydz = (dydz_min + dydz_max)/2.;
 
                 return Trajectory_t{
                     hd.hole.x, 
