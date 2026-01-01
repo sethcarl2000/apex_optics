@@ -1,23 +1,26 @@
+//stdlib headers
 #include <memory>
 #include <string> 
 #include <sstream> 
 #include <map>
 #include <fstream>
-#include <iomanip> 
+#include <iomanip>
+#include <thread> 
+#include <cmath> 
+#include <memory> 
+#include <vector> 
+#include <utility> 
+//ROOT headers 
 #include <TFile.h>
 #include <TVector3.h>
 #include <TParameter.h>
 #include <TSystem.h> 
 #include <TDatime.h> 
-#include <memory> 
-#include <vector> 
-#include <utility> 
 #include <ROOT/RDataFrame.hxx>
-#include "include/RDFNodeAccumulator.h"
 #include <ROOT/RVec.hxx>
+//Apex-optics headers
 #include <ApexOptics.h> 
-#include <thread> 
-#include <cmath> 
+#include "include/RDFNodeAccumulator.h"
 
 //should we use multithreadding when element-pruning? 
 #define MULTITHREAD_PRUNING true 
@@ -42,16 +45,14 @@ int create_NPolyArray_fit(  const int poly_order     =4,
                             const double pruning_constant=-1., 
                             const char* tree_name    ="tracks_fp") 
 {
-    const char* const here = "fit_points_mc_forward"; 
-
     if (inputs.empty() || outputs.empty()) {
-        Error(here, "inputs and/or outputs are empty");
+        Error(__func__, "inputs and/or outputs are empty");
         return -1; 
     }
     
     //check if we can load the apex optics lib
     if (gSystem->Load("libApexOptics") < 0) {
-        Error(here, "libApexOptics could not be loaded."); 
+        Error(__func__, "libApexOptics could not be loaded."); 
         return 1; 
     }
 
@@ -59,14 +60,14 @@ int create_NPolyArray_fit(  const int poly_order     =4,
 
     //check if the infile could be opened
     if (!infile || infile->IsZombie()) {
-        Error(here, "root file '%s' could not be opened.", path_infile); 
+        Error(__func__, "root file '%s' could not be opened.", path_infile); 
         return 1; 
     }
 
     //check if we can find the 'is_RHRS' parameter. Fatal error if not! 
     TParameter<bool>* param_is_RHRS = (TParameter<bool>*)infile->Get("is_RHRS"); 
     if (!param_is_RHRS) {
-        Error(here, "Could not find TParameter<bool> 'is_RHRS' in file '%s'.", path_infile); 
+        Error(__func__, "Could not find TParameter<bool> 'is_RHRS' in file '%s'.", path_infile); 
         return 1; 
     }
     const bool is_RHRS = param_is_RHRS->GetVal(); 
@@ -75,14 +76,14 @@ int create_NPolyArray_fit(  const int poly_order     =4,
     delete infile; 
 
     ROOT::EnableImplicitMT(); 
-    Info(here, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
+    Info(__func__, "Multi-threadding is enabled. Thread pool size: %i", ROOT::GetThreadPoolSize()); 
 
     //Now, we are ready to process the tree using RDataFrame
 
     auto df_ptr = unique_ptr<ROOT::RDataFrame>(nullptr); 
     try { df_ptr = unique_ptr<ROOT::RDataFrame>(new ROOT::RDataFrame(tree_name, path_infile)); }
     catch (const std::invalid_argument& e) {
-        Error(here, "Trying to create RDataFrame threw std::invalid_argument exception.\n what(): %s", e.what()); 
+        Error(__func__, "Trying to create RDataFrame threw std::invalid_argument exception.\n what(): %s", e.what()); 
         return -1; 
     } 
     ROOT::RDataFrame& df = *df_ptr; 
@@ -152,7 +153,7 @@ int create_NPolyArray_fit(  const int poly_order     =4,
         fstream outfile(path_outfile, ios::out | ios::trunc); 
 
         if (!outfile.is_open()) {
-            Error(here, "Unable to open file '%s'.", path_outfile.c_str()); 
+            Error(__func__, "Unable to open file '%s'.", path_outfile.c_str()); 
             return -1; 
         }
 
