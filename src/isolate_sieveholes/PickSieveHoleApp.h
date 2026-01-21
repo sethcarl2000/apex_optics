@@ -77,7 +77,7 @@ private:
     //      kNoneSelected   |   Exit
     //      kPickHoleOnPlot |   Exit
     //      kReadyToEval    |   Exit Evaluate
-    //      kOldSelected    |   Exit Delete  
+    //      kOldSelected    |   Exit Delete
 
     enum EPickStatus { 
         kNoneSelected=0,    //no sieve hole is selected. the default state

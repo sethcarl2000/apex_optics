@@ -26,9 +26,10 @@ enum ECanvasEventType {
     kLeaveObj=53 
 };  
 
-const double xsv_draw_range[] = { -0.050, 0.050 }; 
-const double ysv_draw_range[] = { -0.035, 0.035 }; 
+constexpr double xsv_draw_range[] = { -0.0675, +0.0675 }; 
+constexpr double ysv_draw_range[] = { -0.0350, +0.0350 }; 
 
+constexpr double xfp_draw_range[] = { -0.725, +0.725 };  
 
 struct FPcoordPolynomial {
     ROOT::RVec<double> poly{};

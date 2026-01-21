@@ -59,9 +59,9 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
         75, xsv_draw_range[0], xsv_draw_range[1],
         75, ysv_draw_range[0], ysv_draw_range[1] 
     ); 
-    fY_fp    = HistAndLimit(new TH2D("h_y_fp",    "y_fp vs x_fp",     75, -0.65, 0.65, 75, -0.070, 0.055)); 
-    fDxdz_fp = HistAndLimit(new TH2D("h_dxdz_fp", "dx/dz_fp vs x_fp", 75, -0.65, 0.65, 75, -0.035, 0.025)); 
-    fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 75, -0.65, 0.65, 75, -0.060, 0.040)); 
+    fY_fp    = HistAndLimit(new TH2D("h_y_fp",    "y_fp vs x_fp",     75, xfp_draw_range[0], xfp_draw_range[1], 75, -0.070, +0.055)); 
+    fDxdz_fp = HistAndLimit(new TH2D("h_dxdz_fp", "dx/dz_fp vs x_fp", 75, xfp_draw_range[0], xfp_draw_range[1], 75, -0.035, +0.025)); 
+    fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 75, xfp_draw_range[0], xfp_draw_range[1], 75, -0.060, +0.040)); 
     
     for (const auto& ev : data) {
 
@@ -464,7 +464,7 @@ void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t
     char name[200]; sprintf(name, "%s_poly", hist->GetName()); 
 
     if (!points.empty()) {
-        auto f1_poly = new TF1(name, buff, -0.65, 0.65); 
+        auto f1_poly = new TF1(name, buff, xfp_draw_range[0], xfp_draw_range[1]); 
         f1_poly->SetLineColor(kRed); 
         f1_poly->SetLineWidth(2); 
         int i=0; for (double coeff : poly) f1_poly->SetParameter(i++, coeff); 
