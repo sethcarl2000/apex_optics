@@ -47,6 +47,8 @@ namespace {
  
 };
 
+//should the PID cut be applied? 
+#define APPLY_PID_CUT false
 
 
 //_______________________________________________________________________________________________________________________________________________
@@ -65,13 +67,14 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
     ROOT::RDataFrame df(tree_name, path_infile); 
 
     //minimum sum of all cerenkov ADCs. 
-    const double min_cerenkov_sum = 1.5e3;  
-    const double min_Esh_Eps_sum  = 0.45; 
+    const double min_cerenkov_sum = is_RHRS ? 0. : 1.5e3;  
+    const double min_Esh_Eps_sum  = is_RHRS ? 0. : 0.45; 
+
 
     const double central_momentum = 1104.;  //in MeV
 
     //this accounts for the fact that the y-raseter was not calibrated correctly for these runs. 
-    const double y_correction = +1.72835e-3;
+    const double y_correction = is_RHRS ? -2.0559325e-3 : +1.72835e-3;
 
     //select the target chosen
     OpticsTarget_t target; 
@@ -126,12 +129,14 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
 
     try {
         model->CreateChainRev({ // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
-            {"data/poly/fits_6Nov/V123_fp_sv_4ord.dat", branches_sv, 4}
+            //{"data/poly/fits_6Nov/V123_fp_sv_4ord.dat", branches_sv, 4}
+            {"data/poly/fits_30Dec/V2-v05_fp_sv_R_2ord.dat", branches_sv, 4}
         }); 
 
         model->CreateChainFwd({ // sv => [Poly] => fp
-            {"data/csv/poly_prod_sv_fp_L_4ord.dat",         branches_fp, 5},
-            {"data/poly/fits_6Nov/V123_fp-fwd_fp_1ord.dat", branches_fp, 4} 
+            //{"data/csv/poly_prod_sv_fp_L_4ord.dat",         branches_fp, 5},
+            //{"data/poly/fits_6Nov/V123_fp-fwd_fp_1ord.dat", branches_fp, 4} 
+            {"data/poly/mc_sv_fp_R_4ord.dat", branches_fp, 5}
         }); 
     
     } catch (const std::exception& e) {
@@ -151,7 +156,7 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
     //
     //      |----------------------------------------| <= total raster amplitude
     //
-    const double y_raster_amplitude_offset = 0.070302882883 / 2.; 
+    const double y_raster_amplitude_offset = (is_RHRS ? 0.0684620982311 : 0.070302882883)/ 2.; 
     
     const double y_min = *df.Define("y_vtx", [](TVector3 vtx){ return vtx.y(); }, {"react_vertex"}).Min("y_vtx"); 
     const double y_max = *df.Define("y_vtx", [](TVector3 vtx){ return vtx.y(); }, {"react_vertex"}).Max("y_vtx"); 
@@ -247,6 +252,8 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
             return dxdz_tra - x_tra/6.; 
         }, {"x_fp", "dxdz_fp"});
 
+    
+
     //apply the phase correction to the vertex
     rna.Define("y_BPM", [](TVector2 BPMA, TVector2 BPMB){ return (BPMA.Y() + BPMB.Y())/2.; }, {"r_BPMA", "r_BPMB"}); 
 
@@ -271,9 +278,13 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
             return Trajectory_t{x, y, dxdz, dydz};    
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"});
 
-    rna.Define("Xsv_reco", [&model](Trajectory_t Xfp, TVector3 vtx_hcs)
-        {
-            return model->Compute_Xsv(Xfp, vtx_hcs);
+    rna.Define("Xsv_reco", [&model, is_RHRS](Trajectory_t Xfp, TVector3 vtx_hcs)
+        {   
+            //this is a TEMPORARY fix, before we have a working Right-Arm model
+            //if (is_RHRS) { Xfp.y *= -1.; Xfp.dydz *= -1.; }
+
+            //return model->Compute_Xsv(Xfp, vtx_hcs);
+            return model->Compute_Xsv_first_guess(Xfp); 
         }, {"Xfp", "position_vtx"}); 
         
 
@@ -356,11 +367,15 @@ int cleanup_optics_replay(  const bool is_RHRS          = false,
     //do a cut on cerenkov values
     auto df_out = rna.Get()
 
+#if !APPLY_PID_CUT
+    ; 
+#else
         //do a cut on cerenkov sum
         .Filter([min_cerenkov_sum](double cer_sum){ return cer_sum > min_cerenkov_sum; }, {"cer_sum"})
 
         .Filter([min_Esh_Eps_sum](double Eps_p, double Esh_p){ return Eps_p + Esh_p > min_Esh_Eps_sum; }, {"E_ps_p_ratio", "E_sh_p_ratio"}); 
-    
+#endif 
+
     printf(
         "n. events (post-cut):  %llu\n"
         "~~~~~~~~~~~~~~~~~~~~~~~~~~~\n",
