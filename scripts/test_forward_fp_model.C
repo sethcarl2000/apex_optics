@@ -118,16 +118,37 @@ int test_forward_fp_model( const char* path_infile ="data/replay/real_L_V2.root"
             return ApexOptics::RVec_to_Trajectory_t(parr_fp_fpfwd.Eval({x,y,dxdz,dydz})); 
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"});
 
-    rna.Overwrite("Xsv_reco", [&model](Trajectory_t Xfp_fwd, TVector3 vtx_hcs)
-        {
-            return model->Compute_Xsv(Xfp_fwd, vtx_hcs);
-        }, {"Xfp_fwd", "position_vtx"});
-        
-    rna.Overwrite("Xsv_first_guess", [&model](Trajectory_t Xfp_fwd)
+    rna.Define("Xsv_first_guess", [&model](Trajectory_t Xfp_fwd)
         {
             return model->Compute_Xsv_first_guess(Xfp_fwd);
         }, {"Xfp_fwd"});
 
+    
+    const int n_iterations = 3;  
+    const double fp_error_threshold = 1e-6; 
+
+    rna.Define("Xsv_reco", [&model, n_iterations, fp_error_threshold](Trajectory_t Xfp_fwd, Trajectory_t Xsv, TVector3 vtx_hcs)
+        {
+            //yes, i know this syntax is disgusting. sorry. I will (hopefully) fix it sometime soon. 
+            NPolyArray* arr_sv_fp = &model->GetChain_fwd()->arrays[0].first; 
+
+            auto&& Xsv_rvec = ApexOptics::Trajectory_t_to_RVec(Xsv); 
+            auto&& Xfp_rvec = ApexOptics::Trajectory_t_to_RVec(Xfp_fwd); 
+            
+            for (int n_it=0; n_it<n_iterations; n_it++) {
+                
+                //first, use the first-order taylor expansion of our optics model to match-up with the vertical raster
+                Xsv = model->Compute_Xsv(Xfp_fwd, vtx_hcs, Xsv_rvec);
+
+                //now, match up the new, interpolated value of Xsv to the known value of Xfp.  
+                Xsv_rvec = ApexOptics::Trajectory_t_to_RVec(Xsv); 
+                arr_sv_fp->Iterate_to_root(Xsv_rvec, Xfp_rvec, 10, fp_error_threshold); 
+                Xsv = ApexOptics::RVec_to_Trajectory_t(Xsv_rvec); 
+            }
+            return Xsv;
+
+        }, {"Xfp_fwd", "Xsv_first_guess", "position_vtx"});
+        
     rna.Define("Xhcs_reco", [is_RHRS](const Trajectory_t& Xsv)
         {
             return ApexOptics::SCS_to_HCS(is_RHRS, Xsv); 

@@ -1,22 +1,19 @@
 #ifndef ChainedOpticsModel_H
 #define ChainedOpticsModel_H
 
-//std headers
-#include <vector>
-#include <string> 
-#include <limits> 
-
 //apex-specific headers
 #include <RMatrix.h>
 #include <NPolyArrayChain.h>
 #include <NPolyArray.h> 
 #include <NPoly.h> 
 #include <ApexOptics.h> 
-
 //ROOT headers
 #include <ROOT/RVec.hxx>
-
-using ApexOptics::Trajectory_t; 
+#include <TVector3.h> 
+//std headers
+#include <vector>
+#include <string> 
+#include <limits> 
 
 class ChainedOpticsModel {
 private: 
@@ -65,27 +62,30 @@ public:
         }
     }
 
-    Trajectory_t Compute_Xsv_first_guess(Trajectory_t Xfp) const {
+    NPolyArrayChain* GetChain_fwd() { return &fChainFwd; }
+    NPolyArrayChain* GetChain_rev() { return &fChainRev; } 
+
+    ApexOptics::Trajectory_t Compute_Xsv_first_guess(ApexOptics::Trajectory_t Xfp) const {
         return ApexOptics::RVec_to_Trajectory_t(
             fChainRev.Eval(ApexOptics::Trajectory_t_to_RVec(Xfp)) 
         ); 
     }; 
 
-    Trajectory_t Compute_Xsv(Trajectory_t Xfp, TVector3 vtx_hcs) const {
+    ApexOptics::Trajectory_t Compute_Xsv(ApexOptics::Trajectory_t Xfp, TVector3 vtx_hcs, ROOT::RVec<double> Xsv_start={}) const {
 
-        using rvecd = ROOT::VecOps::RVec<double>; 
+        using ApexOptics::Trajectory_t; 
 
         //create 'first guess' 
         auto&& Xfp_rvec = ApexOptics::Trajectory_t_to_RVec(Xfp);
 
-        auto&& Xsv_fg_rvec = fChainRev.Eval(Xfp_rvec); 
+        if (Xsv_start.size()!=5) { Xsv_start = fChainRev.Eval(Xfp_rvec); } 
         
-        auto&& Xsv_fg = ApexOptics::RVec_to_Trajectory_t(Xsv_fg_rvec);
+        auto&& Xsv_fg = ApexOptics::RVec_to_Trajectory_t(Xsv_start);
 
-        auto&& J = fChainFwd.Jacobian(Xsv_fg_rvec);
+        auto&& J = fChainFwd.Jacobian(Xsv_start);
 
         RMatrix Ji(4,4); 
-        rvecd J_pivot; J_pivot.reserve(4);
+        ROOT::RVec<double> J_pivot; J_pivot.reserve(4);
 
         int j_mat=0; 
         for (int j=0; j<5; j++) {//loop over columns 
@@ -114,8 +114,8 @@ public:
         Trajectory_t Xhcs_fg    = ApexOptics::SCS_to_HCS(f_is_RHRS, Xsv_fg); 
         Trajectory_t Xhcs_fg_dp = ApexOptics::SCS_to_HCS(f_is_RHRS, Xsv_fg + dXsv); 
         
-        double y0 = Xhcs_fg.y       + (Xhcs_fg.dydz     * vtx_hcs.z()); 
-        double y1 = Xhcs_fg_dp.y    + (Xhcs_fg_dp.dydz  * vtx_hcs.z()); 
+        double y0 = Xhcs_fg.y    + (Xhcs_fg.dydz    * vtx_hcs.z()); 
+        double y1 = Xhcs_fg_dp.y + (Xhcs_fg_dp.dydz * vtx_hcs.z()); 
             
         double d_pivot = ( vtx_hcs.y() - y0 )/( y1 - y0 ); 
 
