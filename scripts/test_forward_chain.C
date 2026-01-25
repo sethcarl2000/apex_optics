@@ -29,7 +29,7 @@ using namespace ROOT::VecOps;
 using ApexOptics::OpticsTarget_t; 
 using ApexOptics::Trajectory_t; 
 
-#define USE_MULTITHREADDING false
+#define USE_MULTITHREADDING true
 
 namespace {
         
@@ -352,65 +352,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
     return 0;  //*/ 
 
     TCanvas *c; 
-    c = new TCanvas("c_z_reco", c_title, 700, 700); 
-
-    //this is the timing benchmark.
-    const int n_benchmarks = 1; 
-    //const long int max_benchmark_events = 1e5; //n_events; 
-
-    vector<double> vec_times, vec_n_events; 
-
-    cout << "Starting benchmark.........." << endl; 
-
-    for (int i=0; i<n_benchmarks; i++) {
-
-        const long int n_benchmark_events = (i+1)*max_benchmark_events/n_benchmarks; 
-
-        printf("Benchmarking %li events...", n_benchmark_events); cout << flush;  
-
-        TStopwatch timer; 
-
-        double dummy_sum = *rna.Get()
-            .Range(n_benchmark_events)
-            .Define("dummy_sum", [](const Trajectory_t& Xsv){ return Xsv.x; }, {"Xsv_reco"}) 
-            .Sum("dummy_sum");
-            
-        double elapsed_time = timer.RealTime(); 
-
-        printf("done. time: %.3f s", elapsed_time); cout << endl; 
-
-        vec_times.push_back(elapsed_time); 
-        vec_n_events.push_back((double)n_benchmark_events); 
-    }
-
-    double time_per_event;
-    if (n_benchmarks > 1) {
-        //now, find the slope
-        double sum_xx{0.}, sum_xy{0.}, sum_x{0.}, sum_y{0.}; 
-        for (int i=0; i<vec_times.size(); i++) {
-            double x = vec_n_events[i];
-            double y = vec_times[i]; 
-            sum_xx += x*x; 
-            sum_xy += x*y; 
-            sum_x  += x; 
-            sum_y  += y; 
-        } 
-        time_per_event = ( sum_xy - sum_x*sum_y )/( sum_xx - sum_x*sum_x );
-        
-        auto g_benchmark = new TGraph(vec_times.size(), vec_n_events.data(), vec_times.data()); 
-
-        g_benchmark->SetTitle("Timing benchmark;N. benchmark events.;time (s)"); 
-        g_benchmark->SetMarkerStyle(kOpenCircle);
-        g_benchmark->Draw("PLC"); 
-
-    } else {
-
-        time_per_event = vec_times.back()/vec_n_events.back(); 
-    }
-    
-    printf("extrapolating from slope, the time per event is:    %.4f ms/event \n", time_per_event*1.e3);
-
-    return 0; 
+    c = new TCanvas("c_z_reco", c_title, 700, 700);
     
 
     hist_z->DrawCopy(); 
