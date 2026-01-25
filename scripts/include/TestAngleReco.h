@@ -1,14 +1,11 @@
 #ifndef TestHorizontalAngle_H
 #define TestHorizontalAngle_H
 
-//C++ std-lib headers
-#include <iostream>
-#include <sstream>
-#include <string> 
-#include <memory>
-#include <limits> 
-#include <optional> 
-#include <functional> 
+
+//APEX-otpics headers
+#include <ApexOptics.h> 
+#include <RMatrix.h>
+#include "RDFNodeAccumulator.h"
 //ROOT headers
 #include <TBox.h> 
 #include <Math/Factory.h> 
@@ -28,10 +25,16 @@
 #include <TF1.h> 
 #include <TFitResult.h> 
 #include <TFitResultPtr.h> 
-//APEX-otpics headers
-#include <ApexOptics.h> 
-#include <RMatrix.h>
-#include "RDFNodeAccumulator.h"
+//C++ std-lib headers
+#include <iostream>
+#include <sstream>
+#include <string> 
+#include <memory>
+#include <limits> 
+#include <optional> 
+#include <functional> 
+#include <stdexcept> 
+#include <sstream> 
 
 namespace TestAngleReco {
     //this stores the results of the fit 
@@ -53,6 +56,8 @@ namespace TestAngleReco {
         double angle_fit_staterr; 
     }; 
 
+
+    inline bool is_nan(double x) { return (x!=x); }
 
     //specify which angle to test
     static constexpr bool kDxdz = false; 
@@ -77,7 +82,16 @@ namespace TestAngleReco {
     static bool kQuiet = false; 
 
     struct SlopeFit { double m, m_err, b; }; 
-    SlopeFit MeasureSlope(TH2D* h_data, const double x0, const double y0, const std::array<double,2>& xlim, const std::array<double,2>& ylim, const std::function<double(double*,double*)>& bg_fcn);
+
+    SlopeFit MeasureSlope(
+        TH2D* h_data, 
+        const double x0, 
+        const double y0, 
+        const std::array<double,2>& xlim, 
+        const std::array<double,2>& ylim, 
+        const double hole_sigma, 
+        const std::function<double(double*,double*)>& bg_fcn
+    );
 
     std::function<double(double*,double*)> FitBackground(TH1D* hist, const vector<pair<double,double>>& exclusions, const int order); 
 
@@ -107,7 +121,12 @@ namespace TestAngleReco {
         using ApexOptics::Trajectory_t; 
         using ApexOptics::OpticsTarget_t; 
 
-        const char* const here = "TestHorizontalAngle"; 
+        
+        //this is no longer supported
+        if (measure_slopes && (!test_dydz)) { 
+            Error(__func__, "Measuring slope wile measuring dx/dz error is no longer supported. Switch to measuring dy/dz to also measure slopes."); 
+            return std::nullopt; 
+        }
 
         const char* const test_name = test_dydz ? "dydz" : "dxdz"; 
 
@@ -118,7 +137,7 @@ namespace TestAngleReco {
             target.name == "V2" || 
             target.name == "V3"))  {
             
-            Error(here, "Target provided is not a V-wire target: %s", target.name.c_str()); 
+            Error(__func__, "Target provided is not a V-wire target: %s", target.name.c_str()); 
             return std::nullopt; 
         }
 
@@ -461,24 +480,17 @@ namespace TestAngleReco {
 
                 //now, let's try to measure the slope 
                 SlopeFit slope; 
+                if (measure_slopes && test_dydz) {
 
-                if (measure_slopes) {
-                    if (test_dydz) {
-                        slope = MeasureSlope(h_dx_dy, center_dv, hole_du_fit, 
-                            { center_dv - dv_cut_width, center_dv + dv_cut_width }, 
-                            { hole_du   - du_cut_width, hole_du   + du_cut_width }, 
-                            background_fcn
-                        );
-                    } else {
-                        slope = MeasureSlope(h_dx_dy, hole_du_fit, center_dv, 
-                            { hole_du   - du_cut_width, hole_du   + du_cut_width },
-                            { center_dv - dv_cut_width, center_dv + dv_cut_width },
-                            background_fcn
-                        );
-                    }
+                    slope = MeasureSlope(h_dx_dy, center_dv, hole_du_fit, 
+                        { center_dv - dv_cut_width, center_dv + dv_cut_width }, 
+                        { hole_du   - du_cut_width, hole_du   + du_cut_width }, 
+                        hole_sigma_fit,
+                        background_fcn
+                    );
 
                     //don't record this hole if its slope measurement failed 
-                    if (slope.m != slope.m) continue; 
+                    if (is_nan(slope.m)) continue; 
                 }
                 //cout << "slope: " << slope.m << endl; //" +/- " << slope.m_err << endl; 
 
@@ -573,7 +585,7 @@ namespace TestAngleReco {
 
         for (auto holefit : fit_result.fits) {
 
-            if (test_dydz) { 
+            if (test_dydz && measure_slopes) { 
                 //if we're testing phi (dy/dz), we must account for hole-slopes
                 double phi0 = holefit.angle_fit - holefit.angle_real; 
                 double m    = holefit.angle_slope; 
@@ -716,10 +728,31 @@ namespace TestAngleReco {
     //________________________________________________________________________________________________________________________________________________________________
 
     //measures the d[phi]/d[theta] slope of a given hole, returns the measured slope (and fit uncertainty)
-    SlopeFit MeasureSlope(TH2D* h_data, const double x0, const double y0, const std::array<double,2>& xlim, const std::array<double,2>& ylim, const std::function<double(double*,double*)>& bg_fcn)
+    SlopeFit MeasureSlope(
+        TH2D* h_data, 
+        const double x0, 
+        const double y0, 
+        const std::array<double,2>& xlim, 
+        const std::array<double,2>& ylim, 
+        const double hole_sigma,
+        const std::function<double(double*,double*)>& bg_fcn
+    )
     {
         using namespace std; 
+        /* 
+        //we're going to go to each bin, and fit the height. 
+        SlopeFit slope; 
 
+        //TAxis ptrs
+        auto xax = h_data->GetXaxis(); 
+        auto yax = h_data->GetYaxis(); 
+         
+        //max and minimum bins 
+        const int bins_x[] = { xax->FindBin(xlim[0]), xax->FindBin(xlim[1]) }; 
+        const int bins_y[] = { yax->FindBin(ylim[0]), yax->FindBin(ylim[1]) }; 
+
+         
+        return slope; */ 
         //Get the histogram data
         
         //get TAxis ptrs
@@ -728,7 +761,6 @@ namespace TestAngleReco {
 
         //bin widths x/y 
         const double sigma = (yax->GetXmax() - yax->GetXmin())/((double)yax->GetNbins()-1); 
-
             
         ROOT::Math::Minimizer *minimizer = ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"); 
         
@@ -791,21 +823,6 @@ namespace TestAngleReco {
             minimizer->X()[1] 
         }; 
 
-        /*
-        //range of x-y bins 
-
-        const int nbins_x{ bins_x[1] - bins_x[0] + 1 }; 
-        const int nbins_y{ bins_y[1] - bins_y[0] + 1 }; 
-        
-        vector<XYpt> bin_data; bin_data.reserve(nbins_x*nbins_y);
-
-        for (int bx=bins_x[0]; bx<=bins_x[1]; bx++) {
-            for (int by=bins_y[0]; by<=bins_y[1]; by++) {
-
-                bin_data.push_back({ xax->GetBinCenter(bx), yax->GetBinCenter(by), h_data->Get })
-            }
-        }
-        */ 
     }
     //________________________________________________________________________________________________________________________________________________________________
 
