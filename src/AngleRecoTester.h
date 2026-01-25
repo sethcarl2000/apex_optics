@@ -15,6 +15,7 @@
 //ROOT headers
 #include <TH1D.h> 
 #include <TH2D.h> 
+#include <TVirtualPad.h> 
 //std-lib headers
 #include <vector> 
 #include <optional>
@@ -121,7 +122,8 @@ private:
         const std::array<double,2>& xlim, 
         const std::array<double,2>& ylim, 
         const double hole_sigma,
-        const std::function<double(double*,double*)>& bg_fcn
+        const std::function<double(double*,double*)>& bg_fcn, 
+        TVirtualPad* pad_2d=nullptr
     );
 
     ClassDef(AngleRecoTester,1); 

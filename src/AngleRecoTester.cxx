@@ -33,6 +33,8 @@
 #include <functional> 
 #include <stdexcept> 
 #include <sstream> 
+#include <cmath> 
+#include <iostream> 
 
 using namespace std; 
 using ApexOptics::Trajectory_t; 
@@ -42,6 +44,21 @@ using namespace ROOT::VecOps;
 namespace {
     //returns true if a floating-point type is NAN
     template<typename T> bool is_nan(T x) { return (x != x); }
+
+    constexpr double NaN_double = std::numeric_limits<double>::quiet_NaN(); 
+
+
+
+    //These are for the 'AngleRecoTester::MeasureSlope' alg, we need to invert a 2x2 matrix. this is the cutoff for a 
+    //
+    //singular matrix. 
+    constexpr double singular_determinant_cutoff = 1e-8;  
+    //
+    //the max number of newton iterations (for slope-fitting) before ceasing
+    constexpr int max_newton_iterations = 10; 
+    //
+    //minimum height ratio between the max for a hole-peak, and the height of any of the veritcal slices 
+    constexpr double min_height_ratio = 0.15; 
 }
 
 
@@ -408,7 +425,7 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
             if (!fitresult.Get() || !fitresult->IsValid()) continue; 
 
             //error of the dy/dz position of the hole
-            const double hole_du_fit        = fitresult->Parameter(1);
+            double       hole_du_fit        = fitresult->Parameter(1);
             const double hole_du_staterr    = fitresult->ParError(1);
             const double hole_sigma_fit     = fabs(fitresult->Parameter(2)); 
             const double hole_amplitude_fit = fitresult->Parameter(0); 
@@ -419,6 +436,9 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
 
             //if the relative error of 'sigma' is more than 5%, then discard it. 
             if (fabs(fitresult->ParError(2) / hole_sigma_fit) > 0.05 ) continue; 
+
+            //jnhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhqw ,8
+            // -Muon's comment (25 Jan 26)
 
 
             const double du_bin = (x_axis->GetXmax() - x_axis->GetXmin()) / ((double)x_axis->GetNbins() - 1); 
@@ -433,15 +453,24 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
             SlopeFit_t slope; 
             if (measure_slope && test_dydz) {
 
-                slope = MeasureSlope(h_dx_dy, center_dv, hole_du_fit, 
-                    { center_dv - dv_cut_width, center_dv + dv_cut_width }, 
-                    { hole_du   - du_cut_width, hole_du   + du_cut_width }, 
+                //slope measured for this hole
+                slope = MeasureSlope(
+                    h_dx_dy, 
+                    center_dv, 
+                    hole_du, 
+                    { center_dv - dv_cut_width/2., center_dv + dv_cut_width/2. }, 
+                    { hole_du   - du_cut_width/2., hole_du   + du_cut_width/2. }, 
                     hole_sigma_fit,
-                    background_fcn
+                    background_fcn, 
+                    c_2d
                 );
 
                 //don't record this hole if its slope measurement failed 
                 if (is_nan(slope.m)) continue; 
+            
+                //fix the 'hole_du_fit' variable to use the offset measured in the slope-fitting algorithm 
+                hole_du_fit = slope.b + slope.m*center_dv; 
+
             }
             //cout << "slope: " << slope.m << endl; //" +/- " << slope.m_err << endl; 
 
@@ -477,11 +506,11 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                 double y0 = test_dydz ? hole_du_fit : center_dv;  
 
                 //draw the slope-line
-                if (measure_slope && slope.m == slope.m) {
+                if (measure_slope && (is_nan(slope.m)==false)) {
                     auto slope_line = new TF1("slope_line", 
                         [slope, x0,y0](double *X, double *par)
                         {
-                            return slope.m*(X[0] - x0) + y0 + slope.b;
+                            return slope.m*X[0] + slope.b;
                         }, 
                         angle.dxdz - dxdz_cut_width/2., 
                         angle.dxdz + dxdz_cut_width/2., 
@@ -491,7 +520,6 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                     slope_line->SetLineWidth(2); 
                     slope_line->SetLineColor(kBlack);
                         
-
                     c_2d->cd();
                     slope_line->DrawCopy("SAME"); 
                 }
@@ -680,75 +708,226 @@ AngleRecoTester::SlopeFit_t AngleRecoTester::MeasureSlope(
     const std::array<double,2>& xlim, 
     const std::array<double,2>& ylim, 
     const double hole_sigma,
-    const std::function<double(double*,double*)>& bg_fcn
+    const std::function<double(double*,double*)>& bg_fcn, 
+    TVirtualPad *pad_2d
 ) 
 {
     auto xax = h_data->GetXaxis(); 
     auto yax = h_data->GetYaxis(); 
 
-    //bin widths x/y 
-    const double sigma = (yax->GetXmax() - yax->GetXmin())/((double)yax->GetNbins()-1); 
-        
-    ROOT::Math::Minimizer *minimizer = ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"); 
-    
-    minimizer->SetMaxFunctionCalls(1e7); 
-    minimizer->SetMaxIterations(1e6); 
-    minimizer->SetTolerance(1e-4);
-    minimizer->SetPrintLevel(0);    
-
     const int bins_x[] = { xax->FindBin(xlim[0]), xax->FindBin(xlim[1]) }; 
     const int bins_y[] = { yax->FindBin(ylim[0]), yax->FindBin(ylim[1]) }; 
 
     //we have to re-nomralized the background function, as we're looking at a single bin-width
-
     const double bg_normalization = ( (xax->GetXmax() - xax->GetXmin())/((double)xax->GetNbins()-1) ) / (xlim[1] - xlim[0]); 
 
-    auto f_minimizer = ROOT::Math::Functor([h_data, &bins_x,&bins_y, xax,yax, x0,y0, sigma, &bg_fcn, bg_normalization](const double* par)
-    {
-        const double m = par[0]; 
-        const double b = par[1]; 
-        double gaus_sum =0.; 
+    struct GausFitPoints_t { double x,y; };   
 
-        for (int bx=bins_x[0]; bx<=bins_x[1]; bx++) {
-            const double x = xax->GetBinCenter(bx);     
+    vector<GausFitPoints_t> slope_fitpoints; 
 
-            for (int by=bins_y[0]; by<=bins_y[1]; by++) { 
-                const double y = yax->GetBinCenter(by); 
+    //find the maximum point in a histogram's subrange 
+    double max_height_diff=-1.; 
+    for (int bx=bins_x[0]; bx<=bins_x[1]; bx++) {
+        for (int by=bins_y[0]; by<=bins_y[1]; by++) { 
 
-                double error = ( y - (m*(x-x0) + b+y0) )/sigma;
+            double y_ptr[] = { yax->GetBinCenter(by) }; 
+            double height_diff = h_data->GetBinContent(bx,by) - bg_normalization*bg_fcn(y_ptr, nullptr); 
 
-                //printf("gaus_sum: x, y | N:      %+.4f, %+.4f | %.0f\n", x,y,h_data->GetBinContent(bx,by)); 
-
-                double X[] = {y}; 
-                double bin_signal = h_data->GetBinContent(bx,by) - bg_normalization*bg_fcn(X, nullptr); 
-
-                if (bin_signal < 0.) continue; 
-
-                gaus_sum += bin_signal * exp( -error*error ); 
-            }
+            if (height_diff > max_height_diff) max_height_diff = height_diff; 
         }
+    }
+
+    //now, we go thru each bin, and fit a gaussian to the data. 
+    for (int bx=bins_x[0]; bx<=bins_x[1]; bx++) {
+
+        //now, we fit a gaussian to this 'slice' 
+
+        //the y-pos of the bins
+        vector<double> Y;
+        //the number of hits in the bin
+        vector<double> Z;
+        //the difference between the stats of this bin, and the background expcetation 
+        vector<double> Z_diff; 
+
+        for (int by=bins_y[0]; by<=bins_y[1]; by++) {
+            
+            Y.push_back( yax->GetBinCenter(by) ); 
+            
+            double bin_content = h_data->GetBinContent(bx,by); 
+
+            Z.push_back(bin_content); 
+            
+            //now, we will find the difference between the entries in this bin, and the expectation from the 
+            // background. 
+
+            //this is necessary, because our background function only accepts pointers for its argument
+            double y_ptr[] = {Y.back()}; 
+
+            //now, this is the difference between the background expectation, and the actual bin content. 
+            bin_content += -bg_normalization*bg_fcn(y_ptr, nullptr); 
+
+            Z_diff.push_back(bin_content); 
+        }
+
+        //now, we're ready to fit a gaussian to this bin.
         
-        return -gaus_sum; 
-    }, 2);
+        double y_ptr[] { yax->GetBinCenter(yax->FindBin(y0)) }; 
 
-    minimizer->SetFunction(f_minimizer); 
+        //get the height of the histogram at the 'central bin' (this will be our first guess for the height of the gaussian)
+        double A_first_guess = h_data->GetBinContent( bx, yax->FindBin(y0) ) - bg_normalization*bg_fcn(y_ptr, nullptr); 
 
-    minimizer->SetVariable(0, "m", 0., 0.1); 
-    minimizer->SetVariable(1, "b", 0., 0.001); 
+        //height of gaussian above bg
+        double A{A_first_guess};
+        //center of gaussian 
+        double y_cent{y0}; 
+
+        //now, let's iterate. 
+        const int npts = Y.size();
+        const double sig2 = hole_sigma*hole_sigma;  
+        
+        //____________________________________________________________________________________________________________________________________________
+        //this helper function tries to optimize the NLL fit w/r/t 'a' and 'ybar', and returns the NLL. 
+        //returns NaN if the iteration fails 
+        auto Newton_iterate = [h_data, bx, &Y, &Z, &Z_diff, npts, sig2](double& a, double &ybar) 
+        {
+            double dEps_dA{0.};     // \partial \epsilon^2 / \partial A 
+            double d2Eps_dA2{0.};   // \partial^2 \epsilon^2 / \partial A^2
+            double dEps_dy{0.};     // \partial \epsilon / \partial ybar
+            double d2Eps_dydA{0.};  // \partial^2 \epsilon^2 / \partial ybar \partial A
+            double d2Eps_dy2{0.};   // \partial^2 \epsilon^2 / \partial^2 ybar
+
+            for (int i=0; i<=npts; i++) {
+
+                double z_i    = Z[i];
+                double zdif_i = Z_diff[i]; 
+                double dy_i   = Y[i] - ybar; 
+            
+                double eta_i = exp( -0.5 * dy_i*dy_i/sig2 ); 
+                double eps_i = a*eta_i - zdif_i;
+
+                //first derivs
+                dEps_dA += eps_i*eta_i;
+     
+                dEps_dy += a * eps_i*eta_i * dy_i/sig2; 
+
+                //second derivs
+                d2Eps_dA2  += eta_i*eta_i; 
+
+                d2Eps_dydA += ( a*eta_i + eps_i )*eta_i * dy_i/sig2; 
+
+                d2Eps_dy2  += ( a*eta_i + eps_i ) * (a*eta_i) * (dy_i/sig2)*(dy_i/sig2)  -  (a/sig2) * (eps_i*eta_i); 
+            }
+
+            //now, invert the following matrix: 
+            /*
+            *       [ a   b ]^-1  =  [  d  -b ] 
+            *       [ b   d ]        [ -b   a ]/(ad - bb)
+            *
+            * a = d2Eps_dA2; 
+            * b = d2Eps_dydA; 
+            * d = d2Eps_dy2; 
+            */
+
+            double detA = (d2Eps_dA2*d2Eps_dy2) - (d2Eps_dydA*d2Eps_dydA); 
+
+            //check if the matrix is singular
+            if (is_nan(detA) || fabs(detA) < singular_determinant_cutoff) return NaN_double;  
+
+            a    += - ( d2Eps_dy2 *dEps_dA  - d2Eps_dydA*dEps_dy)/detA; 
+            ybar += - (-d2Eps_dydA*dEps_dA  + d2Eps_dA2 *dEps_dy)/detA; 
+
+            //now, re-measure the chi2. 
+            double chi2=0.; 
+            for (int i=0; i<=npts; i++) {
+
+                double zdif_i = Z_diff[i]; 
+                double dy_i   = Y[i] - ybar;
+
+                chi2 += pow(zdif_i - a*exp( -0.5 * dy_i*dy_i/sig2 ), 2); 
+            }
+
+            //printf(" chi2: %.3e     A: %+.1e  y-bar: %+.1e\n", chi2/2., a, ybar); std::cout << std::flush; 
+            
+            return chi2/2.; 
+            
+            
+        };
+        //____________________________________________________________________________________________________________________________________________
+        
+        //now, we do our iterations. break when certain conditions are met.
+        // starting iterations 
+        //printf("starting iterations ~~~~~~~~~~~~~~~~~~~~~\n"); std::cout << std::flush;  
+        int i_it=0;
+        double chi2;  
+        do {
+
+            //printf("it %3i ", i_it); std::cout << std::flush; 
+            chi2 = Newton_iterate(A, y_cent); 
+            
+        } while ( (is_nan(chi2)==false) && ++i_it < max_newton_iterations ); 
+        //std::cout << "\n"; 
+
+        //now, do some basic checks
+
+        
+
+        //if the center we found is out of range, throw it out.
+        if (y_cent < ylim[0] || y_cent > ylim[1]) continue; 
+
+        //printf("ratio of A to max height for this hole: %.4f\n", A / max_height_diff); std::cout << std::flush; 
+
+        //if the max height found is too low, throw it out. 
+        if (A / max_height_diff < min_height_ratio) continue; 
+         
+        double x_bin = xax->GetBinCenter(bx); 
+
+        slope_fitpoints.push_back({ .x = x_bin, .y = y_cent }); 
+
+        //printf("%+.3f, %+.3f\n", (x_bin-x0)*1.e3, (y_cent-y0)*1.e3); std::cout << std::flush; 
+    }   
+
+    //printf(" ------------------------- number of fit-point for this hole: %zi\n", slope_fitpoints.size()); 
+
+    //now, find the slope and offset. 
+    //draw the boxes, if that's relevant. 
+    if (fDo_drawing) {
+
+        const double bin_halfwidth_x = 0.5*(xax->GetXmax()-xax->GetXmin())/((double)xax->GetNbins()-1.);         
+        const double bin_halfwidth_y = 0.5*(yax->GetXmax()-yax->GetXmin())/((double)yax->GetNbins()-1.); 
+
+        pad_2d->cd(); 
+        for (const auto& pt : slope_fitpoints) {
+            
+            auto box = new TBox(
+                pt.x - bin_halfwidth_x, 
+                pt.y - bin_halfwidth_y, 
     
-    bool fit_status = minimizer->Minimize(); 
+                pt.x + bin_halfwidth_x, 
+                pt.y + bin_halfwidth_y
+            ); 
+            box->SetFillStyle(0); 
+            box->Draw();
+        }
+    }
+    
+    //min number of points to attempt fitting the slope 
+    if (slope_fitpoints.size() < 3) return { NaN_double }; 
+    
+    //this just your everyday least-squares for mx + b = y
+    double sum_x{0.}, sum_y{0.}, sum_xx{0.}, sum_xy{0.}; 
+    for (const auto& pt : slope_fitpoints) {
+        sum_x += pt.x; 
+        sum_y += pt.y; 
+        sum_xx += pt.x*pt.x; 
+        sum_xy += pt.x*pt.y; 
+    } 
+    double N = (double)slope_fitpoints.size(); 
+    
+    double m = ( N*sum_xy - sum_x*sum_y ) / ( N*sum_xx - sum_x*sum_x ); 
+    double b = (sum_y - m*sum_x)/N; 
 
-    if (!fit_status) return {
-        numeric_limits<double>::quiet_NaN(), 
-        numeric_limits<double>::quiet_NaN(), 
-        numeric_limits<double>::quiet_NaN()
-    }; 
+    return { m, 0., b }; 
 
-    return { 
-        minimizer->X()[0], 
-        minimizer->Errors()[0], 
-        minimizer->X()[1] 
-    }; 
 };
 
 //____________________________________________________________________________________________________________________________
