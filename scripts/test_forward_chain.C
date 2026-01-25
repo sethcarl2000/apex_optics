@@ -10,6 +10,7 @@
 #include "include/TestAngleReco.h"
 #include "include/ChainedOpticsModel.h"
 #include "include/Add_branch_from_Trajectory_t.h"
+#include <AngleRecoTester.h> 
 #include <TParameter.h>
 #include <ApexOptics.h> 
 #include <TVector3.h> 
@@ -210,11 +211,6 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
     const long int n_events = *rna.Get().Count(); 
 
     printf("Processing %li events from file '%s'...", n_events, path_infile); cout << endl; 
-
-    //probably not the most elegant way to do this, but here we are. 
-    const long int max_benchmark_events = 7e5; //n_events; 
-
-    rna = rna.Get().Range(max_benchmark_events); 
     
     rna.Define("Xfp", [](double x, double y, double dxdz, double dydz)
         {
@@ -326,6 +322,30 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
     //set the color pallete
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
+
+
+    AngleRecoTester angle_tester(is_RHRS, target, rna.Get()); 
+
+    auto dxdz   = AngleRecoTester::kDxdz; 
+    auto dydz   = AngleRecoTester::kDydz; 
+    auto slopes = AngleRecoTester::kSlopes; 
+    
+    angle_tester.SetRange_dxdz(range_dxdz[0], range_dxdz[1]);
+    angle_tester.SetRange_dydz(range_dydz[0], range_dydz[1]);
+
+    angle_tester.Measure(dxdz, 
+        4,13, 
+        1,8, 
+        1.35, 0.50, 1.00
+    );
+
+    angle_tester.Measure(dydz | slopes, 
+        4,13, 
+        1,8, 
+        1.35, 0.50, 1.00
+    );
+
+    return 0; 
 
     /*/Measure lab-vertical angle (dxdz)
     TestAngleReco::Evaluate(is_RHRS, TestAngleReco::kDxdz, rna.Get(), target, 
