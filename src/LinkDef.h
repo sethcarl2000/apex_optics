@@ -15,6 +15,7 @@
 #pragma link C++ class MultiLayerPerceptron+; 
 #pragma link C++ struct MultiLayerPerceptron::WeightGradient_t+; 
 #pragma link C++ struct MultiLayerPerceptron::HessianTensor_t+; 
+#pragma link C++ struct AngleRecoTester+; 
 
 #pragma link C++ class PolynomialCut+; 
 #pragma link C++ struct PolynomialCut::Segment_t+; 

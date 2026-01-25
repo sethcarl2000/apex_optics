@@ -42,6 +42,7 @@ set(sources
     isolate_sieveholes/PickSieveHoleApp.cxx
     isolate_sieveholes/SaveOutputFrame.cxx
     isolate_sieveholes/EvaluateCutFrame.cxx
+    AngleRecoTester.cxx
 )
 
 set(headers 
@@ -58,7 +59,7 @@ set(headers
     isolate_sieveholes/PickSieveHoleApp.h
     isolate_sieveholes/SaveOutputFrame.h
     isolate_sieveholes/EvaluateCutFrame.h
-
+    AngleRecoTester.h 
 )
 
 #---------------------------------------------------------
