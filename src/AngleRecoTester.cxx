@@ -67,9 +67,10 @@ AngleRecoTester::AngleRecoTester(bool _is_RHRS, ApexOptics::OpticsTarget_t _targ
     : 
     fIs_RHRS{_is_RHRS}, 
     fTarget{_target},
-    fNode{_dataframe}
+    fNode{_dataframe}, 
+    fStateFlag{kDraw_slopes | kDraw_boxes}
 {
-    // noop
+
 }
 
 //____________________________________________________________________________________________________________________________
@@ -477,7 +478,6 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
             //we're counting this hole as having been 'measured'
             n_holes_measured++;
 
-
             fit->SetLineColor(kRed); 
             
             if (fDo_drawing) {
@@ -493,20 +493,12 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                 line->SetLineColor(kRed); 
                 line->Draw(); 
 
-                //draw the box that represents the cut used 
-                auto box = new TBox(
-                    angle.dxdz - dxdz_cut_width/2., 
-                    angle.dydz - (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.,
-                    angle.dxdz + dxdz_cut_width/2., 
-                    angle.dydz + (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.
-                );
-                //make the box have no fill (transparent), and draw it.
-
                 double x0 = test_dydz ? center_dv : hole_du_fit; 
                 double y0 = test_dydz ? hole_du_fit : center_dv;  
 
                 //draw the slope-line
-                if (measure_slope && (is_nan(slope.m)==false)) {
+                if (measure_slope && (is_nan(slope.m)==false) && (fStateFlag & kDraw_slopes)) {
+                    
                     auto slope_line = new TF1("slope_line", 
                         [slope, x0,y0](double *X, double *par)
                         {
@@ -524,9 +516,20 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                     slope_line->DrawCopy("SAME"); 
                 }
                 
-                c_2d->cd();
-                box->SetFillStyle(0); 
-                box->Draw(); 
+                if (fStateFlag & kDraw_boxes) {
+                    //draw the box that represents the cut used 
+                    auto box = new TBox(
+                        angle.dxdz - dxdz_cut_width/2., 
+                        angle.dydz - (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.,
+                        angle.dxdz + dxdz_cut_width/2., 
+                        angle.dydz + (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.
+                    );
+                    //make the box have no fill (transparent), and draw it.
+
+                    c_2d->cd();
+                    box->SetFillStyle(0); 
+                    box->Draw(); 
+                }
             }
 
             //add this result to the fitresult 
@@ -890,7 +893,7 @@ AngleRecoTester::SlopeFit_t AngleRecoTester::MeasureSlope(
 
     //now, find the slope and offset. 
     //draw the boxes, if that's relevant. 
-    if (fDo_drawing) {
+    if (fDo_drawing && (fStateFlag & kDraw_slope_points)) {
 
         const double bin_halfwidth_x = 0.5*(xax->GetXmax()-xax->GetXmin())/((double)xax->GetNbins()-1.);         
         const double bin_halfwidth_y = 0.5*(yax->GetXmax()-yax->GetXmin())/((double)yax->GetNbins()-1.); 

@@ -70,14 +70,20 @@ private:
     //drawing / fitting range for each coordinate
     double fDxdz_min{-0.04}, fDxdz_max{+0.04}, fDydz_min{-0.04}, fDydz_max{+0.04}; 
 
+    //some miscellaneous state flags 
+    int32_t fStateFlag;
+ 
 public: 
 
     struct SlopeFit_t { double m, m_err, b; }; 
 
-    enum EMeasureFlag : int {
+    enum EFlag : int32_t {
         kDxdz    = 1 << 0,  //measure dxdz
         kDydz    = 1 << 1,  //measure dydz 
         kSlopes  = 1 << 2,  //measure slopes
+        kDraw_slopes = 1 << 3,
+        kDraw_boxes  = 1 << 4, 
+        kDraw_slope_points = 1 << 5 
     }; 
 
     AngleRecoTester(
@@ -107,6 +113,11 @@ public:
 
     void SetRange_dxdz(double _min, double _max) { fDxdz_min=_min; fDxdz_max=_max; }; 
     void SetRange_dydz(double _min, double _max) { fDydz_min=_min; fDydz_max=_max; };  
+
+    //turn on a state flag
+    void SetFlag(int32_t flag)      { fStateFlag = fStateFlag | flag; } 
+    //turn off a state flag
+    void UnsetFlag(int32_t flag)    { fStateFlag = fStateFlag & (~flag); }  
 
 private: 
 
