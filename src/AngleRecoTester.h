@@ -81,9 +81,10 @@ public:
         kDxdz    = 1 << 0,  //measure dxdz
         kDydz    = 1 << 1,  //measure dydz 
         kSlopes  = 1 << 2,  //measure slopes
-        kDraw_slopes = 1 << 3,
+        kDraw_slopes = 1 << 3, 
         kDraw_boxes  = 1 << 4, 
-        kDraw_slope_points = 1 << 5 
+        kDraw_slope_points   = 1 << 5,  //draw points of the slope-fit
+        kDraw_centroid_lines = 1 << 6   //draw the lines where the centroids _should_ be 
     }; 
 
     AngleRecoTester(

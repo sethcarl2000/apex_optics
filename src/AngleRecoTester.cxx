@@ -68,7 +68,8 @@ AngleRecoTester::AngleRecoTester(bool _is_RHRS, ApexOptics::OpticsTarget_t _targ
     fIs_RHRS{_is_RHRS}, 
     fTarget{_target},
     fNode{_dataframe}, 
-    fStateFlag{kDraw_slopes | kDraw_boxes}
+    //flags which are enabled by default.
+    fStateFlag{kDraw_slopes | kDraw_boxes | kDraw_centroid_lines}
 {
 
 }
@@ -516,8 +517,8 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                     slope_line->DrawCopy("SAME"); 
                 }
                 
+                //draw the box that represents the cut used 
                 if (fStateFlag & kDraw_boxes) {
-                    //draw the box that represents the cut used 
                     auto box = new TBox(
                         angle.dxdz - dxdz_cut_width/2., 
                         angle.dydz - (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.,
@@ -530,7 +531,48 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                     box->SetFillStyle(0); 
                     box->Draw(); 
                 }
-            }
+                
+                //draw the lines that represent the ideal centroid & measured centroid
+                if (fStateFlag & kDraw_centroid_lines) {
+                    
+                    auto line = new TLine; 
+                    c_2d->cd();
+
+                    //this is the thin black line that is the centroid's ideal position 
+                    if (test_dydz) {
+                        line->SetLineColor(kBlack);
+                        line->SetLineWidth(1); 
+                        line->DrawLine(
+                            angle.dxdz - dxdz_cut_width/2., 
+                            hole_du,
+                            angle.dxdz + dxdz_cut_width/2., 
+                            hole_du
+                        );
+
+                    } else {
+                        //this is the thin black line that is the centroid's ideal position 
+                        line->SetLineColor(kBlack);
+                        line->SetLineWidth(1); 
+                        line->DrawLine(
+                            hole_du, 
+                            angle.dydz - (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.,
+                            hole_du,
+                            angle.dydz + (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.
+                        );
+
+                        //this is the thick black line that's the measured hole's position 
+                        line->SetLineColor(kBlack);
+                        line->SetLineWidth(2); 
+                        line->DrawLine(
+                            hole_du_fit, 
+                            angle.dydz - (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.,
+                            hole_du_fit,
+                            angle.dydz + (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.
+                        );
+                    }//if (test_dydz)
+
+                }//if (fStateFlag & kDraw_centroid_lines)  -- drawing centroid lines
+            }//if (fDo_drawing)
 
             //add this result to the fitresult 
             fit_result.fits.push_back({
