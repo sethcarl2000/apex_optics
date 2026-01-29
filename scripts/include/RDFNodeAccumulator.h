@@ -32,10 +32,10 @@ public:
     ~RDFNodeAccumulator(); 
 
     //define a new branch, with lambda func. 'expression', and inputs 'inputs' 
-    template<typename F> void Define(const char* new_branch, F expression, const vector<std::string>& inputs); 
+    template<typename F> void Define(const char* new_branch, F expression, const std::vector<std::string>& inputs); 
 
     //overwrite a previously defined branch, or define it for the first time if it doesn't exist 
-    template<typename F> void Overwrite(const char* new_branch, F expression, const vector<std::string>& inputs); 
+    template<typename F> void Overwrite(const char* new_branch, F expression, const std::vector<std::string>& inputs); 
 
     //same as above, but only define if this column is not yet defined in the dataframe
     template<typename F> void DefineIfMissing(const char* new_branch, F expression, const std::vector<std::string>& inputs);
