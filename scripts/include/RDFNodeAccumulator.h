@@ -25,6 +25,10 @@ private:
 
 public: 
     RDFNodeAccumulator(ROOT::RDF::RNode start); 
+
+    //constructor that seeks to construct RDataFrame object (without one needing to be manually constructed and passed)
+    RDFNodeAccumulator(const char* tree_name, const char* path_infile); 
+
     ~RDFNodeAccumulator(); 
 
     //define a new branch, with lambda func. 'expression', and inputs 'inputs' 
@@ -78,6 +82,30 @@ public:
 
 //__________________________________________________________________________________________________________________________________
 RDFNodeAccumulator::RDFNodeAccumulator(ROOT::RDF::RNode start) : fNodes{ start } {/* noop */}
+
+//__________________________________________________________________________________________________________________________________
+RDFNodeAccumulator::RDFNodeAccumulator(const char* tree_name, const char* path_infile)
+{
+    //try to construct RDataFrame
+    try {
+
+        fNodes.clear(); 
+
+        ROOT::RDataFrame df(tree_name, path_infile); 
+
+        fNodes.emplace_back(df); 
+
+    } catch (const std::exception& e) {
+
+        fErrorMsg << "in <RDFNodeAccumulator(constructor)>: Something went wrong trying to construct RDataFrame.\n"
+            " -- File:   '" << path_infile << "'\n"
+            " -- Tree:   '" << tree_name << "'\n"
+            " -- what(): " << e.what();
+         
+        PrintMsgAndAbort(); 
+        return; 
+    }
+}
 
 //__________________________________________________________________________________________________________________________________
 RDFNodeAccumulator::~RDFNodeAccumulator() {/* noop */}
