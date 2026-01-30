@@ -84,7 +84,8 @@ public:
         kDraw_slopes = 1 << 3, 
         kDraw_boxes  = 1 << 4, 
         kDraw_slope_points   = 1 << 5,  //draw points of the slope-fit
-        kDraw_centroid_lines = 1 << 6   //draw the lines where the centroids _should_ be 
+        kDraw_centroid_lines = 1 << 6,  //draw the lines where the centroids _should_ be 
+        kDraw_rms_distro     = 1 << 7   //draw the distribution of hole RMS values 
     }; 
 
     AngleRecoTester(
@@ -116,9 +117,11 @@ public:
     void SetRange_dydz(double _min, double _max) { fDydz_min=_min; fDydz_max=_max; };  
 
     //turn on a state flag
-    void SetFlag(int32_t flag)      { fStateFlag = fStateFlag | flag; } 
+    void SetFlag(int32_t flag)          { fStateFlag = fStateFlag | flag; } 
     //turn off a state flag
-    void UnsetFlag(int32_t flag)    { fStateFlag = fStateFlag & (~flag); }  
+    void UnsetFlag(int32_t flag)        { fStateFlag = fStateFlag & (~flag); }  
+
+    bool IsFlagSet(int32_t flag) const  { return fStateFlag & flag; }
 
 private: 
 

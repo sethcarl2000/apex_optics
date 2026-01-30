@@ -498,7 +498,7 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                 double y0 = test_dydz ? hole_du_fit : center_dv;  
 
                 //draw the slope-line
-                if (measure_slope && (is_nan(slope.m)==false) && (fStateFlag & kDraw_slopes)) {
+                if (measure_slope && (is_nan(slope.m)==false) && IsFlagSet(kDraw_slopes)) {
                     
                     auto slope_line = new TF1("slope_line", 
                         [slope, x0,y0](double *X, double *par)
@@ -518,7 +518,7 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                 }
                 
                 //draw the box that represents the cut used 
-                if (fStateFlag & kDraw_boxes) {
+                if (IsFlagSet(kDraw_boxes)) {
                     auto box = new TBox(
                         angle.dxdz - dxdz_cut_width/2., 
                         angle.dydz - (hole.is_big ? 1.25 : 1.00)*dydz_cut_width/2.,
@@ -533,7 +533,7 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                 }
                 
                 //draw the lines that represent the ideal centroid & measured centroid
-                if (fStateFlag & kDraw_centroid_lines) {
+                if (IsFlagSet(kDraw_centroid_lines)) {
                     
                     auto line = new TLine; 
                     c_2d->cd();
@@ -571,7 +571,7 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                         );
                     }//if (test_dydz)
 
-                }//if (fStateFlag & kDraw_centroid_lines)  -- drawing centroid lines
+                }//if (IsFlagSet(kDraw_centroid_lines)  -- drawing centroid lines
             }//if (fDo_drawing)
 
             //add this result to the fitresult 
@@ -634,7 +634,7 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
         
     }
 
-    if (fDo_drawing) {
+    if (fDo_drawing && IsFlagSet(kDraw_rms_distro)) {
         new TCanvas(Form("h_pos_err_dist_%s",test_dydz?"dydz":"dxdz"), "dist. of hole-position error"); 
         h_pos_err_dist->SetStats(1);
         h_pos_err_dist->Draw(); 
@@ -663,6 +663,12 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
     
     fit_result.RMS_position = pos_offset_RMS; 
     fit_result.RMS_smearing = avg_peak_width; 
+
+    //if we are NOT drawing, it's up to us to manage these pointers. 
+    if (!fDo_drawing) {
+        if (h_dx_dy)        delete h_dx_dy;
+        if (h_pos_err_dist) delete h_pos_err_dist; 
+    }
 
     return fit_result; 
 }   
@@ -935,7 +941,7 @@ AngleRecoTester::SlopeFit_t AngleRecoTester::MeasureSlope(
 
     //now, find the slope and offset. 
     //draw the boxes, if that's relevant. 
-    if (fDo_drawing && (fStateFlag & kDraw_slope_points)) {
+    if (fDo_drawing && IsFlagSet(kDraw_slope_points)) {
 
         const double bin_halfwidth_x = 0.5*(xax->GetXmax()-xax->GetXmin())/((double)xax->GetNbins()-1.);         
         const double bin_halfwidth_y = 0.5*(yax->GetXmax()-yax->GetXmin())/((double)yax->GetNbins()-1.); 
