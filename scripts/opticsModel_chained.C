@@ -7,6 +7,7 @@
 #include "include/measure_model_accuracy.h"
 #include "include/Get_TParameter_from_TFile.h"
 #include <ApexOptics.h> 
+#include <ArmMode.h> 
 //ROOT headers
 #include <TVector3.h> 
 #include <ROOT/RVec.hxx>
@@ -83,14 +84,14 @@ int opticsModel_chained(const std::string& arm)
     const ChainedOpticsModel* const_model_L = model_L; 
 
     //___________________________________________________________________________________________________________
-    auto optics_model = [const_model_L,const_model_R,&branches_fp,mode](bool is_RHRS, ROOT::RDF::RNode df) 
+    auto optics_model = [const_model_L,const_model_R,&branches_fp,mode](ArmMode::Bit arm_mode, ROOT::RDF::RNode df) 
     {
         using namespace ApexOptics; 
         RDFNodeAccumulator rna(df); 
            
         rna.DefineIfMissing("position_vtx", [](TVector3 vtx){ return vtx; }, {"R_position_vtx"}); 
 
-        if (is_RHRS==true) { 
+        if (arm_mode & ArmMode::kRHRS) { 
 
             rna.Define("Xfp", [](double x, double y, double dxdz, double dydz)
                 {
@@ -104,9 +105,10 @@ int opticsModel_chained(const std::string& arm)
 
             rna.Define("reco_dxdz_sv", [](const Trajectory_t& Xsv){ return Xsv.dxdz; }, {"Xsv_reco"}); 
             rna.Define("reco_dydz_sv", [](const Trajectory_t& Xsv){ return Xsv.dydz; }, {"Xsv_reco"}); 
+        }
         
-        } else { 
-        
+        if (arm_mode & ArmMode::kLHRS) {
+            
             rna.Define("Xfp", [](double x, double y, double dxdz, double dydz)
                 {
                     return Trajectory_t{x,y,dxdz,dydz}; 

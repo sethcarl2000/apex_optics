@@ -6,7 +6,7 @@
 #include <AngleRecoTester.h>
 #include "RDFNodeAccumulator.h"
 #include <SieveHole.h> 
-#include "ArmMode.h"
+#include <ArmMode.h>
 //ROOT headers
 #include <ROOT/RDataFrame.hxx>  
 #include <TRandom3.h> 
@@ -36,7 +36,14 @@ struct HoleAndAngles_t {
 template<typename T> struct BothArmValue_t {
     T R; 
     T L; 
+
+    T& operator() (ArmMode::Bit flag) { 
+        if (flag & ArmMode::kRHRS) { return R; } else { return L; }
+    }
 };
+
+//give this a general function, and it will perform some operation on both arms 
+
 
 /**
  * @brief measures & reports reconstruction accuracy for the left or right arm
@@ -78,17 +85,17 @@ public:
 
     MeasureModelAccuracy() {}; 
 
-    std::function<ROOT::RDF::RNode(bool, ROOT::RDF::RNode)> fModel; 
+    std::function<ROOT::RDF::RNode(ArmMode::Bit, ROOT::RDF::RNode)> fModel; 
 
     int EvaluateModel ( 
-        std::function<ROOT::RDF::RNode(bool,ROOT::RDF::RNode)> optics_model
+        std::function<ROOT::RDF::RNode(ArmMode::Bit,ROOT::RDF::RNode)> optics_model
     ); 
 
     int Evaluate_singleMass(const std::string& path_mass); 
 }; 
 
 
-int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(bool, ROOT::RDF::RNode)> model)    
+int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::Bit, ROOT::RDF::RNode)> model)    
 {        
     using namespace ApexOptics; 
     using namespace std;
@@ -108,27 +115,19 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(bool, ROO
         GetTarget("V3")
     };
 
-    BothArmQuantity_t<ROOT::RDataFrame*> 
+    BothArmValue_t<ROOT::RDataFrame*> 
         df_V1_in{0, 0}, 
         df_V2_in{0, 0}, 
-        df_V2_in{0, 0}; 
-
-    ROOT::RDataFrame 
-        *df_R_V1_in{nullptr}, 
-        *df_R_V2_in{nullptr}, 
-        *df_R_V3_in{nullptr}, 
-        *df_L_V1_in{nullptr}, 
-        *df_L_V2_in{nullptr}, 
-        *df_L_V3_in{nullptr};
+        df_V3_in{0, 0}; 
 
     //try to construct the RDataFrame's 
     try { 
-        df_R_V1_in = new ROOT::RDataFrame(tree_name, fPath_R_V1.c_str()); 
-        df_R_V2_in = new ROOT::RDataFrame(tree_name, fPath_R_V2.c_str()); 
-        df_R_V3_in = new ROOT::RDataFrame(tree_name, fPath_R_V3.c_str()); 
-        df_L_V1_in = new ROOT::RDataFrame(tree_name, fPath_L_V1.c_str()); 
-        df_L_V2_in = new ROOT::RDataFrame(tree_name, fPath_L_V2.c_str()); 
-        df_L_V3_in = new ROOT::RDataFrame(tree_name, fPath_L_V3.c_str()); 
+        df_V1_in.R = new ROOT::RDataFrame(tree_name, fPath_R_V1.c_str()); 
+        df_V2_in.R = new ROOT::RDataFrame(tree_name, fPath_R_V2.c_str()); 
+        df_V3_in.R = new ROOT::RDataFrame(tree_name, fPath_R_V3.c_str()); 
+        df_V1_in.L = new ROOT::RDataFrame(tree_name, fPath_L_V1.c_str()); 
+        df_V2_in.L = new ROOT::RDataFrame(tree_name, fPath_L_V2.c_str()); 
+        df_V3_in.L = new ROOT::RDataFrame(tree_name, fPath_L_V3.c_str()); 
     }
     catch (const std::invalid_argument &e) { 
         Error(__func__, "Error trying to open one of the V-wire files.\n what(): %s", e.what()); 
@@ -146,38 +145,35 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(bool, ROO
         double rms_dxdz=NaN_double;
         double rms_dydz=NaN_double; 
     }; 
-    std::vector<SieveHole> R_sieve_holes = ApexOptics::ConstructSieveHoles(true); 
-    std::vector<SieveHole> L_sieve_holes = ApexOptics::ConstructSieveHoles(false); 
+    BothArmValue_t<std::vector<SieveHole>> sieve_holes{
+        ApexOptics::ConstructSieveHoles(true), 
+        ApexOptics::ConstructSieveHoles(false)
+    }; 
+    //std::vector<SieveHole> L_sieve_holes = ApexOptics::ConstructSieveHoles(false); 
 
     //const double average_y_hcs = *mc_Vwire_nodes[0].Define("y_hcs", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}).Mean("y_hcs");
 
     //a list of sieve-holes for each wire
-    vector<SieveHoleAndWire_t> R_wire_holes[] = { {}, {}, {} }; 
-    vector<SieveHoleAndWire_t> L_wire_holes[] = { {}, {}, {} }; 
-
+    BothArmValue_t<vector<SieveHoleAndWire_t>> wire_holes[3];
     //now, we compute the get ready to actually perform the measurements 
 
     //these are flags for use with the angle tester
     const auto kDxdz   = AngleRecoTester::kDxdz; 
     const auto kDydz   = AngleRecoTester::kDydz; 
-    const auto kSlopes = AngleRecoTester::kSlopes; 
+    const auto kSlopes = AngleRecoTester::kSlopes;
+    
+    constexpr bool kBool_RHRS = true;
+    constexpr bool kBool_LHRS = false;
     
     //get dataframes with the info we need
-    ROOT::RDF::RNode df_R_Vwire[] = {
-        model(true, *df_R_V1_in),
-        model(true, *df_R_V2_in),
-        model(true, *df_R_V3_in)
-    };
-    ROOT::RDF::RNode df_L_Vwire[] = {
-        model(false, *df_L_V1_in),
-        model(false, *df_L_V2_in),
-        model(false, *df_L_V3_in)
-    };
-    
-    constexpr double range_R_dxdz[] = {-0.05, +0.05}; 
-    constexpr double range_R_dydz[] = {-0.04, +0.04}; 
-    constexpr double range_L_dxdz[] = {-0.05, +0.05}; 
-    constexpr double range_L_dydz[] = {-0.04, +0.04}; 
+    BothArmValue_t<ROOT::RDF::RNode> df_Vwire[3] = {
+        { model(ArmMode::kRHRS, *df_V1_in.R), model(ArmMode::kLHRS, *df_V1_in.L) },
+        { model(ArmMode::kRHRS, *df_V2_in.R), model(ArmMode::kLHRS, *df_V2_in.L) },
+        { model(ArmMode::kRHRS, *df_V3_in.R), model(ArmMode::kLHRS, *df_V3_in.L) }
+    }; 
+
+    BothArmValue_t<const double[2]> range_dxdz = { {-0.05, +0.05}, {-0.05, +0.05} }; 
+    BothArmValue_t<const double[2]> range_dydz = { {-0.04, +0.04}, {-0.04, +0.04} }; 
     
     AngleFitResult_t angles_dxdz[3]; 
     AngleFitResult_t angles_dydz[3]; 
@@ -213,20 +209,16 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(bool, ROO
 
     const string wire_names[] = {"V1", "V2", "V3"}; 
 
-    AngleFitResult_t 
-        R_angleFits_dxdz[3],
-        R_angleFits_dydz[3],
-        L_angleFits_dxdz[3],
-        L_angleFits_dydz[3]; 
-
+    BothArmValue_t<AngleFitResult_t>  
+        angleFits_dxdz[3],
+        angleFits_dydz[3]; 
+    
     //for each sieve-hole which has a dx/dz AND dy/dz RMS measured, keep the sieve hole, along with the RMS for both angles. 
-    vector<HoleAndAngles_t> R_hole_and_RMS[3], L_hole_and_RMS[3]; 
+    BothArmValue_t<vector<HoleAndAngles_t>> hole_and_RMS[3]; 
 
     for (int iwire=0; iwire<3; iwire++) {
-
         
         cout << "------------ "<< wire_names[iwire] <<"   --------------------------------------------------\n" << flush; 
-
 
         string wire_name = wire_names[iwire]; 
 
@@ -240,110 +232,77 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(bool, ROO
         const auto& target = targets[iwire]; 
 
         //real-data dataframe for this wire
-        auto& df_R_wire = df_R_Vwire[iwire]; 
-        auto& df_L_wire = df_L_Vwire[iwire]; 
+        auto df_wire = df_Vwire[iwire]; 
+        //auto& df_wire = df_Vwire[iwire].L; 
 
-        //now, go thru each sieve-hole and designate a wire
-        AngleRecoTester R_angle_tester(true, target, df_R_wire); 
-
-        R_angle_tester.SetDrawing(false); 
-
-        R_angle_tester.SetRange_dxdz(range_R_dxdz[0], range_R_dxdz[1]); 
-        R_angle_tester.SetRange_dydz(range_R_dydz[0], range_R_dydz[1]); 
-
-        R_angle_tester.SetName_dxdz("reco_dxdz_sv");
-        R_angle_tester.SetName_dydz("reco_dydz_sv"); 
-
-        AngleRecoTester L_angle_tester(false, target, df_L_wire); 
-
-        L_angle_tester.SetDrawing(false); 
-
-        L_angle_tester.SetRange_dxdz(range_L_dxdz[0], range_L_dxdz[1]); 
-        L_angle_tester.SetRange_dydz(range_L_dydz[0], range_L_dydz[1]); 
-
-        L_angle_tester.SetName_dxdz("reco_dxdz_sv");
-        L_angle_tester.SetName_dydz("reco_dydz_sv"); 
-        
-        //have verbose fitting of holes (for now)
-        //angle_tester.SetQuiet(false); 
-        //angle_tester.SetFlag(AngleRecoTester::kVerbose_fitting); 
-
-        cout << "------------ RHRS --------------------------------------------------\n" << flush; 
-
-        R_angleFits_dxdz[iwire] = R_angle_tester.Measure(kDxdz,     //measure dxdz
-            row_minx[iwire],row_maxx[iwire],               //min row, max row 
-            col_minx[iwire],col_maxx[iwire],               //min col, max col 
-            row_cut_widthx[iwire], col_cut_widthx[iwire], bg_cut_widthx[iwire] ).value(); //row cut width, col cut width, background cut width 
-        
-        R_angleFits_dydz[iwire] = R_angle_tester.Measure(kDydz | kSlopes,     //measure dydz
-            row_miny[iwire],row_maxy[iwire],                        //min row, max row 
-            col_miny[iwire],col_maxy[iwire],                        //min col, max col 
-            row_cut_widthy[iwire], col_cut_widthy[iwire], bg_cut_widthy[iwire] ).value(); //row cut width, col cut width, background cut width         
+        //setup the angle tester for both arms 
+        for (const auto arm : {ArmMode::kRHRS, ArmMode::kLHRS}) {
             
-        
-        cout << "------------ LHRS --------------------------------------------------\n" << flush; 
-        
-        L_angleFits_dxdz[iwire] = L_angle_tester.Measure(kDxdz,     //measure dxdz
-            row_minx[iwire],row_maxx[iwire],               //min row, max row 
-            col_minx[iwire],col_maxx[iwire],               //min col, max col 
-            row_cut_widthx[iwire], col_cut_widthx[iwire], bg_cut_widthx[iwire] ).value(); //row cut width, col cut width, background cut width 
-        
-        L_angleFits_dydz[iwire] = L_angle_tester.Measure(kDydz | kSlopes,     //measure dydz
-            row_miny[iwire],row_maxy[iwire],                        //min row, max row 
-            col_miny[iwire],col_maxy[iwire],                        //min col, max col 
-            row_cut_widthy[iwire], col_cut_widthy[iwire], bg_cut_widthy[iwire] ).value(); //row cut width, col cut width, background cut width         
+            bool is_RHRS = (ArmMode::kRHRS & arm); 
+            AngleRecoTester angle_tester(is_RHRS, target, df_wire(arm)); 
 
-        //if (iwire!=2) continue;
+            angle_tester.SetDrawing(false); 
+
+            angle_tester.SetRange_dxdz(range_dxdz(arm)[0], range_dxdz(arm)[1]); 
+            angle_tester.SetRange_dydz(range_dydz(arm)[0], range_dydz(arm)[1]); 
+
+            angle_tester.SetName_dxdz("reco_dxdz_sv");
+            angle_tester.SetName_dydz("reco_dydz_sv"); 
             
-        /// @brief Matches angles which have both dx/dz and dy/dz measured
-        /// @param hole_and_RMS the vector of 'HoleAndAngles_t' structs to save the results in
-        /// @param fits_dxdz fits for dx/dz
-        /// @param fits_dydz fits for dy/dz 
-        auto Match_angles = [](vector<HoleAndAngles_t>& hole_and_RMS, vector<AngleFit_t> fits_dxdz, vector<AngleFit_t> fits_dydz)
-        {   
-            hole_and_RMS.clear(); 
+            cout << "------------ "<<(arm & ArmMode::kRHRS ? "RHRS":"LHRS")<<" --------------------------------------------------\n" << flush; 
 
-            for (const auto& fit_dxdz : fits_dxdz) {
-                for (const auto& fit_dydz : fits_dydz) {
+            angleFits_dxdz[iwire](arm) = angle_tester.Measure(kDxdz,     //measure dxdz
+                row_minx[iwire],row_maxx[iwire],               //min row, max row 
+                col_minx[iwire],col_maxx[iwire],               //min col, max col 
+                row_cut_widthx[iwire], col_cut_widthx[iwire], bg_cut_widthx[iwire] ).value(); //row cut width, col cut width, background cut width 
+        
+            angleFits_dydz[iwire](arm) = angle_tester.Measure(kDydz | kSlopes,     //measure dxdz
+                row_miny[iwire],row_maxy[iwire],               //min row, max row 
+                col_miny[iwire],col_maxy[iwire],               //min col, max col 
+                row_cut_widthy[iwire], col_cut_widthy[iwire], bg_cut_widthy[iwire] ).value(); //row cut width, col cut width, background cut width 
+        
+            //now, collect a list of holes for which we have measured **both** dxdz and dydz. 
+            hole_and_RMS[iwire](arm).clear(); 
+
+            for (const auto& fit_dxdz : angleFits_dxdz[iwire](arm).fits) {
+                for (const auto& fit_dydz : angleFits_dydz[iwire](arm).fits) {
                     if (fit_dxdz.hole == fit_dydz.hole) {
-                        hole_and_RMS.push_back({
+                        hole_and_RMS[iwire](arm).push_back({
                             .hole = fit_dxdz.hole, 
                             .dxdz = fit_dxdz.overall_RMS, 
                             .dydz = fit_dydz.overall_RMS
                         }); 
                     } 
                 }
-            }            
-            return; 
-        }; 
-        //_____________________________________________________________________________________
-            
-        Match_angles(R_hole_and_RMS[iwire], R_angleFits_dxdz[iwire].fits, R_angleFits_dydz[iwire].fits); 
-        Match_angles(L_hole_and_RMS[iwire], L_angleFits_dxdz[iwire].fits, L_angleFits_dydz[iwire].fits); 
+            }    
+                        
+            //now, add an estimate for VDC smearing
+            for (auto& hRMS : hole_and_RMS[iwire](arm)) {
+                hRMS.dxdz = sqrt( hRMS.dxdz*hRMS.dxdz + vdc_smearing_dxdz_sv*vdc_smearing_dxdz_sv ); 
+                hRMS.dydz = sqrt( hRMS.dydz*hRMS.dydz + vdc_smearing_dydz_sv*vdc_smearing_dydz_sv ); 
+            }
 
-        //for each angle, add contributions of vdc smearing (approximately!)
-        for (auto& hRMS : R_hole_and_RMS[iwire]) {
-            hRMS.dxdz = sqrt( hRMS.dxdz*hRMS.dxdz + vdc_smearing_dxdz_sv*vdc_smearing_dxdz_sv ); 
-            hRMS.dydz = sqrt( hRMS.dydz*hRMS.dydz + vdc_smearing_dydz_sv*vdc_smearing_dydz_sv ); 
-        }
+        }; 
 
         printf(
             " ~~ Number of holes fit:\n"
             "       R - (dxdz/dydz/both): %zi / %zi / %zi\n"
             "       L - (dxdz/dydz/both): %zi / %zi / %zi\n", 
-            R_angleFits_dxdz[iwire].fits.size(), 
-            R_angleFits_dydz[iwire].fits.size(), 
-            R_hole_and_RMS[iwire].size(), 
+            angleFits_dxdz[iwire](ArmMode::kRHRS).fits.size(), 
+            angleFits_dydz[iwire](ArmMode::kRHRS).fits.size(), 
+            hole_and_RMS[iwire](ArmMode::kRHRS).size(), 
 
-            L_angleFits_dxdz[iwire].fits.size(), 
-            L_angleFits_dydz[iwire].fits.size(),
-            L_hole_and_RMS[iwire].size() 
+            angleFits_dxdz[iwire](ArmMode::kLHRS).fits.size(), 
+            angleFits_dydz[iwire](ArmMode::kLHRS).fits.size(), 
+            hole_and_RMS[iwire](ArmMode::kLHRS).size()
         );
 
     }
 
     vector<double> pts_mass, pts_error; 
 
+    //now that we have an estimate for the error oat each hole position, we need to use the monte-carlo data 
+    // to estimate its error. 
     for (const auto& path_mass : fPath_Aprime_montecarlo) {
         
         double mA; 
@@ -400,30 +359,31 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(bool, ROO
         ROOT::RDF::RResultPtr<TH1D> hist_error;  
 
         try {
-            hist_error = df_mc 
+            RDFNodeAccumulator rna(df_mc); 
+            
+            //define some arm-specific quantities
+            for (const auto arm : {ArmMode::kRHRS, ArmMode::kLHRS}) {
                 
-                .Define("v_wire_id", [V1_zcut,V3_zcut](TVector3& vtx)
-                {
-                    if (vtx.z() > V3_zcut) return 2; //V3 
-                    if (vtx.z() < V1_zcut) return 0; //V1
-                    return 1;                        //V2 
-                }, {"R_position_vtx"})
+                const string arm_prefix = (arm & ArmMode::kRHRS) ? "R_" : "L_"; 
+                const bool arm_bool = (arm & ArmMode::kRHRS); 
 
-                //find which hole each wire is closest to each wire (R) 
-                .Define("R_bestfit_hole_id", [&R_hole_and_RMS, &targets, &find_bestfit_hole](int iwire, double dxdz, double dydz, const TVector3& vtx_hcs)
-                {   
-                    return find_bestfit_hole(true, targets[iwire], R_hole_and_RMS[iwire], dxdz, dydz, vtx_hcs); 
-                }, {"v_wire_id", "R_dxdz_sv", "R_dydz_sv", "R_position_vtx"})
+                rna.Define(arm_prefix+"traj_hcs_smeared", [&rand, &hole_and_RMS, &targets, arm, arm_bool, &find_bestfit_hole, V1_zcut, V3_zcut](
+                    double x, 
+                    double y, 
+                    double dxdz, 
+                    double dydz, 
+                    double dpp, 
+                    const TVector3& vtx_hcs
+                ) {
+                    //find which wire this event is closest to (based on z-vetex position)
+                    int i_wire=1;  
+                    if (vtx_hcs.z() > V3_zcut) i_wire=2; //V3 
+                    if (vtx_hcs.z() < V1_zcut) i_wire=0; //V1
+                    
+                    //find which measured sieve-hole this event is closest to (based on dx/dz and dy/dz in sieve coordinates)
+                    int best_hole_id = find_bestfit_hole(true, targets[i_wire], hole_and_RMS[i_wire](arm), dxdz, dydz, vtx_hcs);
 
-                //find which hole each wire is closest to each wire (L) 
-                .Define("L_bestfit_hole_id", [&L_hole_and_RMS, &targets, &find_bestfit_hole](int iwire, double dxdz, double dydz, const TVector3& vtx_hcs)
-                {   
-                    return find_bestfit_hole(false, targets[iwire], L_hole_and_RMS[iwire], dxdz, dydz, vtx_hcs); 
-                }, {"v_wire_id", "L_dxdz_sv", "L_dydz_sv", "L_position_vtx"}) 
-
-                .Define("R_traj_hcs_smeared", [&rand, &R_hole_and_RMS](double x, double y, double dxdz, double dydz, double dpp, int iwire, int ihole)
-                {
-                    const auto& hRMS = R_hole_and_RMS[iwire].at(ihole); 
+                    const auto& hRMS = hole_and_RMS[i_wire](arm).at(best_hole_id); 
 
                     Trajectory_t traj_scs{
                         x, 
@@ -433,49 +393,44 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(bool, ROO
                         dpp 
                     };
 
-                    return ApexOptics::SCS_to_HCS(true, traj_scs); 
+                    return ApexOptics::SCS_to_HCS(arm_bool, traj_scs); 
 
-                }, {"R_x_sv", "R_y_sv", "R_dxdz_sv", "R_dydz_sv", "R_dpp_sv", "v_wire_id", "R_bestfit_hole_id"})
+                }, {
+                    arm_prefix+"x_sv", 
+                    arm_prefix+"y_sv", 
+                    arm_prefix+"dxdz_sv", 
+                    arm_prefix+"dydz_sv", 
+                    arm_prefix+"dpp_sv", 
+                    arm_prefix+"position_vtx"
+                }); 
+            }
 
-                .Define("L_traj_hcs_smeared", [&rand, &L_hole_and_RMS](double x, double y, double dxdz, double dydz, double dpp, int iwire, int ihole)
-                {
-                    const auto& hRMS = L_hole_and_RMS[iwire].at(ihole); 
-
-                    Trajectory_t traj_scs{
-                        x, 
-                        y, 
-                        dxdz + rand.Gaus()*hRMS.dxdz, 
-                        dydz + rand.Gaus()*hRMS.dydz,
-                        dpp  + rand.Gaus()*1e-4
-                    };
-
-                    return ApexOptics::SCS_to_HCS(false, traj_scs); 
-                    
-                }, {"L_x_sv", "L_y_sv", "L_dxdz_sv", "L_dydz_sv", "L_dpp_sv", "v_wire_id", "L_bestfit_hole_id"})
-
-                .Define("m2_reco", [hrs_momentum](Trajectory_t R_traj, Trajectory_t L_traj)
-                {
-                    double R_p = hrs_momentum*(1. + R_traj.dpp); 
-                    double L_p = hrs_momentum*(1. + L_traj.dpp); 
-                    
-                    TVector3 R_momentum( R_traj.dxdz, R_traj.dydz, 1. ); R_momentum = R_momentum.Unit() * R_p; 
-                    TVector3 L_momentum( L_traj.dxdz, L_traj.dydz, 1. ); L_momentum = L_momentum.Unit() * L_p; 
-                    
-                    double E = R_p + L_p; 
-                    double P2 = (R_momentum + L_momentum).Mag2(); 
-                    //ignoring correction from electron/positron mass
-                    return E*E - P2; 
-                }, {"R_traj_hcs_smeared", "L_traj_hcs_smeared"})
+            rna.Define("m2_reco", [hrs_momentum](Trajectory_t R_traj, Trajectory_t L_traj)
+            {
+                double R_p = hrs_momentum*(1. + R_traj.dpp); 
+                double L_p = hrs_momentum*(1. + L_traj.dpp); 
                 
-                .Define("m_reco", [hrs_momentum](double m2){ return sqrt(m2); }, {"m2_reco"})
+                TVector3 R_momentum( R_traj.dxdz, R_traj.dydz, 1. ); R_momentum = R_momentum.Unit() * R_p; 
+                TVector3 L_momentum( L_traj.dxdz, L_traj.dydz, 1. ); L_momentum = L_momentum.Unit() * L_p; 
+                
+                double E = R_p + L_p; 
+                double P2 = (R_momentum + L_momentum).Mag2(); 
+                //ignoring correction from electron/positron mass
+                return E*E - P2; 
+            }, {"R_traj_hcs_smeared", "L_traj_hcs_smeared"}); 
+                
+            rna.Define("m_reco", [hrs_momentum](double m2){ return sqrt(m2); }, {"m2_reco"}); 
 
-                .Define("invariant_mass_error", [&mA](double m_reco, double m)
-                { 
-                    mA = m; 
-                    return m_reco - m; 
-                }, {"m_reco", "invariant_mass"})
+            rna.Define("invariant_mass_error", [&mA](double m_reco, double m)
+            { 
+                mA = m; 
+                return m_reco - m; 
+            }, {"m_reco", "invariant_mass"}); 
 
-                .Histo1D<double>({"h_err", "Invariant Mass error.;reco-m_{A} - m_{A};", 200, -8., +8.}, "invariant_mass_error"); 
+            hist_error = rna.Get().Histo1D<double>(
+                {"h_err", "Invariant Mass error.;reco-m_{A} - m_{A};", 200, -8., +8.}, 
+                "invariant_mass_error"
+            ); 
         
         } catch (const std::exception& e) {
             Error(__func__, "Something went wrong trying to define the A'-prime mass error hist.\n what(): %s\n", e.what()); 
