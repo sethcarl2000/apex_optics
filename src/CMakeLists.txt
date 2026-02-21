@@ -60,6 +60,7 @@ set(headers
     isolate_sieveholes/SaveOutputFrame.h
     isolate_sieveholes/EvaluateCutFrame.h
     AngleRecoTester.h 
+    ArmMode.h 
 )
 
 #---------------------------------------------------------
