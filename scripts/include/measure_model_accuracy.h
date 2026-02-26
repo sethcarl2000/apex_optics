@@ -178,23 +178,23 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
     AngleFitResult_t angles_dxdz[3]; 
     AngleFitResult_t angles_dydz[3]; 
 
-
     //each of these values are for wires 1, 2, 3.
-    //                             V1      V2      V3 
-    int row_minx[]           = {    4,      4,      5   };  //min row to fit
-    int row_miny[]           = {    4,      4,      5   };
-    int row_maxx[]           = {   12,     12,     11   };  //max row to fit
-    int row_maxy[]           = {   12,     12,     11   };
-    int col_minx[]           = {    3,      1,      0   };
-    int col_miny[]           = {    3,      1,      0   };
-    int col_maxx[]           = {    7,      6,      3   };
-    int col_maxy[]           = {    7,      6,      3   };
-    double row_cut_widthx[]  = { 1.35,   1.35,   1.35   };
-    double row_cut_widthy[]  = { 1.35,   1.35,   1.35   };
-    double col_cut_widthx[]  = { 0.50,   0.50,   0.65   };
-    double col_cut_widthy[]  = { 0.50,   0.50,   0.65   };
-    double bg_cut_widthx[]   = { 1.00,   1.00,   1.00   };
-    double bg_cut_widthy[]   = { 1.00,   1.00,   0.70   };
+    //                                           RHRS --------------------        LHRS ---------------------
+    //                                           {   V1      V2      V3   }       {   V1      V2      V3   }  
+    BothArmValue_t<int[3]> row_minx           = {{    4,      4,      5   },      {    4,      4,      5   }};  //min row to fit
+    BothArmValue_t<int[3]> row_miny           = {{    4,      4,      5   },      {    4,      4,      5   }};
+    BothArmValue_t<int[3]> row_maxx           = {{   12,     12,     11   },      {   12,     12,     11   }};  //max row to fit
+    BothArmValue_t<int[3]> row_maxy           = {{   12,     12,     11   },      {   12,     12,     11   }};
+    BothArmValue_t<int[3]> col_minx           = {{    3,      1,      0   },      {    3,      1,      0   }};
+    BothArmValue_t<int[3]> col_miny           = {{    3,      1,      0   },      {    3,      1,      0   }};
+    BothArmValue_t<int[3]> col_maxx           = {{    7,      6,      3   },      {    7,      6,      3   }};
+    BothArmValue_t<int[3]> col_maxy           = {{    7,      6,      3   },      {    7,      6,      3   }};
+    BothArmValue_t<double[3]> row_cut_widthx  = {{ 1.35,   1.35,   1.35   },      { 1.35,   1.35,   1.35   }};
+    BothArmValue_t<double[3]> row_cut_widthy  = {{ 1.35,   1.35,   1.35   },      { 1.35,   1.35,   1.35   }};
+    BothArmValue_t<double[3]> col_cut_widthx  = {{ 0.50,   0.50,   0.65   },      { 0.50,   0.50,   0.65   }};
+    BothArmValue_t<double[3]> col_cut_widthy  = {{ 0.50,   0.50,   0.65   },      { 0.50,   0.50,   0.65   }};
+    BothArmValue_t<double[3]> bg_cut_widthx   = {{ 1.00,   1.00,   1.00   },      { 1.00,   1.00,   1.00   }};
+    BothArmValue_t<double[3]> bg_cut_widthy   = {{ 1.00,   1.00,   0.70   },      { 1.00,   1.00,   0.70   }};
 
     constexpr double vdc_smearing_dxdz_sv = 0.426e-3; //rad
     constexpr double vdc_smearing_dydz_sv = 0.138e-3; //rad
@@ -252,14 +252,14 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
             cout << "------------ "<<(arm & ArmMode::kRHRS ? "RHRS":"LHRS")<<" --------------------------------------------------\n" << flush; 
 
             angleFits_dxdz[iwire](arm) = angle_tester.Measure(kDxdz,     //measure dxdz
-                row_minx[iwire],row_maxx[iwire],               //min row, max row 
-                col_minx[iwire],col_maxx[iwire],               //min col, max col 
-                row_cut_widthx[iwire], col_cut_widthx[iwire], bg_cut_widthx[iwire] ).value(); //row cut width, col cut width, background cut width 
+                row_minx(arm)[iwire],row_maxx(arm)[iwire],               //min row, max row 
+                col_minx(arm)[iwire],col_maxx(arm)[iwire],               //min col, max col 
+                row_cut_widthx(arm)[iwire], col_cut_widthx(arm)[iwire], bg_cut_widthx(arm)[iwire] ).value(); //row cut width, col cut width, background cut width 
         
             angleFits_dydz[iwire](arm) = angle_tester.Measure(kDydz | kSlopes,     //measure dxdz
-                row_miny[iwire],row_maxy[iwire],               //min row, max row 
-                col_miny[iwire],col_maxy[iwire],               //min col, max col 
-                row_cut_widthy[iwire], col_cut_widthy[iwire], bg_cut_widthy[iwire] ).value(); //row cut width, col cut width, background cut width 
+                row_miny(arm)[iwire],row_maxy(arm)[iwire],               //min row, max row 
+                col_miny(arm)[iwire],col_maxy(arm)[iwire],               //min col, max col 
+                row_cut_widthy(arm)[iwire], col_cut_widthy(arm)[iwire], bg_cut_widthy(arm)[iwire] ).value(); //row cut width, col cut width, background cut width 
         
             //now, collect a list of holes for which we have measured **both** dxdz and dydz. 
             hole_and_RMS[iwire](arm).clear(); 
