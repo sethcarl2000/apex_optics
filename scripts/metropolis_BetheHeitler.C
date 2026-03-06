@@ -47,7 +47,7 @@ private:
     double fRange_L_x_sv[2] = {-85.e-3, +85.e-3}; 
     double fRange_L_y_sv[2] = {-70.e-3, +80.e-3}; 
 
-    double fRange_R_x_sv[2] = {-85.e-3, +85.e-3}; 
+    double fRange_R_x_sv[2] = {-85.e-3, +85.e-3};  
     double fRange_R_y_sv[2] = {-80.e-3, +70.e-3}; 
 
     double fRange_dp  = +0.06; 
@@ -58,19 +58,10 @@ private:
     static constexpr int fN_foils = 10;         /// number of production foils
     double fSpectrometer_p0 = 1104.;            /// Central momentum of spectrometer, MeV/c 
 
-    const double x_sweep_range      = 1.e-6;   //maximum change in x = |K|/E0, where |K| is photon energy    
-    const double theta_sweep_range  = 0.05e-3;  //maximum change in outgoing photon theta
-    const double phi_sweep_range    = pi/4.;    //maximum change in angle between electron theta & photon theta
-    const double foil_jump_prob     = 0.20;      //probablility to 'jump' from the current foil to another foil
-    
-    const double rotation_RMS_Pbeam = 0.100/std::sqrt(3.);  /// proportional to beam electron's angle-change in radians. 
-    const double rotation_RMS       = 0.020/std::sqrt(3.);  /// proportional to positron/electron's angle-change in radians. 
-    
-    //minimum value of x_photon
-    const double fMin_x_photon = 0.90;
-    
-    //max angle between brem. photon and beam
-    const double fMax_theta_photon = 5.*(pi/180.);  
+    const double foil_jump_prob     = 0.10;      //probablility to 'jump' from the current foil to another foil    
+    const double rotation_RMS       = 0.020/sqrt(3.);    /// proportional to positron/electron's angle-change in radians. 
+    const double inv_mass_sweep_range = 5.; /// sweep range of the invariant mass, in MeV
+    const double inv_mass_range[2] = {110., 270}; 
     
     //uniform random number generator
     std::uniform_real_distribution<double> fRandGen_uniform; 
@@ -90,19 +81,17 @@ private:
     struct State_t {
 
         TVector3 vertex;              /// react vertex, HCS (m)
-        double x_photon=1.;           /// E_photon / E_beam, for the bremstrahlung photon (1st B-H process)  
-        double theta_photon=0.;       /// Angle between brem. photon and beam, lab frame (rad)
-        double phi_photon=0.;         /// azimuthal angle of brem. photon about beam (rad)
-        
-        TVector3 P1;                  /// 3-momentum of electron after bremstrahlung (lab-frame)
         
         TVector3 Pp;                  /// 3-momentum of the positron, HCS (MeV)
         TVector3 Pe;                  /// 3-momentum of the electron, HCS (MeV)
-        
+
         int foil_num=4;               /// the number of the production foil we're generating from 
 
         double amplitude=0.;          /// 'Amplitude' of the PDF(x,theta,P1) at current values of x,theta
         bool in_acceptance=false;     /// is this phase-point in the acceptance?  
+
+        TVector3 P_electron;          /// 3-momentum of electron in rest frame of beam electron
+        double   inv_mass;            /// invariant mass of virtual photon 
     }; 
 
     State_t fState; /// current state of the system
@@ -116,7 +105,7 @@ private:
 
 public: 
 
-    BetheHeitlerGenerator(double _beam_E=2200., double _spec_p0=1104., double _x=0.999); 
+    BetheHeitlerGenerator(double _beam_E=2200., double _spec_p0=1104.); 
 
     ~BetheHeitlerGenerator() {};
 
@@ -133,19 +122,27 @@ public:
 
     /// @return event vertex, in HCS (m)
     inline TVector3 GetVertex() const { return fState.vertex; }; 
-
-    /// @return electron 3-momentum after bremstrahlung (lab frame)
-    inline TVector3 Get_P1() const { return fState.P1; }
-
-    /// @return photon 3-momentum (lab frame)
-    TVector3 Get_K() const; 
     
+    /// @return 3-momentum of positron (MeV/c)
+    inline TVector3 Get_Pp() const { return fState.Pp; }
+
+    /// @return 3-momentum of electron (MeV/c)
+    inline TVector3 Get_Pe() const { return fState.Pe; }
+
+    /// @return Invariant mass of e+e- pair 
+    inline double Get_invariantMass() const { return fState.inv_mass; }
 
     /// @brief Compute the differential Bethe-Heitler production amplitude
     /// @param P 3-momentum of electorn, post bremstrahlung (lab frame)
     /// @param P0 3-momentum of electron, pre-bremstrahlung (lab frame)
     /// @param K 3-momentum of produced photon (lab frame)
-    double BetheHeitler_amplitude(const TVector3& P, const TVector3& P0, const TVector3& K) const; 
+    double BetheHeitler_bremsstrahlung_amplitude(const TVector3& P, const TVector3& P0, const TVector3& K) const; 
+
+    /// @brief Compute the differential Bethe-Heitler production amplitude
+    /// @param Pp 3-momentum of positron, (lab frame)
+    /// @param Pe 3-momentum of electron, (lab frame)
+    /// @param k energy of photon (lab frame)
+    double BetheHeitler_pairprod_amplitude(const TVector3& Pp, const TVector3& Pm, const double k) const; 
 }; 
 
 namespace {
@@ -222,75 +219,77 @@ int metropolis_BetheHeitler(const bool is_RHRS)
 {
     double x_start = 1. - 1.e-5; 
 
-    BetheHeitlerGenerator BH_generator(beam_energy, spectrometer_p0, x_start); 
+    BetheHeitlerGenerator BH_generator(beam_energy, spectrometer_p0); 
 
     TH2D* x_and_theta  = new TH2D("h", "A' produced;x;#theta_{A}", 200, 1. - 16e-5, 1., 200, -1.5, +1.5); 
 
     TH2D* h_x_theta = new TH2D("h_momentum", ";E_{photon} / E_{beam};#theta_{photon}", 200, 1. - 2.5e-4, 1., 200, -1e-5, +0.001); 
 
-    TH1D* h_x = new TH1D("h_theta", "E_{photon} / E_{beam};;", 200, 1. - 1e-4, 1.); 
+    TH1D* h_dxdz = new TH1D("h_theta", "dx/dz;;", 200, -0.1, 0.1); 
 
     TH2D* h_dx_dy_hall = new TH2D("h_dx_dy", "Photon angle / energy;energy;angle", 200, -200,+200, 200, -200,+200); 
 
+    TH1D* h_m = new TH1D("h_m", "Invariant mass;MeV/c^{2};", 200, 105., 275.); 
+
     TH2D* h_x_y = new TH2D(
         "h_x_y_sv", 
-        Form("electrons on LHRS sieve face - m_{A} = %.1f MeV/c^{2};x_{sv} mm (lab-vertical);y_{sv} mm (lab-horizontal)",m_A), 
-        200,-120.,+120., 
-        200,-120.,+120.
+        "electron on sv-face;dx/dz_{sv};dy/dz_{sv}", 
+        200,-0.1,+0.1, 
+        200,-0.1,+0.1
     ); 
 
 
-    const long int n_stats = 5e6;
+    const long int n_stats = 1e6;
     long int n_generated=0; 
 
-    const long int max_starting_attempts = 1e6; 
+    const long int max_starting_attempts = 10; 
     long int i_start=0; 
 
     printf("generating %li events...", n_stats); cout << flush; 
     while (n_generated < n_stats) {
 
-        BH_generator.Update(); 
+        for (int i=0; i<10; i++) BH_generator.Update(); 
 
         if (!BH_generator.Inside_Acceptance()) { 
             if (++i_start > max_starting_attempts) break; 
             continue; 
         }
         
-        auto K = BH_generator.Get_K(); 
-
-        h_x_theta->Fill( K.Mag()/beam_energy, std::sqrt(K[0]*K[0] + K[1]*K[1])/K.z() );
-
-        h_x->Fill( K.Mag()/beam_energy ); 
+        auto Pe = BH_generator.Get_Pe(); 
 
         TVector3 vertex = BH_generator.GetVertex(); 
-
+           
         Trajectory_t traj_HCS{
-            vertex.x() + (K.x()/K.z())*(0. - vertex.z()), 
-            vertex.y() + (K.y()/K.z())*(0. - vertex.z()), 
-            K.x()/K.z(), 
-            K.y()/K.z(), 
-            K.Mag()
-        }; 
+            vertex.x() + (Pe.x()/Pe.z())*(0. - vertex.z()), 
+            vertex.y() + (Pe.y()/Pe.z())*(0. - vertex.z()), 
+            Pe.x()/Pe.z(), 
+            Pe.y()/Pe.z()
+        };
 
-        auto traj_SCS = ApexOptics::HCS_to_SCS(is_RHRS, traj_HCS);
+        auto traj_SCS = ApexOptics::HCS_to_SCS(false, traj_HCS);
+        h_x_y->Fill( traj_SCS.dxdz, traj_SCS.dydz ); 
 
-        h_x_y->Fill( traj_SCS.x*1e3, traj_SCS.y*1e3 ); 
+        h_dxdz->Fill( traj_SCS.dxdz ); 
+
+        h_m->Fill( BH_generator.Get_invariantMass() ); 
 
         n_generated++; 
     }
     cout << "done" << endl; 
-
-    new TCanvas; 
-    h_x->Draw();
-    //h_x_theta->Draw("colz");
     
-    return 0; 
-
     new TCanvas; 
+    gStyle->SetPalette(kSunset); 
     gPad->SetLeftMargin(0.15); 
     gStyle->SetOptStat(0); 
 
+    h_m->Draw(); 
+
+
+    new TCanvas; 
+    
     h_x_y->Draw("col"); 
+
+    return 0; 
 
     auto box = new TBox(-50,-30, +50,+30); 
     box->SetFillStyle(0); 
@@ -300,7 +299,7 @@ int metropolis_BetheHeitler(const bool is_RHRS)
 }
 
 //_________________________________________________________________________________________________
-BetheHeitlerGenerator::BetheHeitlerGenerator(double _beam_E, double _spec_p0, double _x)
+BetheHeitlerGenerator::BetheHeitlerGenerator(double _beam_E, double _spec_p0)
     : 
     fBeam_energy{_beam_E},
     fSpectrometer_p0{_spec_p0}
@@ -310,25 +309,33 @@ BetheHeitlerGenerator::BetheHeitlerGenerator(double _beam_E, double _spec_p0, do
     fTwister = std::mt19937(rd()); 
 
     fState = State_t{
-        .vertex             = TVector3(0., 0., Get_foil_z(4)), 
-        .x_photon           = _x,
-        .theta_photon       = 0.100e-3,
-        .phi_photon         = 0.
+        .vertex = TVector3(0., 0., Get_foil_z(4)), 
     }; 
 
-    fState.P1               = TVector3(0., 0., (1.-_x)*fBeam_energy);
-    fState.Pp               = TVector3(_x*fBeam_energy*std::sin(-5.*3.14159256/180.)/2., 0., _x*fBeam_energy*std::cos(5.*3.14159256/180.)/2.); 
-    fState.Pe               = TVector3(_x*fBeam_energy*std::sin(+5.*3.14159256/180.)/2., 0., _x*fBeam_energy*std::cos(5.*3.14159256/180.)/2.); 
+    fState.Pp = TVector3(
+        fBeam_energy*std::sin(-5.*3.14159256/180.)/2., 
+        0., 
+        fBeam_energy*std::cos(5.*3.14159256/180.)/2.
+    ); 
+    
+    fState.Pe = TVector3(
+        fBeam_energy*std::sin(+5.*3.14159256/180.)/2., 
+        0., 
+        fBeam_energy*std::cos(5.*3.14159256/180.)/2.
+    ); 
+    
     fState.foil_num         = 4; 
     fState.amplitude        = 0.; /// a negative amplitude indicates that this state is invalid  
     fState.in_acceptance    = true;
-    
 
-    //photon energy s
-    fState.amplitude = BetheHeitler_amplitude(
-        fState.P1, 
-        TVector3(0., 0., fBeam_energy), 
-        Get_K()
+    fState.inv_mass = 200.;
+    fState.P_electron = TVector3(fState.inv_mass/2., 0., 0.); 
+
+    //photon energy
+    fState.amplitude = BetheHeitler_pairprod_amplitude(
+        fState.Pp, 
+        fState.Pe, 
+        fBeam_energy 
     ); 
 
     std::printf("amplitude: %f\n", fState.amplitude); 
@@ -358,7 +365,7 @@ TVector3 BetheHeitlerGenerator::Random_rotation(const TVector3& v, double RMS_ro
     return vR.Unit() * mag; 
 }   
 //_________________________________________________________________________________________________
-double BetheHeitlerGenerator::BetheHeitler_amplitude(const TVector3& P1, const TVector3& P0, const TVector3& K) const
+double BetheHeitlerGenerator::BetheHeitler_bremsstrahlung_amplitude(const TVector3& P1, const TVector3& P0, const TVector3& K) const
 {
     //compute some quantities we will need.
     // we assume that the incoming electron is relativistic, while the outgoing electron is not. 
@@ -399,7 +406,7 @@ double BetheHeitlerGenerator::BetheHeitler_amplitude(const TVector3& P1, const T
     amplitude += ( 2.*k*k*( p1*p1*sin_theta1*sin_theta1 + p0*p0*sin_theta0*sin_theta0 ) 
             - 2.*p0*sin_theta0*p1*sin_theta1*cos_phi*( 4.*e1*e0 + 2*k*k - q2 ) )/(K_dot_P0*K_dot_P1); 
 
-    amplitude *= p1*k/(p0 * q2*q2); 
+    amplitude *= sin_theta0*sin_theta1 * p1*k/(p0 * q2*q2); 
 
     return amplitude; 
 }
@@ -420,20 +427,6 @@ void BetheHeitlerGenerator::Update()
 {
     auto pt = fState; 
 
-    //set the 'x' value; x = E_photon / E_beam
-    pt.x_photon     = min( pt.x_photon + (1. - 2.*Rand())*x_sweep_range, 1. ); 
-    pt.x_photon     = max( pt.x_photon, fMin_x_photon ); 
-
-    //set the angle between the photon and the beam
-    pt.theta_photon += (1. - 2.*Rand())*theta_sweep_range; 
-
-    if (fabs(pt.theta_photon) > fMax_theta_photon) {
-        pt.theta_photon = fMax_theta_photon * pt.theta_photon/fabs(pt.theta_photon); 
-    }
-
-    //this is the azimuthal angle of the photon
-    pt.phi_photon += (1. - 2.*Rand())*phi_sweep_range; 
-
     double jump_r = Rand(); 
     if (jump_r < foil_jump_prob) {
         //decide whether to jump to the next or previous foil
@@ -443,15 +436,6 @@ void BetheHeitlerGenerator::Update()
         if (pt.foil_num >= N_foils) pt.foil_num = N_foils-1; 
     }
 
-    //rotate the direction of the beam electron
-    pt.P1 = Random_rotation(pt.P1, rotation_RMS_Pbeam); 
-    pt.P1 = pt.P1.Unit() * fBeam_energy * (1. - pt.x_photon); 
-
-    pt.amplitude = BetheHeitler_amplitude(
-        fState.P1, 
-        TVector3(0., 0., fBeam_energy), 
-        Get_K()
-    );
     
     pt.vertex = TVector3( 
         2.e-3*( 1. - 2.*Rand() ), 
@@ -459,45 +443,118 @@ void BetheHeitlerGenerator::Update()
         Get_foil_z(pt.foil_num)
     );
     
-    TVector3 K(     
-        0., 
-        fBeam_energy*pt.x_photon*std::sin(pt.theta_photon), 
-        fBeam_energy*pt.x_photon*std::cos(pt.theta_photon) 
-    ); 
-    K.RotateZ( pt.phi_photon );
-    pt.amplitude = BetheHeitler_amplitude( fState.P1, TVector3(0., 0., fBeam_energy), K ); 
+    pt.inv_mass += inv_mass_sweep_range*(1. - 2.*Rand());
+    if (pt.inv_mass < inv_mass_range[0]) pt.inv_mass = inv_mass_range[0];
+    if (pt.inv_mass > inv_mass_range[1]) pt.inv_mass = inv_mass_range[1];
     
+    pt.in_acceptance =false; 
+
+    long long int max_tries = 2e3; 
+
+    long long int i_try=0; 
+
+    //_________________________________________________________________________________________
+    //take a vector in the rest-frame of the A', and boost it to the lab frame
+    auto boost_and_rotate = [&pt, this](const TVector3 &p, double E)
+    {
+        double gamma = fBeam_energy / pt.inv_mass; 
+        double beta  = std::sqrt( 1. - 1./(gamma*gamma) ); 
+
+        TVector3 p_boost(
+            p[0], 
+            p[1], 
+            gamma * (p[2] + beta*E)
+        ); 
+        
+        return p_boost; 
+    };
+    //_________________________________________________________________________________________
+
+    //_________________________________________________________________________________________
+    auto check_acceptance = [&](const TVector3& p, bool is_RHRS)
+    {   
+        Trajectory_t traj_HCS{
+            pt.vertex.x() + (p.x()/p.z())*(0. - pt.vertex.z()), 
+            pt.vertex.y() + (p.y()/p.z())*(0. - pt.vertex.z()), 
+            p.x()/p.z(), 
+            p.y()/p.z()
+        }; 
+
+        auto traj_SCS = ApexOptics::HCS_to_SCS(is_RHRS, traj_HCS);
+        
+        double xmin = is_RHRS ? fRange_R_x_sv[0] : fRange_L_x_sv[0]; 
+        double xmax = is_RHRS ? fRange_R_x_sv[1] : fRange_L_x_sv[1]; 
+
+        if (traj_SCS.x > xmax || traj_SCS.x < xmin) return false;   
+        
+        double ymin = is_RHRS ? fRange_R_y_sv[0] : fRange_L_y_sv[0]; 
+        double ymax = is_RHRS ? fRange_R_y_sv[1] : fRange_L_y_sv[1];     
+
+        if (traj_SCS.y > ymax || traj_SCS.y < ymin) return false; 
+
+        return true; 
+    };
+    //_________________________________________________________________________________________
+    
+    do {                
+        pt.P_electron = Random_rotation(pt.P_electron, rotation_RMS); 
+        pt.P_electron = pt.P_electron.Unit() * (pt.inv_mass/2.);
+        
+        //rotate the direction of the beam electron
+        pt.Pe = boost_and_rotate( pt.P_electron, pt.inv_mass/2.); 
+        pt.Pp = boost_and_rotate(-pt.P_electron, pt.inv_mass/2.);
+
+        if (check_acceptance(pt.Pp, true) && check_acceptance(pt.Pe, false)) { 
+            pt.in_acceptance =true; 
+            break; 
+        }
+
+    } while (++i_try < max_tries); 
+    
+#if !VERBOSE 
+    if ((pt.in_acceptance==false) && (fState.in_acceptance==true)) { return; }
+#endif 
+    
+    pt.amplitude = BetheHeitler_pairprod_amplitude( pt.Pp, pt.Pe, fBeam_energy );
+
     bool accepted=false; 
-    if ( pt.amplitude > fState.amplitude || pt.amplitude/fState.amplitude > Rand() ) {
+    
+    double old_amp = fState.amplitude; 
+    if (pt.in_acceptance) {
+        if ( pt.amplitude > fState.amplitude || pt.amplitude/fState.amplitude > Rand() ) {
 
-        fState = pt; 
-        accepted=true; 
+            fState = pt; 
+            accepted=true; 
+        }
     }
-
 #if VERBOSE
 
     printf(
         "~~~~~~~~~~~~~~~~~~~~~ phase space ~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-        "Photon:\n"
-        "   x (k/E0):   1. - %.2e\n"
-        "   theta_0     %+.3f mrad\n"
-        "   phi_0       %+.3f rad\n"
-        "   K           (%+.2f, %+.2f, %.2f) MeV/c\n"
-        "   amplitude:  %.3e\n"
+        "Positron:\n"
+        "    P           (%+.2f, %+.2f, %.2f) MeV/c\n"
+        "   |P|          %.2f MeV/c\n"
         "\n"
-        "Beam electron\n"
-        "   P           (%+.3f, %+.3f, %+.3f) MeV/c\n"
-        "accepted? %s\n"
+        "Electron:\n"
+        "    P           (%+.2f, %+.2f, %.2f) MeV/c\n"
+        "   |P|          %.2f MeV/c\n"
+        "\n"
+        "amplitude      %.4e\n"
+        "in acceptance? %s\n"
+        "P-accept:      %.5f\n"
+        "accepted?      %s\n"
         "\n",
-        1. - pt.x_photon,
-        pt.theta_photon*1.e3, 
-        pt.phi_photon, 
-        K[0], K[1], K[2],
+        pt.Pp[0], pt.Pp[1], pt.Pp[2],
+        pt.Pp.Mag(),
+        pt.Pe[0], pt.Pe[1], pt.Pe[2],
+        pt.Pe.Mag(),
         pt.amplitude,
-        pt.P1[0], pt.P1[1], pt.P1[2],
-        accepted ? "yes" : "no"
+        pt.in_acceptance ? "yes" : "no", 
+        pt.in_acceptance ? min( pt.amplitude / old_amp, 1. ) : 0., 
+        (accepted && pt.in_acceptance) ? "yes" : "no"
     ); 
 
+    if ((pt.in_acceptance==false) && (fState.in_acceptance==true)) { return; }
 #endif 
     
     /*  
@@ -653,18 +710,55 @@ void BetheHeitlerGenerator::Update()
     return; */  
 }; 
 //_________________________________________________________________________________________________
-TVector3 BetheHeitlerGenerator::Get_K() const 
+double BetheHeitlerGenerator::BetheHeitler_pairprod_amplitude(const TVector3& Pp, const TVector3& Pe, const double k) const
 {
-    TVector3 K( 
-        0., 
-        fBeam_energy*fState.x_photon*std::sin(fState.theta_photon), 
-        fBeam_energy*fState.x_photon*std::cos(fState.theta_photon) 
-    ); 
-    K.RotateZ( fState.phi_photon ); 
+    //compute some quantities we will need.
+    // we assume that the incoming electron is relativistic, while the outgoing electron is not. 
+    
+    //photon 3-momentum
+    const TVector3 K( 0., 0., k );
 
-    return K; 
+    //magnitude of vectors
+    double pp = Pp.Mag(); 
+    double pe = Pe.Mag(); 
+    
+    // energy of particles 
+    double ep = std::sqrt( fMass_e*fMass_e + pp*pp ); 
+    double ee = std::sqrt( fMass_e*fMass_e + pe*pe ); 
+    
+    //four-vector dot product of K and P1,P0 
+    double K_dot_Pp = k*ep - (K*Pp); 
+    double K_dot_Pe = k*ee - (K*Pe); 
+
+    //compute cos_phi (angle between (K,P0) and (K,P1) plane)
+    TVector3 Pp_x_K = Pp.Cross(K); 
+    TVector3 Pe_x_K = Pe.Cross(K); 
+    double cos_phi  = (Pp_x_K * Pe_x_K) / ( Pp_x_K.Mag() * Pe_x_K.Mag() ); 
+
+    //momentum transfer 
+    double q2 = (K - Pp - Pe).Mag2(); 
+
+    double cos_theta_p = K * Pp / (k*pp);
+    double cos_theta_e = K * Pe / (k*pe);
+    
+    double sin_theta_p = std::sqrt( 1. - cos_theta_p*cos_theta_p ); 
+    double sin_theta_e = std::sqrt( 1. - cos_theta_e*cos_theta_e ); 
+    
+    double amplitude=0.;  
+        
+    amplitude += (pp*pp*sin_theta_p*sin_theta_p)*( 4.*ee*ee - q2 )/(K_dot_Pp*K_dot_Pp); 
+
+    amplitude += (pe*pe*sin_theta_e*sin_theta_e)*( 4.*ep*ep - q2 )/(K_dot_Pe*K_dot_Pe); 
+
+    amplitude += 2.*(pe*sin_theta_e)*(pp*sin_theta_p)*cos_phi*( 4.*ee*ep + q2 )/(K_dot_Pe*K_dot_Pp); 
+
+    amplitude += -2.*k*k*( pp*pp*sin_theta_p*sin_theta_p + pe*pe*sin_theta_e*sin_theta_e  
+                            + 2.*(pe*sin_theta_e)*(pp*sin_theta_p)*cos_phi )/(K_dot_Pe*K_dot_Pp); 
+    
+    amplitude *= - sin_theta_e*sin_theta_p * pp*pe/(k * q2*q2); 
+
+    return amplitude; 
 }
-//_________________________________________________________________________________________________
 //_________________________________________________________________________________________________
 //_________________________________________________________________________________________________
 
