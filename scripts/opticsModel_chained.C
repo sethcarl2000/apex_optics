@@ -19,23 +19,9 @@
 #include <map> 
 
 /// @brief Implement the 'chained' optics model, and then submit it to 'measure_model_accuracy.h' to be tested
-/// @param arm valid options: 'RHRS', 'LHRS' or 'both'  
-int opticsModel_chained(const std::string& arm) 
+int opticsModel_chained() 
 {
     using namespace std; 
-
-    const map<string,ArmMode::Bit> arm_options{
-        {"both", ArmMode::kBoth}, 
-        {"RHRS", ArmMode::kRHRS}, 
-        {"LHRS", ArmMode::kLHRS}
-    }; 
-
-    auto it_mode = arm_options.find(arm); 
-    if (it_mode == arm_options.end()) {
-        Error(__func__, "Invalid arm option given: '%s'. Valid options are: 'RHRS', 'LHRS', 'both'", arm.c_str());
-        return -1;  
-    }
-    const auto mode = it_mode->second; 
     
     const vector<string> branches_sv{"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"};
     const vector<string> branches_q1{"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"};
@@ -84,7 +70,7 @@ int opticsModel_chained(const std::string& arm)
     const ChainedOpticsModel* const_model_L = model_L; 
 
     //___________________________________________________________________________________________________________
-    auto optics_model = [const_model_L,const_model_R,&branches_fp,mode](ArmMode::Bit arm_mode, ROOT::RDF::RNode df) 
+    auto optics_model = [const_model_L,const_model_R,&branches_fp](ArmMode::Bit arm_mode, ROOT::RDF::RNode df) 
     {
         using namespace ApexOptics; 
         RDFNodeAccumulator rna(df); 
