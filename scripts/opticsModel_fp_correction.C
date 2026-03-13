@@ -1,0 +1,145 @@
+
+//APEX headers
+#include "include/RDFNodeAccumulator.h"
+#include "include/TestAngleReco.h"
+#include "include/ChainedOpticsModel.h"
+#include "include/Add_branch_from_Trajectory_t.h"
+#include "include/measure_model_accuracy.h"
+#include "include/Get_TParameter_from_TFile.h"
+#include <ApexOptics.h> 
+#include <ArmMode.h> 
+//ROOT headers
+#include <TVector3.h> 
+#include <ROOT/RVec.hxx>
+#include <ROOT/RDataFrame.hxx>
+//stdlib headers
+#include <functional> 
+#include <vector>
+#include <string> 
+#include <map> 
+
+/// @brief Implement the 'chained' optics model, and then submit it to 'measure_model_accuracy.h' to be tested
+int opticsModel_fp_correction() 
+{
+    using namespace std; 
+    
+    const vector<string> branches_sv{"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"};
+    const vector<string> branches_q1{"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"};
+    const vector<string> branches_fp{"x_fp","y_fp","dxdz_fp","dydz_fp"};
+
+    const vector<string> branches_fwd_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"};
+    const vector<string> branches_fwd_fp{"fwd_x_fp","fwd_y_fp","fwd_dxdz_fp","fwd_dydz_fp"};
+
+    const vector<string> branches_rev_sv{"fwd_x_sv","fwd_y_sv","fwd_dxdz_sv","fwd_dydz_sv","fwd_dpp_sv"};
+    const vector<string> branches_rev_q1{"fwd_x_q1","fwd_y_q1","fwd_dxdz_q1","fwd_dydz_q1","fwd_dpp_q1"};
+
+    //create right-arm model_____________________________________________________________________________________
+    ChainedOpticsModel* model_R = new ChainedOpticsModel(true); 
+
+    model_R->CreateChainRev({
+
+        // sv <= _Poly_ <= fp
+        {"data/poly/mc_fp_sv_R_4ord.dat", branches_sv, 4} 
+    }); 
+
+    model_R->CreateChainFwd({
+    
+        // sv => _Poly_ => fp-fwd => _Poly_ => fp 
+        {"data/poly/mc_sv_fp_R_4ord.dat", branches_fp, 5}
+    }); 
+
+    //create left-arm model______________________________________________________________________________________
+    ChainedOpticsModel* model_L = new ChainedOpticsModel(false); 
+
+    model_L->CreateChainRev({
+
+        // sv <= _Poly_ <= fp
+        {"data/poly/mc_fp_sv_L_4ord.dat", branches_sv, 4} 
+    }); 
+
+    model_L->CreateChainFwd({
+    
+        // sv =>  _Poly_ => fp 
+        {"data/poly/mc_sv_fp_L_4ord.dat", branches_fp, 5}
+    }); 
+
+    //const ptr to model, to make sure we don't modify it. 
+    const ChainedOpticsModel* const_model_R = model_R; 
+    const ChainedOpticsModel* const_model_L = model_L; 
+
+    auto parr_fp_correction_R = ApexOptics::Parse_NPolyArray_from_file(
+        "data/poly/mc_fp_fp-fwd_R_3ord.dat", 
+        branches_fwd_fp, 
+        4
+    ); 
+
+    auto parr_fp_correction_L = ApexOptics::Parse_NPolyArray_from_file(
+        "data/poly/mc_fp_fp-fwd_L_3ord.dat", 
+        branches_fwd_fp, 
+        4
+    ); 
+
+    const NPolyArray* ptr_fp_corr_R = &parr_fp_correction_R; 
+    const NPolyArray* ptr_fp_corr_L = &parr_fp_correction_L;
+
+    //___________________________________________________________________________________________________________
+    auto optics_model = [const_model_L,ptr_fp_corr_R,ptr_fp_corr_L,const_model_R,&branches_fp](ArmMode::Bit arm_mode, ROOT::RDF::RNode df) 
+    {
+        using namespace ApexOptics; 
+        RDFNodeAccumulator rna(df); 
+           
+        rna.DefineIfMissing("position_vtx", [](TVector3 vtx){ return vtx; }, {"R_position_vtx"}); 
+
+        if (arm_mode & ArmMode::kRHRS) { 
+
+            rna.Define("Xfp", [ptr_fp_corr_R](double x, double y, double dxdz, double dydz)
+                {
+                    return ApexOptics::RVec_to_Trajectory_t(
+                        ptr_fp_corr_R->Eval({x,y,dxdz,dydz})
+                    ); 
+                }, {"x_fp","y_fp","dxdz_fp","dydz_fp"}); 
+
+            rna.Define("Xsv_reco", [const_model_R](const Trajectory_t& Xfp, const TVector3& vtx_hcs)
+                {
+                    return const_model_R->Compute_Xsv(Xfp, vtx_hcs); 
+                }, {"Xfp", "position_vtx"}); 
+
+            rna.Define("reco_dxdz_sv", [](const Trajectory_t& Xsv){ return Xsv.dxdz; }, {"Xsv_reco"}); 
+            rna.Define("reco_dydz_sv", [](const Trajectory_t& Xsv){ return Xsv.dydz; }, {"Xsv_reco"}); 
+        }
+        
+        if (arm_mode & ArmMode::kLHRS) {
+            
+            rna.Define("Xfp", [ptr_fp_corr_L](double x, double y, double dxdz, double dydz)
+                {
+                    return ApexOptics::RVec_to_Trajectory_t(
+                        ptr_fp_corr_L->Eval({x,y,dxdz,dydz})
+                    ); 
+                }, {"x_fp","y_fp","dxdz_fp","dydz_fp"}); 
+
+            rna.Define("Xsv_reco", [const_model_L](const Trajectory_t& Xfp, const TVector3& vtx_hcs)
+                {
+                    return const_model_L->Compute_Xsv(Xfp, vtx_hcs); 
+                }, {"Xfp", "position_vtx"}); 
+
+            rna.Define("reco_dxdz_sv", [](const Trajectory_t& Xsv){ return Xsv.dxdz; }, {"Xsv_reco"}); 
+            rna.Define("reco_dydz_sv", [](const Trajectory_t& Xsv){ return Xsv.dydz; }, {"Xsv_reco"}); 
+        }
+
+        return rna.Get(); 
+    };
+    //___________________________________________________________________________________________________________
+
+    MeasureModelAccuracy model_tester; 
+
+    //now, measure the angles
+    int ret_code = model_tester.EvaluateModel(optics_model); 
+    
+    delete model_R; delete model_L; 
+
+    if (ret_code != 0) {
+        Error(__func__, "Something went wrong trying to measure the accuracy. ret code: %i", ret_code); 
+        return -1; 
+    }
+    return 0; 
+}
