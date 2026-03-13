@@ -14,6 +14,10 @@
 #include <TStyle.h>
 #include <TCanvas.h> 
 #include <TLegend.h> 
+#include <TVirtualPad.h> 
+#include <TBox.h> 
+#include <TLine.h> 
+#include <TEllipse.h> 
 //stdlib headers
 #include <vector>
 #include <string> 
@@ -90,6 +94,17 @@ public:
     
     ArmMode::Bit fArm_mode = ArmMode::kBoth; 
 
+    /// drawing palette to use for 2D histograms 
+    int fPalette = kBird; 
+
+    /// drawing parameters for dxdz & dydz fits
+    int fLineColor_dxdz=kBlack;  
+    int fLineColor_dydz=kBlack; 
+
+    //spacing for sieve-holes
+    const double sieve_hole_spacing_x = 5.842e-3;   //sieve-hole spacing, m
+    const double sieve_hole_spacing_y = 4.826e-3;   //sieve-hole spacing, m
+
     MeasureModelAccuracy() {}; 
 
     std::function<ROOT::RDF::RNode(ArmMode::Bit, ROOT::RDF::RNode)> fModel; 
@@ -140,6 +155,18 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
     }
 
     //get a list of sieve_holes
+    auto c_wires = new TCanvas("c_reco", "Optics model applied to all vertical wires", 1400, 700); 
+    c_wires->Divide(3,2, 0.00,0.01); 
+
+    BothArmValue_t<TVirtualPad*> c_wire[3] = {
+        { c_wires->cd(1), c_wires->cd(4) }, 
+        { c_wires->cd(2), c_wires->cd(5) }, 
+        { c_wires->cd(3), c_wires->cd(6) }
+    };  
+
+    
+    c_wire[0](ArmMode::kRHRS)->cd()->SetLeftMargin(0.12);
+    c_wire[0](ArmMode::kLHRS)->cd()->SetLeftMargin(0.12);
 
     constexpr double NaN_double = std::numeric_limits<double>::quiet_NaN(); 
     
@@ -177,8 +204,8 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
         { model(ArmMode::kRHRS, *df_V3_in.R), model(ArmMode::kLHRS, *df_V3_in.L) }
     }; 
 
-    BothArmValue_t<const double[2]> range_dxdz = { {-0.05, +0.05}, {-0.05, +0.05} }; 
-    BothArmValue_t<const double[2]> range_dydz = { {-0.04, +0.04}, {-0.04, +0.04} }; 
+    BothArmValue_t<const double[2]> range_dxdz = { {-0.050, +0.050}, {-0.050, +0.050} }; 
+    BothArmValue_t<const double[2]> range_dydz = { {-0.025, +0.040}, {-0.035, +0.020} }; 
     
     AngleFitResult_t angles_dxdz[3]; 
     AngleFitResult_t angles_dydz[3]; 
@@ -217,10 +244,14 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
     double dydz_total_square_error = 0.; 
 
     const string wire_names[] = {"V1", "V2", "V3"}; 
+    BothArmValue_t<string> arm_names{ "RHRS", "LHRS" }; 
 
     BothArmValue_t<AngleFitResult_t>  
         angleFits_dxdz[3],
         angleFits_dydz[3]; 
+
+    //dummy name for histogram 
+    int i_hist=0; 
     
     //for each sieve-hole which has a dx/dz AND dy/dz RMS measured, keep the sieve hole, along with the RMS for both angles. 
     BothArmValue_t<vector<HoleAndAngles_t>> hole_and_RMS[3]; 
@@ -246,9 +277,18 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
 
         //setup the angle tester for both arms 
         for (const auto arm : {ArmMode::kRHRS, ArmMode::kLHRS}) {
-            
+
+            const string arm_name = arm_names(arm); 
+
             bool is_RHRS = (ArmMode::kRHRS & arm); 
             AngleRecoTester angle_tester(is_RHRS, target, df_wire(arm)); 
+
+            //get the z-vertex location
+            double sieve_dist  = fabs(ApexOptics::Get_sieve_pos(arm==ArmMode::kRHRS).z()); 
+
+            double sieve_angle = ApexOptics::Get_sieve_angle(arm==ArmMode::kRHRS); 
+            
+            const double z_vertex = sieve_dist - cos(sieve_angle)*target.z_hcs; 
 
             angle_tester.SetDrawing(false); 
 
@@ -269,7 +309,23 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                 row_miny(arm)[iwire],row_maxy(arm)[iwire],               //min row, max row 
                 col_miny(arm)[iwire],col_maxy(arm)[iwire],               //min col, max col 
                 row_cut_widthy(arm)[iwire], col_cut_widthy(arm)[iwire], bg_cut_widthy(arm)[iwire] ).value(); //row cut width, col cut width, background cut width 
-        
+            
+            //draw plots of all the fits which were successful 
+            
+            //draw a histogram of all events
+            auto hist_holes = df_wire(arm) 
+                .Histo2D<TH2D>({
+                    Form("h_%i",++i_hist), 
+                    Form("%s, %s;dx/dz (rad);dy/dz (rad)",wire_name.c_str(), arm_name.c_str()), 
+                    200, range_dxdz(arm)[0], range_dxdz(arm)[1], 
+                    200, range_dydz(arm)[0], range_dydz(arm)[1]
+                }, "reco_dxdz_sv", "reco_dydz_sv");
+
+            c_wire[iwire](arm)->cd();
+            gStyle->SetOptStat(0);  
+            gStyle->SetPalette(fPalette); 
+            hist_holes->DrawCopy("col");
+
             //now, collect a list of holes for which we have measured **both** dxdz and dydz. 
             hole_and_RMS[iwire](arm).clear(); 
 
@@ -280,6 +336,80 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                         //don't keep this hole if the dx/dz or dy/dz measurements are NaN 
                         if (is_NaN(fit_dxdz.overall_RMS) || is_NaN(fit_dydz.overall_RMS)) continue; 
 
+                        double dxdz_actual = fit_dxdz.angle_real; 
+                        double dydz_actual = fit_dydz.angle_real; 
+                        //this line indicates the bounds of the fit region
+                        auto line_bound = new TLine; 
+                        line_bound->SetLineStyle(kDashed); 
+                        line_bound->SetLineColor(fLineColor_dxdz); 
+
+                        //half-width of hole cuts
+                        const double dxdz_cut_halfwidth = 0.5*row_cut_widthx(arm)[iwire]*sieve_hole_spacing_x/z_vertex;     
+
+                        //half-width of hole cuts
+                        const double dydz_cut_halfwidth = 0.5*col_cut_widthy(arm)[iwire]*sieve_hole_spacing_y/z_vertex; 
+
+                        //box showing bound of fit
+                        const bool is_big_hole = fit_dxdz.hole.is_big; 
+                        /*auto box = new TBox(
+                            dxdz_actual - dxdz_cut_halfwidth, 
+                            dydz_actual - (is_big_hole ? 1.25 : 1.00)*dydz_cut_halfwidth,
+                            dxdz_actual + dxdz_cut_halfwidth, 
+                            dydz_actual + (is_big_hole ? 1.25 : 1.00)*dydz_cut_halfwidth
+                        );
+                        box->SetLineStyle(kDashed);
+                        box->SetLineWidth(1);  
+                        box->SetLineColor(fLineColor_dxdz); 
+                        box->SetFillStyle(0); 
+                        box->Draw(); */ 
+
+                        auto line_actual = new TLine; 
+                        line_actual->SetLineStyle(kDotted); 
+                        line_actual->SetLineWidth(1); 
+                        line_actual->SetLineColor(fLineColor_dxdz); 
+
+                        //draw the dx/dz centerline
+                        line_actual->DrawLine(
+                            dxdz_actual, 
+                            dydz_actual - (is_big_hole ? 1.25 : 1.00)*dydz_cut_halfwidth,
+                            dxdz_actual, 
+                            dydz_actual + (is_big_hole ? 1.25 : 1.00)*dydz_cut_halfwidth
+                        ); 
+
+                        //draw the dy/dz centerline
+                        line_actual->DrawLine(
+                            dxdz_actual - dxdz_cut_halfwidth, 
+                            dydz_actual,
+                            dxdz_actual + dxdz_cut_halfwidth, 
+                            dydz_actual
+                        ); 
+
+                        //now, draw the actual line
+                        auto line_measure = new TLine; 
+                        line_actual->SetLineStyle(kSolid); 
+                        line_actual->SetLineWidth(2); 
+                        line_actual->SetLineColor(fLineColor_dxdz); 
+
+                        double dxdz_fit = fit_dxdz.angle_fit; 
+                        double dydz_fit = fit_dydz.angle_fit; 
+                        double slope    = fit_dydz.angle_slope; 
+
+                        //draw the dx/dz centerline
+                        line_measure->DrawLine(
+                            dxdz_fit, 
+                            dydz_actual - (is_big_hole ? 1.25 : 1.00)*dydz_cut_halfwidth,
+                            dxdz_fit, 
+                            dydz_actual + (is_big_hole ? 1.25 : 1.00)*dydz_cut_halfwidth
+                        ); 
+
+                        //draw the dy/dz centerline
+                        line_measure->DrawLine(
+                            dxdz_actual - dxdz_cut_halfwidth, 
+                            dydz_fit    - dxdz_cut_halfwidth*slope,
+                            dxdz_actual + dxdz_cut_halfwidth, 
+                            dydz_fit    + dxdz_cut_halfwidth*slope
+                        ); 
+
                         hole_and_RMS[iwire](arm).push_back({
                             .hole = fit_dxdz.hole, 
                             .dxdz = fit_dxdz.overall_RMS, 
@@ -287,7 +417,9 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                         }); 
                     } 
                 }
-            }    
+            }               
+            c_wires->Modified(); c_wires->Update(); 
+ 
                         
             //now, add an estimate for VDC smearing
             for (auto& hRMS : hole_and_RMS[iwire](arm)) {
