@@ -39,6 +39,9 @@ struct AngleFit_t {
     double amplitude; 
     //statistical error associated with hole-fit
     double angle_fit_staterr; 
+
+    //overall estimated RMS for the hole
+    double overall_RMS; 
 }; 
 
 struct AngleFitResult_t {
@@ -85,7 +88,8 @@ public:
         kDraw_boxes  = 1 << 4, 
         kDraw_slope_points   = 1 << 5,  //draw points of the slope-fit
         kDraw_centroid_lines = 1 << 6,  //draw the lines where the centroids _should_ be 
-        kDraw_rms_distro     = 1 << 7   //draw the distribution of hole RMS values 
+        kDraw_rms_distro     = 1 << 7,  //draw the distribution of hole RMS values 
+        kVerbose_fitting     = 1 << 8   //have verbose fitting statements about fitting each hole
     }; 
 
     AngleRecoTester(

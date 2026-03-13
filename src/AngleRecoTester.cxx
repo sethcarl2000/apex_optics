@@ -135,7 +135,7 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
 
     //set the color pallete
     if (fDo_drawing) {
-        gStyle->SetPalette(kSunset); 
+        //gStyle->SetPalette(kSunset); 
         gStyle->SetOptStat(0); 
     }
 
@@ -421,10 +421,25 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
             fit->SetParameter(1, hole_du);
             fit->SetParameter(2, hole_angle_width / 2.5);
 
+            if (fDo_drawing) {
+                fit->SetLineWidth(1); 
+                fit->SetLineStyle(kDashed); 
+                fit->SetLineColor(kRed); 
+                c_profiles->cd(icanv_profile); fit->DrawCopy("SAME");
+            }
+
+            if (!fQuiet && IsFlagSet(kVerbose_fitting)) {
+                printf("fitting hole (row, col): %2i, %2i .....", holes[i].row, holes[i].col); 
+            }
+
             auto fitresult = hist_slice->Fit("holefit", "S R B Q N L"); 
 
             //if the fit failed, then skip. 
-            if (!fitresult.Get() || !fitresult->IsValid()) continue; 
+            if (!fitresult.Get() || !fitresult->IsValid()) { 
+                if (!fQuiet && IsFlagSet(kVerbose_fitting)) 
+                    cout << "hole fit result invalid." << endl; 
+                continue; 
+            }
 
             //error of the dy/dz position of the hole
             double       hole_du_fit        = fitresult->Parameter(1);
@@ -434,14 +449,35 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
 
             //check to see if this fit is reasonable. 
             //if the height of the gaussian peak is less than 5% of the histogram max, then discard it
-            if (hole_amplitude_fit < hist_slice->GetMaximum() * 0.05) continue; 
-
+            if (hole_amplitude_fit < hist_slice->GetMaximum() * 0.05) { 
+                if (!fQuiet && IsFlagSet(kVerbose_fitting)) 
+                    printf("amplitude of gauss fit for hole (%f) is below 0.05 of slice maximum (%f).\n", hole_amplitude_fit, hist_slice->GetMaximum()); 
+                continue; 
+            }
             //if the relative error of 'sigma' is more than 5%, then discard it. 
-            if (fabs(fitresult->ParError(2) / hole_sigma_fit) > 0.05 ) continue; 
+            if (fabs(fitresult->ParError(2) / hole_sigma_fit) > 0.15 ) { 
+                if (!fQuiet && IsFlagSet(kVerbose_fitting)) 
+                    printf("relative error of width for hole gaussian > 0.15 (%f).\n", fabs(fitresult->ParError(2) / hole_sigma_fit)); 
+                continue; 
+            }
+
+            //if sigma is the size of (or much larger than) the cut, then exclude it. 
+            if (hole_sigma_fit > 5.*du_cut_width) {
+                if (!fQuiet && IsFlagSet(kVerbose_fitting)) 
+                    printf("fit hole gaussian sigma (%f) > 5*cut width (%f)\n", hole_sigma_fit, du_cut_width); 
+                continue; 
+            }
+
+            //if the measured position error is too large, then exit  
+            if (hole_du_fit - hole_du > du_cut_width) {
+                if (!fQuiet && IsFlagSet(kVerbose_fitting)) 
+                    printf("fit error of hole centroid (%f) > cut width (%f)\n", hole_du_fit - hole_du, du_cut_width); 
+                continue; 
+            }
+
 
             //jnhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhqw ,8
             // -Muon's comment (25 Jan 26)
-
 
             const double du_bin = (x_axis->GetXmax() - x_axis->GetXmin()) / ((double)x_axis->GetNbins() - 1); 
 
@@ -468,7 +504,11 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
                 );
 
                 //don't record this hole if its slope measurement failed 
-                if (is_nan(slope.m)) continue; 
+                if (is_nan(slope.m)) { 
+                    if (!fQuiet && IsFlagSet(kVerbose_fitting)) 
+                        printf("slope-fitting returned NaN.\n"); 
+                    continue; 
+                }
             
                 //fix the 'hole_du_fit' variable to use the offset measured in the slope-fitting algorithm 
                 hole_du_fit = slope.b + slope.m*center_dv; 
@@ -476,12 +516,16 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
             }
             //cout << "slope: " << slope.m << endl; //" +/- " << slope.m_err << endl; 
 
+            if (!fQuiet && IsFlagSet(kVerbose_fitting)) 
+                printf("hole kept!\n"); 
+
             //we're counting this hole as having been 'measured'
             n_holes_measured++;
 
-            fit->SetLineColor(kRed); 
-            
             if (fDo_drawing) {
+                fit->SetLineWidth(2); 
+                fit->SetLineStyle(kSolid); 
+                fit->SetLineColor(kRed); 
                 c_profiles->cd(icanv_profile); fit->DrawCopy("SAME");
 
                 TLine *line; 
@@ -607,7 +651,7 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
     //spacing bewtween sieve holes in the dx/dz (theta) direction
     const double dTheta = sieve_hole_spacing_x / vtx_z; 
 
-    for (auto holefit : fit_result.fits) {
+    for (auto& holefit : fit_result.fits) {
 
         if (test_dydz && measure_slope) { 
             //if we're testing phi (dy/dz), we must account for hole-slopes
@@ -621,6 +665,8 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
             pos_offset_RMS += hole_square_error;
 
             h_pos_err_dist->Fill(1.e3*sqrt(hole_square_error)); 
+            
+            holefit.overall_RMS = sqrt(hole_square_error); 
         } else {
 
             //otherwise, just compute the RMS of each hole's centroid
@@ -628,6 +674,8 @@ std::optional<AngleFitResult_t> AngleRecoTester::Measure(
             pos_offset_RMS += hole_square_error; 
 
             h_pos_err_dist->Fill(1e3*sqrt(hole_square_error)); 
+
+            holefit.overall_RMS = sqrt(hole_square_error); 
         }
         avg_peak_width  += holefit.angle_sigma; 
         avg_pos_offset_uncertainty += holefit.angle_fit_staterr;   
