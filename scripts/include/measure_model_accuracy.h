@@ -13,6 +13,7 @@
 #include <TGraph.h>
 #include <TStyle.h>
 #include <TCanvas.h> 
+#include <TLegend.h> 
 //stdlib headers
 #include <vector>
 #include <string> 
@@ -49,8 +50,14 @@ template<typename T> struct BothArmValue_t {
  * @brief measures & reports reconstruction accuracy for the left or right arm
  */
 class MeasureModelAccuracy {
+private: 
+
+    bool is_NaN(double x) const { return x != x; }
 public: 
     
+    ///reduction in angular resolution resulting from multiple-scattering in the target
+    const double kRMS_multiple_scattering = 0.36e-3; 
+
     /// path to all A' montecarlo files
     std::vector<std::string> fPath_Aprime_montecarlo{
         "data/mc/mc_Aprime_140-MeV.root",
@@ -67,8 +74,8 @@ public:
         "data/mc/mc_Aprime_250-MeV.root" 
     };
 
-    std::string fPath_R_V1{"data/replay/real_R_V1.root"}; 
-    std::string fPath_R_V2{"data/replay/real_R_V2.root"}; 
+    std::string fPath_R_V1{"data/replay/real_R_V1-v01.root"}; 
+    std::string fPath_R_V2{"data/replay/real_R_V2-v01.root"}; 
     std::string fPath_R_V3{"data/replay/real_R_V3-v01.root"}; 
 
     std::string fPath_L_V1{"data/replay/real_L_V1.root"}; 
@@ -90,8 +97,6 @@ public:
     int EvaluateModel ( 
         std::function<ROOT::RDF::RNode(ArmMode::Bit,ROOT::RDF::RNode)> optics_model
     ); 
-
-    int Evaluate_singleMass(const std::string& path_mass); 
 }; 
 
 
@@ -196,9 +201,13 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
     BothArmValue_t<double[3]> bg_cut_widthx   = {{ 1.00,   1.00,   1.00   },      { 1.00,   1.00,   1.00   }};
     BothArmValue_t<double[3]> bg_cut_widthy   = {{ 1.00,   1.00,   0.70   },      { 1.00,   1.00,   0.70   }};
 
+    /// RMS for sieve-plane variables from drift-plane resolution
     constexpr double vdc_smearing_dxdz_sv = 0.426e-3; //rad
     constexpr double vdc_smearing_dydz_sv = 0.138e-3; //rad
     
+    /// RMS from multiple-scattering in target
+    constexpr double RMS_multiple_scattering = 0.360e-3; 
+
     
     //this counter will keep track of the overall stat-weighting used for each hole
     double dxdz_total_statweight = 0.; 
@@ -267,6 +276,10 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
             for (const auto& fit_dxdz : angleFits_dxdz[iwire](arm).fits) {
                 for (const auto& fit_dydz : angleFits_dydz[iwire](arm).fits) {
                     if (fit_dxdz.hole == fit_dydz.hole) {
+
+                        //don't keep this hole if the dx/dz or dy/dz measurements are NaN 
+                        if (is_NaN(fit_dxdz.overall_RMS) || is_NaN(fit_dydz.overall_RMS)) continue; 
+
                         hole_and_RMS[iwire](arm).push_back({
                             .hole = fit_dxdz.hole, 
                             .dxdz = fit_dxdz.overall_RMS, 
@@ -367,7 +380,7 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                 const string arm_prefix = (arm & ArmMode::kRHRS) ? "R_" : "L_"; 
                 const bool arm_bool = (arm & ArmMode::kRHRS); 
 
-                rna.Define(arm_prefix+"traj_hcs_smeared", [&rand, &hole_and_RMS, &targets, arm, arm_bool, &find_bestfit_hole, V1_zcut, V3_zcut](
+                rna.Define(arm_prefix+"traj_hcs_smeared", [&rand, &hole_and_RMS, &targets, arm, arm_bool, &find_bestfit_hole, V1_zcut, V3_zcut, this](
                     double x, 
                     double y, 
                     double dxdz, 
@@ -388,8 +401,8 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                     Trajectory_t traj_scs{
                         x, 
                         y, 
-                        dxdz + rand.Gaus()*hRMS.dxdz, 
-                        dydz + rand.Gaus()*hRMS.dydz,
+                        dxdz + rand.Gaus()*hRMS.dxdz + rand.Gaus()*kRMS_multiple_scattering, 
+                        dydz + rand.Gaus()*hRMS.dydz + rand.Gaus()*kRMS_multiple_scattering,
                         dpp 
                     };
 
@@ -456,13 +469,66 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
         dydz_total_statweight += dydz_wire_statweight;*/  
     }
 
-    new TCanvas; 
-    auto g = new TGraph(pts_mass.size(), pts_mass.data(), pts_error.data()); 
-    g->SetTitle("m_{A} vs #sigma_{m_{A}} (MeV/c^{2})"); 
-    g->Draw(); 
+    //draw the graph of John Williamson's reconstructed A' resolution
+    constexpr int n_pts_JW = 20; 
 
+    //John Williamson's reported A' resolution 
+    constexpr double RMS_JW[n_pts_JW] = {
+        0.8456,
+        0.8684,
+        0.9027,
+        0.9376,
+        0.9773,
+        1.0236,
+        1.0653,
+        1.1066,
+        1.1383,
+        1.1592,
+        1.1800,
+        1.1880,
+        1.1946,
+        1.1965,
+        1.1877,
+        1.1837,
+        1.1546,
+        1.129,
+        1.1353,
+        1.0862
+    }; 
+    double mass_JW[n_pts_JW];
+    for (int i=0; i<n_pts_JW; i++) mass_JW[i] = 127.8 + 5.*((double)i);  
+
+    //maximum extent graph = 
+    double x_max = max<double>( pts_mass.back(),  mass_JW[n_pts_JW-1] );
+    double x_min = min<double>( pts_mass.front(), mass_JW[0] ); 
+
+    auto get_array_max = [](const double* _x, int _n)
+    {
+        double ret=_x[0]; for (int i=1; i<_n; i++) { ret = max( _x[i], ret ); } return ret; 
+    }; 
+
+    const double max_mass = max<double>( 
+        get_array_max(RMS_JW,           n_pts_JW), 
+        get_array_max(pts_error.data(), pts_error.size()) 
+    );  
+
+    //create a new TGraph which is meant to draw the 'frame' on which the other graphs will be drawn
+    double pts_frame_M[]    = { x_min, x_max }; 
+    double pts_frame_RMS[]  = { 0.,    0. }; 
+    
+    new TCanvas; 
+    auto g_frame = new TGraph(2, pts_frame_M, pts_frame_RMS ); 
+
+    g_frame->SetMaximum( max_mass*1.1 );
+    g_frame->SetMinimum( 0. );
+
+    g_frame->SetTitle("m_{A} vs #sigma_{m_{A}} (MeV/c^{2})"); 
+    g_frame->Draw(); 
+
+    auto g = new TGraph(pts_mass.size(), pts_mass.data(), pts_error.data()); 
+    
     g->SetMarkerStyle(kOpenCircle); 
-    g->Draw("SAME P"); 
+    g->Draw("SAME PL"); 
 
     /*/overall weighted error 
     printf("total RMS, mrad (dxdz/dydz): %.3f / %.3f\n", 
@@ -470,6 +536,18 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
         1.e3*sqrt(dydz_total_square_error/dydz_total_statweight)
     );*/ 
     
+    auto g_JW = new TGraph(n_pts_JW, mass_JW, RMS_JW);
+    
+    g_JW->SetMarkerStyle(kFullSquare); 
+    g_JW->SetMarkerColor(kBlue);
+    g_JW->SetLineColor(kBlue); 
+    g_JW->Draw("SAME PL");
+
+    auto legend = new TLegend(); 
+    legend->AddEntry(g,    "Current Estimate"); 
+    legend->AddEntry(g_JW, "John Williamson (thesis)"); 
+    legend->Draw(); 
+
     return 0; 
 }
 
