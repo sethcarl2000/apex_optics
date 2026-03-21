@@ -1,0 +1,23 @@
+# Polynomial metadata: 
+# -- Order: 2
+# -- Trained on data: 'data/sieve_holes/fits_21Dec/V123.root'
+# -- Input branches: { x_fp y_fp dxdz_fp dydz_fp }
+# -- Time created: Fri Mar 20 00:20:51 2026
+
+poly-DoF 4
+is-RHRS 0
+z_hcs   2   0   0   0   -9.302316004e-02
+z_hcs   1   1   0   0   +1.108933201e+01
+z_hcs   1   0   1   0   +1.058001176e+00
+z_hcs   1   0   0   1   +2.257139183e+00
+z_hcs   1   0   0   0   +3.183404846e-01
+z_hcs   0   2   0   0   +3.613045428e+01
+z_hcs   0   1   1   0   +2.229565671e+02
+z_hcs   0   1   0   1   -1.031113700e+02
+z_hcs   0   1   0   0   +4.495059458e+00
+z_hcs   0   0   2   0   -3.159586113e+02
+z_hcs   0   0   1   1   -4.264018906e+01
+z_hcs   0   0   1   0   +6.897619290e-01
+z_hcs   0   0   0   2   +2.486113435e+01
+z_hcs   0   0   0   1   -1.483845696e+01
+z_hcs   0   0   0   0   -1.115806826e-01
