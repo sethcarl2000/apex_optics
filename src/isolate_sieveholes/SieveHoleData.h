@@ -92,6 +92,7 @@ struct SieveHoleData {
     double cut_y     {DOUBLE_NAN};
     double cut_width {DOUBLE_NAN};
     double cut_height{DOUBLE_NAN}; 
+    double cut_angle {DOUBLE_NAN}; ///orientation of the ellipse of the sieve-cut (counter-clockwise from the horizontal)
     
     //These polynomials will be used to fit x_fp and rast_param to the fp-coordinates. 
     //the first coordinate is x_fp, the second coordinate is rast_param. 

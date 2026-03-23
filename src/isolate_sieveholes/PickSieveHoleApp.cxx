@@ -13,6 +13,18 @@
 using namespace std; 
 using ApexOptics::Trajectory_t; 
 
+namespace {
+
+    // base unit, from which we define all others
+    constexpr double meter = 1.; 
+
+    // value of 1 mm, expressed in m
+    constexpr double mm = 1/1000.; 
+
+    // the value of one degree, expressed in radians 
+    constexpr double deg = 3.14159265359 / 180.; 
+}
+
 //______________________________________________________________________________________________________________________
 PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p, 
                                     UInt_t w, 
@@ -180,7 +192,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     //this frame contains all the hole size parameters
     fFrame_numbers = new TGHorizontalFrame(fFrame_PickHoleButtons, 500, 50); 
     
-    //number entry label
+    //number entry label 
     fLabel_cutWidth = new TGLabel(fFrame_numbers, "Cut width (mm): "); 
     fFrame_numbers->AddFrame(fLabel_cutWidth, new TGLayoutHints( kLHintsLeft | kLHintsCenterY, 20, 0, 5, 5)); 
     //Number entry - width of cut
@@ -188,8 +200,8 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fNumber_cutWidth->SetLimits(TGNumberFormat::kNELLimitMinMax, 0., fCutWidth_max); 
     fNumber_cutWidth->SetNumAttr(TGNumberFormat::kNEAPositive); 
     fNumber_cutWidth->SetNumStyle(TGNumberFormat::kNESReal); 
-    fNumber_cutWidth->Connect("ValueSet(Long_t)", "PickSieveHoleApp", this, "SetCutSize()"); 
-    fNumber_cutWidth->GetNumberEntry()->Connect("ReturnPressed()", "PickSieveHoleApp", this, "SetCutSize()"); 
+    fNumber_cutWidth->Connect("ValueSet(Long_t)", "PickSieveHoleApp", this, "SetCutSizeAngle()"); 
+    fNumber_cutWidth->GetNumberEntry()->Connect("ReturnPressed()", "PickSieveHoleApp", this, "SetCutSizeAngle()"); 
     fNumber_cutWidth->SetButtonToNum(false); //setting this to 'false' ensures that the 'ValueChanged' signal is sent to 'SetCutSize'
     fFrame_numbers->AddFrame(fNumber_cutWidth, new TGLayoutHints( kLHintsLeft | kLHintsCenterY, 20, 10, 5, 5)); 
 
@@ -201,10 +213,22 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fNumber_cutHeight->SetLimits(TGNumberFormat::kNELLimitMinMax, 0., fCutHeight_max); 
     fNumber_cutHeight->SetNumAttr(TGNumberFormat::kNEAPositive); 
     fNumber_cutHeight->SetNumStyle(TGNumberFormat::kNESReal); 
-    fNumber_cutHeight->Connect("ValueSet(Long_t)", "PickSieveHoleApp", this, "SetCutSize()"); 
-    fNumber_cutHeight->GetNumberEntry()->Connect("ReturnPressed()", "PickSieveHoleApp", this, "SetCutSize()"); 
+    fNumber_cutHeight->Connect("ValueSet(Long_t)", "PickSieveHoleApp", this, "SetCutSizeAngle()"); 
+    fNumber_cutHeight->GetNumberEntry()->Connect("ReturnPressed()", "PickSieveHoleApp", this, "SetCutSizeAngle()"); 
     fNumber_cutHeight->SetButtonToNum(false); //setting this to 'false' ensures that the 'ValueChanged' signal is sent to 'SetCutSize'
     fFrame_numbers->AddFrame(fNumber_cutHeight, new TGLayoutHints( kLHintsLeft | kLHintsCenterY, 20, 10, 5, 5)); 
+
+    // angle slider ----------------------------------------------------------------------------------------------------
+    fLabel_cutAngle = new TGLabel(fFrame_numbers, Form("Cut angle: 00",0.)); 
+    fFrame_numbers->AddFrame(fLabel_cutAngle, new TGLayoutHints( kLHintsLeft | kLHintsCenterY, 20, 5, 5, 5)); 
+    // slider
+    fSlider_cutAngle = new TGHSlider(fFrame_numbers, 20); 
+    fSlider_cutAngle->Connect("Released()", "PickSieveHoleApp", this, "SetCutSizeAngle()"); 
+    fSlider_cutAngle->SetPosition(0); 
+    fFrame_numbers->AddFrame(fSlider_cutAngle, new TGLayoutHints( kLHintsLeft | kLHintsCenterY | kLHintsExpandX, 20, 10, 5, 5)); 
+    
+    
+
 
     fLabel_selectedHole = new TGLabel(fFrame_numbers, "No hole selected"); 
     fFrame_numbers->AddFrame(fLabel_selectedHole, new TGLayoutHints(kLHintsLeft | kLHintsCenterY | kLHintsExpandX, 20,0,0,0)); 
@@ -359,19 +383,36 @@ void PickSieveHoleApp::DrawSieveHoles()
 #endif
 }
 //_____________________________________________________________________________________________________________________________________
-void PickSieveHoleApp::SetCutSize()
+void PickSieveHoleApp::SetCutSizeAngle()
 {
     if (fCurrentWindow != kWindow_PickSieveHole) return; 
     
-    if (!fSelectedSieveHole) return; 
-    if (!fNumber_cutHeight || !fNumber_cutHeight) {
+    if (!fNumber_cutHeight || !fNumber_cutHeight || !fSlider_cutAngle) {
         throw logic_error("in <PickSieveHoleApp::SetCutSize>: One or both of number-entry objects are null."); 
         return; 
     }
+    
+    // get the updated cut angle 
+    double slider_amplitude = (double)(fSlider_cutAngle->GetMaxPosition() - fSlider_cutAngle->GetMinPosition());
+    double slider_val       = (double)(fSlider_cutAngle->GetPosition()    - fSlider_cutAngle->GetMinPosition());
+    double index = slider_val/slider_amplitude; 
+
+    double angle = index * 90; 
+
+    fLabel_cutAngle->ChangeText(Form("Cut angle: %.0f",angle)); 
+
+    //if no sieve-hole is selected, we don't need to do anything right now. 
+    if (!fSelectedSieveHole) return; 
 
     if (!fSelectedSieveHole->is_evaluated) {
-        fSelectedSieveHole->cut_width  = fNumber_cutWidth ->GetNumber() * 1e-3;
-        fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber() * 1e-3;
+        
+        // get the updated cut width 
+        fSelectedSieveHole->cut_width  = fNumber_cutWidth ->GetNumber()*mm;
+        fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber()*mm;
+
+        // min angle is 
+        fSelectedSieveHole->cut_angle = index * 90; 
+        
     }
 
     DrawHoleCuts(); 
@@ -463,11 +504,16 @@ void PickSieveHoleApp::DrawHoleCuts()
             Info(here, "Circ already exists.");
         } 
 #endif 
+        //position of the cut
         circ->SetX1(hole_data.cut_x); 
         circ->SetY1(hole_data.cut_y); 
 
+        //size of the cut's major axes
         circ->SetR1(hole_data.cut_width); 
         circ->SetR2(hole_data.cut_height); 
+
+        //the hole's orientation from the horizontal (angle of 0 means the 'cut_width' axis will be horizontal)
+        circ->SetTheta(hole_data.cut_angle); 
 
         circ->SetLineColor(line_color); 
 
@@ -687,8 +733,10 @@ void PickSieveHoleApp::HandleCanvasClick_data() {
         //if the mouse-button was just released
         if (fEventType == kMouseButton1_up) {
 
-            fSelectedSieveHole->cut_width  = fNumber_cutWidth ->GetNumber() * 1e-3; 
-            fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber() * 1e-3; 
+            //fSelectedSieveHole->cut_width  = fNumber_cutWidth ->GetNumber() * 1e-3; 
+            //fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber() * 1e-3; 
+            //update the selected sieve-hole cut size & cut orientation 
+            SetCutSizeAngle(); 
 
             // Get pixel coordinates
             Int_t px = canvas->GetEventX();

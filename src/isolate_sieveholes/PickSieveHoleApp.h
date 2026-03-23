@@ -12,6 +12,7 @@
 #include <TRootEmbeddedCanvas.h>
 #include <TGNumberEntry.h>
 #include <TGLabel.h>
+#include <TGSlider.h>
 #include <TGButton.h>
 #include <TH2D.h>
 #include <TVector3.h>
@@ -51,6 +52,11 @@ private:
     TGLabel*       fLabel_cutWidth;  
     const double fCutWidth_default =  1.75; //units are in mm 
     const double fCutWidth_max     = 10.00; //units are in mm 
+
+    TGSlider*      fSlider_cutAngle; 
+    TGLabel*       fLabel_cutAngle; 
+    const double fCutAngle_default =  0.; //units: degrees
+    const double fCutAngle_max     = 90.; //units: degrees
 
     TGNumberEntry* fNumber_cutHeight;
     TGLabel*       fLabel_cutHeight; 
@@ -156,9 +162,8 @@ public:
     std::string Get_BranchX()    const { return fBranchX; }
     std::string Get_BranchY()    const { return fBranchY; }
 
-
-    //this is called when the size of the hole cut is updated. 
-    void SetCutSize(); 
+    //this is called when the size / orientation of the hole cut is updated. 
+    void SetCutSizeAngle(); 
     //this is called any time the drawing of all hole-cuts needs to be refreshed. 
     void DrawHoleCuts(); 
 

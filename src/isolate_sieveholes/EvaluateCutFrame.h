@@ -68,10 +68,10 @@ private:
     double fX_min{DOUBLE_NAN}, fX_max{DOUBLE_NAN}; 
 
     NPoly FitPolynomialToFP(
-        const std::vector<EventData>& data,                     // input all events for this wire-run
-        std::function<bool(const EventData&)> is_inside_cut,    // the cut for events on this particular hole
-        double ApexOptics::Trajectory_t::*coord                 // the coordinate we're fitting to (y, dxdz, dydz)
-    ); 
+        const std::vector<EventData>& data,                             // input all events for this wire-run
+        const std::function<bool(const EventData&)>& is_inside_cut,     // the cut for events on this particular hole
+        double ApexOptics::Trajectory_t::*coord                         // the coordinate we're fitting to (y, dxdz, dydz)
+    ) const; 
 
 public: 
     EvaluateCutFrame(   const TGWindow *p, 

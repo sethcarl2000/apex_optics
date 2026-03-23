@@ -15,9 +15,15 @@
 #include <NPoly.h> 
 #include <RMatrix.h> 
 #include <ROOT/RVec.hxx>
+#include <cmath> 
+#include <thread> 
 
 using namespace std; 
 using ApexOptics::Trajectory_t; 
+
+namespace {
+    constexpr double pi = 3.14159265359; 
+}
 
 EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p, 
                                     PickSieveHoleApp *_parent, 
@@ -54,6 +60,10 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     const double cut_y      = fSelectedSieveHole->cut_y; 
     const double cut_width  = fSelectedSieveHole->cut_width; 
     const double cut_height = fSelectedSieveHole->cut_height; 
+    const double cut_angle  = fSelectedSieveHole->cut_angle; 
+
+    const double cos_theta  = cos( fSelectedSieveHole->cut_angle * pi / 180. );
+    const double sin_theta  = sin( fSelectedSieveHole->cut_angle * pi / 180. );  
 
     fHist_holes = new TH2D("h_xy_temp", "", 
         75, xsv_draw_range[0], xsv_draw_range[1],
@@ -63,15 +73,31 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     fDxdz_fp = HistAndLimit(new TH2D("h_dxdz_fp", "dx/dz_fp vs x_fp", 75, xfp_draw_range[0], xfp_draw_range[1], 75, -0.035, +0.025)); 
     fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 75, xfp_draw_range[0], xfp_draw_range[1], 75, -0.060, +0.040)); 
     
+
+    /// @return 'true' if a given event is inside the sieve-coordinate cut, and 'false' if not. 
+    auto is_inside_cut = [cos_theta, sin_theta, cut_width, cut_height, cut_x, cut_y](const EventData& ev)
+    {
+        //now, only include events which are inside our 'cut ellipse' 
+        double x = ev.Xsv.dxdz - cut_x; 
+        double y = ev.Xsv.dydz - cut_y; 
+        
+        double u = ( cos_theta*x + sin_theta*y )/cut_width; 
+        double v = ( cos_theta*y - sin_theta*x )/cut_height; 
+
+        if ( u*u + v*v < 1. ) { return true; } else { return false; }
+    };
+    //_________________________________________________________________________________________
+    
+
     for (const auto& ev : data) {
 
-        if (pow((ev.Xsv.dxdz-cut_x)/cut_width, 2) + pow((ev.Xsv.dydz-cut_y)/cut_height, 2) < 1.) { 
+        fHist_holes->Fill( ev.Xsv.dxdz, ev.Xsv.dydz );
+
+        if (is_inside_cut(ev)) {
             fY_fp.hist   ->Fill( ev.Xfp.x, ev.Xfp.y );
             fDxdz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
             fDydz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dydz ); 
         }
-        
-        fHist_holes->Fill( ev.Xsv.dxdz, ev.Xsv.dydz );
     }
 
 #ifdef DEBUG
@@ -91,18 +117,16 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
         fSelectedSieveHole->cut_x, 
         fSelectedSieveHole->cut_y, 
         fSelectedSieveHole->cut_width,
-        fSelectedSieveHole->cut_height
+        fSelectedSieveHole->cut_height, 
+        0, 360,
+        cut_angle
     ); 
+
     circ->SetFillStyle(0); 
     circ->SetLineColor(kRed); 
     circ->SetLineWidth(2); 
     circ->Draw(); 
 
-    auto is_inside_cut = [=](const EventData& event)
-    {
-        return pow((event.Xsv.dxdz-cut_x)/cut_width, 2) + pow((event.Xsv.dydz-cut_y)/cut_height, 2) < 1.; 
-    };
-    
     //draws the results of the fits on the tcanavs
     auto DrawFitsOnCanvas = [this](NPoly poly)
     {   
@@ -478,7 +502,11 @@ void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t
     } 
 }
 //_____________________________________________________________________________________________________________________________________
-NPoly EvaluateCutFrame::FitPolynomialToFP(const vector<EventData>& data, function<bool(const EventData&)> is_inside_cut, double Trajectory_t::*coord)
+NPoly EvaluateCutFrame::FitPolynomialToFP(
+    const vector<EventData>& data, 
+    const function<bool(const EventData&)>& is_inside_cut, 
+    double Trajectory_t::*coord
+) const 
 {
     using namespace ROOT::VecOps; 
 #ifdef DEBUG
@@ -570,7 +598,8 @@ NPoly EvaluateCutFrame::FitPolynomialToFP(const vector<EventData>& data, functio
         return val; 
     };
     //____________________________________________________________________________________________
-    
+    ROOT::EnableImplicitMT(); 
+
     ROOT::Math::Minimizer *minimizer = ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"); 
     
     minimizer->SetMaxFunctionCalls(1e7); 
