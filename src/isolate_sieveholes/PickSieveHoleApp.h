@@ -53,15 +53,15 @@ private:
     const double fCutWidth_default =  1.75; //units are in mm 
     const double fCutWidth_max     = 10.00; //units are in mm 
 
-    TGSlider*      fSlider_cutAngle; 
-    TGLabel*       fLabel_cutAngle; 
-    const double fCutAngle_default =  0.; //units: degrees
-    const double fCutAngle_max     = 90.; //units: degrees
-
     TGNumberEntry* fNumber_cutHeight;
     TGLabel*       fLabel_cutHeight; 
     const double fCutHeight_default =  1.75; //units are in mm 
     const double fCutHeight_max     = 10.00; //units are in mm 
+
+    TGSlider*      fSlider_cutAngle; 
+    TGLabel*       fLabel_cutAngle; 
+    const double fCutAngle_default =  0.; //units: degrees
+    const double fCutAngle_max     = 30.; //units: degrees
 
     //button which appears when a hole is picked which has already been evaluated
     TGTextButton* fButton_Delete;   //delete this hole which has already been evaluated

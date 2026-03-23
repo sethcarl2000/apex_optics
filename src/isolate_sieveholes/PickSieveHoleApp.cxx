@@ -219,12 +219,12 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     fFrame_numbers->AddFrame(fNumber_cutHeight, new TGLayoutHints( kLHintsLeft | kLHintsCenterY, 20, 10, 5, 5)); 
 
     // angle slider ----------------------------------------------------------------------------------------------------
-    fLabel_cutAngle = new TGLabel(fFrame_numbers, Form("Cut angle: 00",0.)); 
+    fLabel_cutAngle = new TGLabel(fFrame_numbers, Form("Cut angle: +00",0.)); 
     fFrame_numbers->AddFrame(fLabel_cutAngle, new TGLayoutHints( kLHintsLeft | kLHintsCenterY, 20, 5, 5, 5)); 
     // slider
     fSlider_cutAngle = new TGHSlider(fFrame_numbers, 20); 
     fSlider_cutAngle->Connect("Released()", "PickSieveHoleApp", this, "SetCutSizeAngle()"); 
-    fSlider_cutAngle->SetPosition(0); 
+    fSlider_cutAngle->SetPosition( (fSlider_cutAngle->GetMinPosition() + fSlider_cutAngle->GetMaxPosition())/2. ); 
     fFrame_numbers->AddFrame(fSlider_cutAngle, new TGLayoutHints( kLHintsLeft | kLHintsCenterY | kLHintsExpandX, 20, 10, 5, 5)); 
     
     
@@ -397,9 +397,10 @@ void PickSieveHoleApp::SetCutSizeAngle()
     double slider_val       = (double)(fSlider_cutAngle->GetPosition()    - fSlider_cutAngle->GetMinPosition());
     double index = slider_val/slider_amplitude; 
 
-    double angle = index * 90; 
+    // angle can be anywhere on the interval -90 => +90
+    double angle = (index - 0.5) * fCutAngle_max * 2; 
 
-    fLabel_cutAngle->ChangeText(Form("Cut angle: %.0f",angle)); 
+    fLabel_cutAngle->ChangeText(Form("Cut angle: %+.0f",angle)); 
 
     //if no sieve-hole is selected, we don't need to do anything right now. 
     if (!fSelectedSieveHole) return; 
@@ -411,7 +412,7 @@ void PickSieveHoleApp::SetCutSizeAngle()
         fSelectedSieveHole->cut_height = fNumber_cutHeight->GetNumber()*mm;
 
         // min angle is 
-        fSelectedSieveHole->cut_angle = index * 90; 
+        fSelectedSieveHole->cut_angle = angle; 
         
     }
 
