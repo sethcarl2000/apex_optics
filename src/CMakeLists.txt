@@ -53,6 +53,7 @@ set(headers
     NPolyArrayChain.h
     SieveHole.h 
     MultiLayerPerceptron.h
+    ModularOpticsModel.h
     PolynomialCut.h 
     PolynomialCutApp.h 
     isolate_sieveholes/SieveHoleData.h
