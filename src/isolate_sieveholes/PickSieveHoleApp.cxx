@@ -34,14 +34,12 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
                                     const char* target_name,  
                                     const char* coordname_x,
                                     const char* coordname_y,
-                                    const int n_rast_partitions,
                                     const char* drawing_option, 
                                     unsigned int palette) 
     : TGMainFrame(p, w, h),
     f_is_RHRS(is_RHRS), 
     fBranchX(coordname_x),
     fBranchY(coordname_y),
-    fNRastPartitions{n_rast_partitions},
     fPathInfile(path_infile),
     fDrawingOption(drawing_option),
     fPalette{palette}
@@ -566,7 +564,6 @@ void PickSieveHoleApp::DoEvaluate()
         fEventData, 
         fSelectedSieveHole, 
         fFpcoord_cut_width, 
-        fNRastPartitions, 
         "dxdz_sv", "dydz_sv", "col", 
         kBird
     ); 

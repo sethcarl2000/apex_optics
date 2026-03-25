@@ -79,7 +79,6 @@ public:
                         const std::vector<EventData>&data, 
                         SieveHoleData *_hd,
                         const double fp_cut_width, 
-                        const int n_raster_partitions, 
                         const char* branch_x="dxdz_sv", 
                         const char* branch_y="dydz_sv", 
                         const char* draw_option="col2",

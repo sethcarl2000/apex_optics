@@ -7,6 +7,11 @@
 //
 ////////////////////////////////////////////////////////////
 
+// APEX headers
+#include "SieveHoleData.h"
+#include <NPolyArray.h> 
+#include <ApexOptics.h> 
+// TGUI headers
 #include <TGFrame.h>
 #include <TGWindow.h>
 #include <TRootEmbeddedCanvas.h>
@@ -14,14 +19,14 @@
 #include <TGLabel.h>
 #include <TGSlider.h>
 #include <TGButton.h>
+// ROOT headers
 #include <TH2D.h>
 #include <TVector3.h>
-#include <ApexOptics.h> 
-#include "SieveHoleData.h"
 #include <ROOT/RDataFrame.hxx>
+#include <TColor.h>
+// stdlib headers
 #include <vector>
 #include <string> 
-#include <TColor.h>
 
 class PickSieveHoleApp : public TGMainFrame {
 private:
@@ -38,9 +43,6 @@ private:
     TGTextButton*  fButton_Exit;     //Exit
 
     ApexOptics::OpticsTarget_t fTarget; //the optics target we're looking at 
-
-    //total number of different 'fits' we're going to do 
-    int fNRastPartitions{1}; 
     
     //additional buttons when a hole is picked on the plot
     TGTextButton*  fButton_Evaluate; //evaluate this hole
@@ -105,6 +107,9 @@ private:
 
     TVector3 fReactVertex; 
 
+    //the optics model for this particular wire/run 
+    NPolyArray* fOpticsModel{nullptr}; 
+
     //max allowable dist between the fp-coord value and the actual value
     const double fFpcoord_cut_width{0.0055}; 
 
@@ -130,7 +135,6 @@ public:
                      const char* target_name="none",
                      const char* branch_x="dxdz_sv",
                      const char* branch_y="dydz_sv", 
-                     const int n_rast_partitions=3,
                      const char* drawing_option="col2", 
                      unsigned int palette=kSunset);
     
