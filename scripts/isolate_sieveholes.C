@@ -25,7 +25,6 @@ int isolate_sieveholes( const bool is_RHRS,
                          target_name, 
                          coord_x, 
                          coord_y, 
-                         1, 
                          drawing_option,
                          palette);
 
