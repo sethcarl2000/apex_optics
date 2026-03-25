@@ -86,30 +86,63 @@ void PickSieveHoleApp::LaunchApplication()
     fRastMin = rast_min;
     fRastMax = rast_max; 
 
-    //get all of the data, and stick it in a vector. 
-    fEventData = *df 
+    // if 'true', then we'll use the optics model to define sieve-coordinates anew. if not, then we wont. 
+    const bool use_optics_model = (fOpticsModel != nullptr); 
 
-        .Define("Xsv", [](double x, double y, double dxdz, double dydz, double dpp)
-        {
-            return Trajectory_t{x,y,dxdz,dydz,dpp}; 
-        }, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"})
+    if (use_optics_model) {
 
-        .Define("Xfp", [](double x, double y, double dxdz, double dydz)
-        {
-            return Trajectory_t{x,y,dxdz,dydz}; 
-        }, {"x_fp","y_fp","dxdz_fp","dydz_fp"}) 
+        auto df_with_sv_data = fOpticsModel->DefineOutputs(df); 
 
-        .Define("rast_index", [rast_min,rast_max](TVector3 vtx)
-        {
-            return  ( vtx.y() - 0.5*(rast_max+rast_min) )/( 0.5*(rast_max-rast_min) ); 
-        }, {"position_vtx"})
+        fEventData = *df_with_sv_data
 
-        .Define("EventData", [](Trajectory_t Xsv, Trajectory_t Xfp, double rast_index, TVector3 vtx_scs)
-        {
-            return EventData{ .Xsv=Xsv, .Xfp=Xfp, .raster_index=rast_index, .vtx_scs=vtx_scs }; 
-        }, {"Xsv", "Xfp", "rast_index", "position_vtx_scs"})
+            .Define("Xsv",  [](double x, double y, double dxdz, double dydz, double dpp)
+            {
+                return Trajectory_t{x,y,dxdz,dydz,dpp}; 
+            }, {"reco_x_sv","reco_y_sv","reco_dxdz_sv","reco_dydz_sv","reco_dpp_sv"}) 
 
-        .Take<EventData>("EventData"); 
+            .Define("Xfp", [](double x, double y, double dxdz, double dydz)
+            {
+                return Trajectory_t{x,y,dxdz,dydz}; 
+            }, {"x_fp","y_fp","dxdz_fp","dydz_fp"}) 
+
+            .Define("rast_index", [rast_min,rast_max](TVector3 vtx)
+            {
+                return  ( vtx.y() - 0.5*(rast_max+rast_min) )/( 0.5*(rast_max-rast_min) ); 
+            }, {"position_vtx"})
+
+            .Define("EventData", [](Trajectory_t Xsv, Trajectory_t Xfp, double rast_index, TVector3 vtx_scs)
+            {
+                return EventData{ .Xsv=Xsv, .Xfp=Xfp, .raster_index=rast_index, .vtx_scs=vtx_scs }; 
+            }, {"Xsv", "Xfp", "rast_index", "position_vtx_scs"})
+
+            .Take<EventData>("EventData"); 
+
+    } else {
+        
+        fEventData = *df 
+
+            .Define("Xsv", [this, use_optics_model](double x, double y, double dxdz, double dydz, double dpp)
+            {   
+                return Trajectory_t{x,y,dxdz,dydz,dpp}; 
+            }, {"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"})
+
+            .Define("Xfp", [](double x, double y, double dxdz, double dydz)
+            {
+                return Trajectory_t{x,y,dxdz,dydz}; 
+            }, {"x_fp","y_fp","dxdz_fp","dydz_fp"}) 
+
+            .Define("rast_index", [rast_min,rast_max](TVector3 vtx)
+            {
+                return  ( vtx.y() - 0.5*(rast_max+rast_min) )/( 0.5*(rast_max-rast_min) ); 
+            }, {"position_vtx"})
+
+            .Define("EventData", [](Trajectory_t Xsv, Trajectory_t Xfp, double rast_index, TVector3 vtx_scs)
+            {
+                return EventData{ .Xsv=Xsv, .Xfp=Xfp, .raster_index=rast_index, .vtx_scs=vtx_scs }; 
+            }, {"Xsv", "Xfp", "rast_index", "position_vtx_scs"})
+
+            .Take<EventData>("EventData"); 
+    }
     
 
     fSieveHist = new TH2D(

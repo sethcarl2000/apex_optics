@@ -7,6 +7,8 @@
 #include <TColor.h> 
 #include <TGClient.h> 
 #include <isolate_sieveholes/PickSieveHoleApp.h> 
+#include <ModularOpticsModel.h> 
+#include "opticsModel/forward.h"
 
 //_____________________________________________________________________________________________________________________________________
 int isolate_sieveholes( const bool is_RHRS, 
@@ -17,7 +19,7 @@ int isolate_sieveholes( const bool is_RHRS,
                         const char* drawing_option ="col", 
                         const unsigned int palette =kSunset)
 {
-    new PickSieveHoleApp(gClient->GetRoot(), 
+    auto app = new PickSieveHoleApp(gClient->GetRoot(), 
                          1400, 
                          700, 
                          is_RHRS,
@@ -27,6 +29,12 @@ int isolate_sieveholes( const bool is_RHRS,
                          coord_y, 
                          drawing_option,
                          palette);
+
+    ForwardModel model("data/poly/fits_30Dec/V2-v05_fp_sv_R_4ord.dat"); 
+
+    app->SetOpticsModel(&model); 
+
+    app->LaunchApplication(); 
 
     return 0; 
 }

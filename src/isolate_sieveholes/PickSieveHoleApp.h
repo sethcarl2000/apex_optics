@@ -9,8 +9,8 @@
 
 // APEX headers
 #include "SieveHoleData.h"
-#include <NPolyArray.h> 
 #include <ApexOptics.h> 
+#include <ModularOpticsModel.h>
 // TGUI headers
 #include <TGFrame.h>
 #include <TGWindow.h>
@@ -112,7 +112,7 @@ private:
     TVector3 fReactVertex; 
 
     //the optics model for this particular wire/run 
-    NPolyArray* fOpticsModel{nullptr}; 
+    const ModularOpticsModel* fOpticsModel{nullptr}; 
 
     //max allowable dist between the fp-coord value and the actual value
     const double fFpcoord_cut_width{0.0055}; 
@@ -144,6 +144,9 @@ public:
 
     //launch the application 
     void LaunchApplication(); 
+
+    //add an optics model to use with the reconstruction
+    void SetOpticsModel(const ModularOpticsModel* model) { fOpticsModel=model; }; 
     
     ~PickSieveHoleApp();
     
