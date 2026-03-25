@@ -31,6 +31,10 @@
 class PickSieveHoleApp : public TGMainFrame {
 private:
 
+    UInt_t fWindow_width, fWindow_height; 
+    const TGWindow* fptr_TGWindow{nullptr}; 
+    std::string fPath_infile; 
+
     TGHorizontalFrame*   fFrame_canvPick;
     
     TRootEmbeddedCanvas* fEcanvas_data;
@@ -137,6 +141,9 @@ public:
                      const char* branch_y="dydz_sv", 
                      const char* drawing_option="col2", 
                      unsigned int palette=kSunset);
+
+    //launch the application 
+    void LaunchApplication(); 
     
     ~PickSieveHoleApp();
     

@@ -36,14 +36,21 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
                                     const char* coordname_y,
                                     const char* drawing_option, 
                                     unsigned int palette) 
-    : TGMainFrame(p, w, h),
+    : fptr_TGWindow{p},
+    fWindow_width{w},
+    fWindow_height{h}, 
     f_is_RHRS(is_RHRS), 
+    fPath_infile{path_infile},
     fBranchX(coordname_x),
     fBranchY(coordname_y),
-    fPathInfile(path_infile),
+    fPathInfile(fPath_infile.c_str()),
     fDrawingOption(drawing_option),
     fPalette{palette}
+{}
+
+void PickSieveHoleApp::LaunchApplication()
 {
+    TGMainFrame(fptr_TGWindow, fWindow_width, fWindow_height); 
     fEventType=-1; 
 
     //to begin with, we are in the 'pick sieve hole' window
@@ -70,8 +77,8 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     //first things first, lets set up & draw the histogram: 
     if (ROOT::IsImplicitMTEnabled()) ROOT::DisableImplicitMT(); 
     //ROOT::EnableImplicitMT(); 
-    fRDF = (ROOT::RDF::RNode*)(new ROOT::RDataFrame(fTreeName.c_str(), path_infile)); 
-    ROOT::RDataFrame df(fTreeName.data(), path_infile);
+    fRDF = (ROOT::RDF::RNode*)(new ROOT::RDataFrame(fTreeName.c_str(), fPath_infile.c_str())); 
+    ROOT::RDataFrame df(fTreeName.data(), fPath_infile.c_str());
     
     const double rast_min = *df.Define("y", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}).Min("y");
     const double rast_max = *df.Define("y", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}).Max("y");
@@ -253,7 +260,7 @@ PickSieveHoleApp::PickSieveHoleApp( const TGWindow* p,
     
     UpdateButtons(); 
 
-    SetWindowName(Form("Sieve-hole selection tool. data: '%s'", path_infile));
+    SetWindowName(Form("Sieve-hole selection tool. data: '%s'", fPath_infile.c_str()));
     MapSubwindows();
     Resize(GetDefaultSize());
     MapWindow();
