@@ -17,11 +17,16 @@
 #include <utility> 
 #include <sstream>
 #include <stdexcept> 
+#include <sstream> 
 #include "RMatrix.h"
 
 using namespace std;
 
 using vecd = ROOT::RVec<double>; 
+
+namespace {
+  constexpr char _classname_[] = "RMatrix"; 
+}
 
 //_______________________________________________________________________________
 //_______________________________________________________________________________
@@ -43,8 +48,12 @@ RMatrix::RMatrix(unsigned int nr, unsigned int nc, const vecd &array)
     f_n_elems(nc*nr)
 {
   if (f_n_elems != array.size()) {
-    fprintf(stderr, "Warning in <RMatrix::RMatrix(const vecd &)>: "  
-	  "Array size does not match given matrix dims! Initialzed as all zeros.\n");
+
+    ostringstream oss; 
+    oss << "Warning in <" << __func__ << ">:"
+        "Array size ("<<array.size()<<") does not match given matrix dims ("<<nr<<"x"<<nc<<")! Initialzed as all zeros."; 
+    throw logic_error(oss.str()); 
+
     fElems = vector<double>(f_n_elems, 0.); 
   } else { 
     fElems = array;
@@ -329,9 +338,11 @@ vecd RMatrix::Solve(const vecd &B) const
   
   //check vector size
   if (B.size() != N) {
-    fprintf(stderr, "Error in <RMatrix::Solve>: "
-    "Tried to Solve a lin. system with a column vector of size %i and a matrix of size %i X %i.\n",
-    (int)B.size(), GetNRows(), GetNCols() );
+
+    ostringstream oss; 
+    oss << "Warning in <"<<_classname_<<":"<< __func__ << ">:"
+        "Tried to Solve a lin. system with a column vector of size "<<B.size()<<" and a matrix of size "<<GetNRows()<<" X "<<GetNCols()<<".";
+    throw logic_error(oss.str()); 
     return {};
   }
 
