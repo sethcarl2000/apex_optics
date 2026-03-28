@@ -28,32 +28,6 @@ using ApexOptics::Trajectory_t;
 namespace {
     constexpr double pi = 3.14159265359; 
 
-
-    /// @brief Given TObject passed with a unique name, remove from the list of drawn objects in the pad, then deletes object. 
-    void delete_drawn_object(TObject* obj, TVirtualPad* pad) {       
-        
-        if (!pad) { 
-            throw logic_error("in <EvaluateCutFrame -> delete_drawn_object>: Ptr to TVirtualPad (2nd arg) is null");
-            return;  
-        }  
-
-        if (!obj) {
-#ifdef DEBUG
-            printf("Info in <%s>: Ptr to TObject passed is null.\n", __func__);          
-#endif
-            return; 
-        }
-
-#ifdef DEBUG
-        printf("Info in <%s>: Attepmting to delete TObject with name '%s'\n", __func__, obj->GetName());          
-#endif 
-        
-        //remove the object from the TVirtualPad (and any sub-pads recursively)
-        pad->RecursiveRemove(obj); 
-
-        //delete the object itself 
-        if (obj) delete obj; 
-    }
 }
 
 EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p, 
@@ -231,13 +205,6 @@ void EvaluateCutFrame::DoResetFits()
 #ifdef DEBUG
     Info(__func__, "Enter Fcn body"); 
 #endif
-
-    if (fAppState != kEvaluated) {
-        throw logic_error("in <EvaluateCutFrame::DoResetFits>: "
-            "Call to 'DoResteFits' made when application is not in state 'kEvaluated'; this should not be possible."
-        ); 
-        return; 
-    }
     
     //Get a ptr to the canvas
     auto canv = fEcanvas->GetCanvas(); 
@@ -260,12 +227,12 @@ void EvaluateCutFrame::DoResetFits()
     Info(__func__, "Deleting drawn fits (if they exist)"); 
 #endif
     //delete drawn fits
-    delete_drawn_object(fY_fp.fit_hi,    canv); 
-    delete_drawn_object(fY_fp.fit_lo,    canv); 
-    delete_drawn_object(fDxdz_fp.fit_hi, canv); 
-    delete_drawn_object(fDxdz_fp.fit_lo, canv); 
-    delete_drawn_object(fDydz_fp.fit_hi, canv); 
-    delete_drawn_object(fDydz_fp.fit_lo, canv); 
+    DeleteDrawnObject(fY_fp.fit_hi); 
+    DeleteDrawnObject(fY_fp.fit_lo); 
+    DeleteDrawnObject(fDxdz_fp.fit_hi); 
+    DeleteDrawnObject(fDxdz_fp.fit_lo); 
+    DeleteDrawnObject(fDydz_fp.fit_hi); 
+    DeleteDrawnObject(fDydz_fp.fit_lo); 
 
 #ifdef DEBUG
     Info(__func__, "Flushing the canvas (and all sub-pads)"); 
@@ -280,6 +247,7 @@ void EvaluateCutFrame::DoResetFits()
     //update the buttons
     fAppState = kPickLimits; 
     UpdateButtons(); 
+    DrawLimits(); 
 
 #ifdef DEBUG
     Info(__func__, "End Fcn body"); 
@@ -339,7 +307,7 @@ void EvaluateCutFrame::DoFit()
         tf1_poly->SetParameter(0, -1.); 
         tf1_poly->SetLineColor(kRed); 
 
-        delete_drawn_object(fit_lo, vpad, ); 
+        DeleteDrawnObject(fit_lo); 
         fit_lo = (TF1*)tf1_poly->Clone(Form("%s_fit_lo",hl->hist->GetName()));
         fit_lo->Draw("SAME");
 
@@ -347,7 +315,7 @@ void EvaluateCutFrame::DoFit()
         tf1_poly->SetParameter(0, +1.);
         tf1_poly->SetLineColor(kBlack); 
 
-        delete_drawn_object(fit_hi, vpad); 
+        DeleteDrawnObject(fit_hi); 
         fit_hi = (TF1*)tf1_poly->Clone(Form("%s_fit_hi",hl->hist->GetName()));
         fit_hi->Draw("SAME");
 
@@ -362,6 +330,12 @@ void EvaluateCutFrame::DoFit()
     cout << "Fitting polynomials___{ y... " << flush; 
 
     poly_y_fp    = FitPolynomialToFP(fCutFcn, &Trajectory_t::y); 
+    if (poly_y_fp.Get_nDoF() != 2) {
+        //something failed with this fit. tell the user to try again. 
+        cout << "\n Fit for fp-coordinate 'y-fp' failed. please try again with different limits." << endl; 
+        DoResetFits(); 
+        return; 
+    } 
     fSelectedSieveHole->y_fp    = poly_y_fp; 
     DrawFitsOnCanvas(poly_y_fp,    &fY_fp,      canv->cd(2));       
     canv->Modified(); canv->Update();  
@@ -369,6 +343,12 @@ void EvaluateCutFrame::DoFit()
     cout << "dx/dz... " << flush; 
     
     poly_dxdz_fp = FitPolynomialToFP(fCutFcn, &Trajectory_t::dxdz); 
+    if (poly_dxdz_fp.Get_nDoF() != 2) {
+        //something failed with this fit. tell the user to try again. 
+        cout << "\n Fit for fp-coordinate 'dx/dz-fp' failed. please try again with different limits." << endl; 
+        DoResetFits();
+        return; 
+    } 
     fSelectedSieveHole->dxdz_fp = poly_dxdz_fp; 
     DrawFitsOnCanvas(poly_dxdz_fp, &fDxdz_fp,   canv->cd(3)); 
     canv->Modified(); canv->Update();  
@@ -376,6 +356,12 @@ void EvaluateCutFrame::DoFit()
     cout << "dy/dz... " << flush; 
     
     poly_dydz_fp = FitPolynomialToFP(fCutFcn, &Trajectory_t::dydz); 
+    if (poly_dydz_fp.Get_nDoF() != 2) {
+        //something failed with this fit. tell the user to try again. 
+        cout << "\n Fit for fp-coordinate 'dy/dz-fp' failed. please try again with different limits." << endl; 
+        DoResetFits(); 
+        return; 
+    } 
     fSelectedSieveHole->dydz_fp = poly_dydz_fp; 
     DrawFitsOnCanvas(poly_dydz_fp, &fDydz_fp,   canv->cd(4)); 
     canv->Modified(); canv->Update();  
@@ -388,6 +374,7 @@ void EvaluateCutFrame::DoFit()
 
     fAppState = kEvaluated; 
     UpdateButtons(); 
+    DrawLimits(); 
 
 #ifdef DEBUG
     Info(__func__, "Exit fcn body"); 
@@ -440,14 +427,22 @@ void EvaluateCutFrame::HandleCanvasClicked()
             double x = canvas->cd(it->second)->AbsPixeltoX( canvas->GetEventX() );
             canvas->cd(0); 
 
-            if (fX_min != fX_min) { 
+            if (is_nan(fX_min)) { 
                 fX_min = x; 
             } else {
-                 //in this case, only the first (min) has been selected. 
-                if (fX_max != fX_max) { fX_max = x; }
+                //in this case, only the first (min) has been selected. 
+                if (is_nan(fX_max)) {
+
+                    //the new limit picked is larger than the minimum the user already picked; fX_max = x; 
+                    if (x > fX_min) { fX_max = x; }
+                    //the new limit picked is smaller than the minimum the user already picked; fX_min = x; 
+                    else            { fX_max = fX_min; fX_min = x; } 
+
+                }
                 //in this case, then both have been selected. wipe out both, and redraw them.     
                 else                  { fX_min = x; fX_max = DOUBLE_NAN; }
             }
+            
             DrawLimits(); 
             UpdateButtons(); 
         }
@@ -468,6 +463,7 @@ void EvaluateCutFrame::DrawLimits()
     //draw box limits on each histogram
     const float        fill_alpha = 0.30; 
     const unsigned int fill_color = kRed; 
+    const unsigned int line_width = (fAppState == kEvaluated) ? 2 : 1; //draw thicker lines if the fits are evaluated
     const unsigned int fill_style = 3004; //diagonal hatching
     
     const unsigned int line_color = kRed;
@@ -480,23 +476,25 @@ void EvaluateCutFrame::DrawLimits()
 
         auto y_ax = hl->hist->GetYaxis(); 
 
-        delete_drawn_object(hl->lim_low); 
+        DeleteDrawnObject(hl->lim_low); 
 
         hl->lim_low = new TLine(
             fX_min, y_ax->GetXmin(), 
             fX_min, y_ax->GetXmax() 
         );  
          
+        hl->lim_low->SetLineWidth(line_width); 
         hl->lim_low->SetLineColor(line_color); 
         hl->lim_low->Draw(); 
         
-        delete_drawn_object(hl->lim_high); 
+        DeleteDrawnObject(hl->lim_high); 
 
         hl->lim_high = new TLine(
             fX_max, y_ax->GetXmin(), 
             fX_max, y_ax->GetXmax() 
         );   
-
+        
+        hl->lim_high->SetLineWidth(line_width); 
         hl->lim_high->SetLineColor(line_color);
         hl->lim_high->Draw(); 
     }
@@ -589,6 +587,36 @@ void EvaluateCutFrame::DoReject()
     cout << "Exiting <EvaluateCutFrame::DoReject>" << endl; 
 #endif 
 } 
+//_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::DeleteDrawnObject(TObject* obj) {       
+
+#ifdef DEBUG
+    Info(__func__, "Enter fcn body"); 
+#endif 
+    auto pad = (TVirtualPad*)fEcanvas->GetCanvas(); 
+    if (!pad) {  
+        throw logic_error("in <EvaluateCutFrame::DeleteDrawnObject>: Ptr to canvas from fECanvas (2nd arg) is null");
+        return;  
+    }  
+
+    if (!obj) {
+#ifdef DEBUG
+        printf("Info in <%s>: Ptr to TObject passed is null.\n", __func__);          
+#endif
+        return; 
+    }
+
+#ifdef DEBUG
+    printf("Info in <%s>: Attepmting to delete TObject with name '%s'\n", __func__, obj->GetName());          
+#endif 
+    
+    //remove the object from the TVirtualPad (and any sub-pads recursively)
+    pad->RecursiveRemove(obj); 
+
+#ifdef DEBUG
+    Info(__func__, "Exit fcn body"); 
+#endif
+}
 //_____________________________________________________________________________________________________________________________________
 vector<EvaluateCutFrame::FitPoint_t> EvaluateCutFrame::CreatePointsFromHist(TH2D* hist) {
 
@@ -716,7 +744,7 @@ NPoly EvaluateCutFrame::FitPolynomialToFP(
 {
     using namespace ROOT::VecOps; 
 #ifdef DEBUG
-    Info("FitPolynomialToFP", "In body..."); 
+    Info(__func__, "In body..."); 
 #endif
 
     //first, let's assemble our polynomial. 
@@ -763,16 +791,17 @@ NPoly EvaluateCutFrame::FitPolynomialToFP(
 
     //something went wrong with the chi-square 
     if (coeffs.size() != n_elems) { 
-        return NPoly(0); 
+        
 #ifdef DEBUG
-        cout << "Fit failed." << endl; 
+        Info(__func__, "Chi-square it failed. returning null NPoly"); 
 #endif
+        return NPoly(0); 
     }
     //set the coeffs in our polynomial: 
     for (int i=0; i<n_elems; i++) { poly.Get_elem(i)->coeff = coeffs[i]; }
 
 #ifdef DEBUG
-    cout << "Fit succeeded." << endl; 
+    Info(__func__, "Chi-square Fit succeeded."); 
     Info("FitPolynomialToFP", "Printing polynomial..."); 
     poly.Print(); 
 #endif

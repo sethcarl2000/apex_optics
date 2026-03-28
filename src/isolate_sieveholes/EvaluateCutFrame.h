@@ -7,6 +7,7 @@
 #include <TGButton.h>
 #include <TH2D.h>
 #include <TLine.h>
+#include <TObject.h> 
 #include "PickSieveHoleApp.h"
 #include "SieveHoleData.h"
 #include <ROOT/RDataFrame.hxx>
@@ -91,6 +92,9 @@ private:
         const std::function<bool(const EventData&)>& is_inside_cut,     // the cut for events on this particular hole
         double ApexOptics::Trajectory_t::*coord                         // the coordinate we're fitting to (y, dxdz, dydz)
     ) const; 
+
+    /// @brief  Attempts to delete 'obj' from all drawn sub-pads of this application (noop when passed a nullptr -- it's fine to do.)  
+    void DeleteDrawnObject(TObject* obj); 
 
 public: 
     EvaluateCutFrame(   const TGWindow *p, 
