@@ -130,6 +130,11 @@ private:
     const char* fDrawingOption; 
     unsigned int fPalette;
 
+    //drawing ranges
+    double xsv_draw_range[2] = { -0.0675, +0.0675 }; 
+    double ysv_draw_range[2] = { -0.0350, +0.0350 }; 
+    double xfp_draw_range[2] = { -0.725, +0.725 };  
+
 public:
     PickSieveHoleApp(const TGWindow* p, 
                      UInt_t w, 
@@ -161,6 +166,29 @@ public:
     
     void HandleCanvasClick_data();    //handle the canvas being clicked (data histogram)
     void HandleCanvasClick_drawing(); //handle the canvas beign clicked (drawing histogram)
+
+    /// @brief Sets draw-range in x-sv 
+    void SetDrawRange_x(double min, double max) { xsv_draw_range[0]=min; xsv_draw_range[1]=max; }
+    /// @brief Sets draw-range in y-sv 
+    void SetDrawRange_y(double min, double max) { ysv_draw_range[0]=min; ysv_draw_range[1]=max; }
+    /// @brief Sets draw-range in x-fp
+    void SetDrawRange_xfp(double min, double max) { xfp_draw_range[0]=min; xfp_draw_range[1]=max; }
+
+    /// @return min draw range in x-sv coordinate
+    double GetDrawRange_x_min() const { return xsv_draw_range[0]; }
+    /// @return max draw range in x-sv coordinate
+    double GetDrawRange_x_max() const { return xsv_draw_range[1]; }
+    
+    /// @return min draw range in x-sv coordinate
+    double GetDrawRange_y_min() const { return ysv_draw_range[0]; }
+    /// @return max draw range in x-sv coordinate
+    double GetDrawRange_y_max() const { return ysv_draw_range[1]; }
+    
+    /// @return min draw range in x-sv coordinate
+    double GetDrawRange_xfp_min() const { return xfp_draw_range[0]; }
+    /// @return max draw range in x-sv coordinate
+    double GetDrawRange_xfp_max() const { return xfp_draw_range[1]; }
+        
 
     void UpdateButtons();     //update buttons to reflect current state
 

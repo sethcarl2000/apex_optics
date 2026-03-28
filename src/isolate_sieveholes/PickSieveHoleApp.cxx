@@ -148,8 +148,8 @@ void PickSieveHoleApp::LaunchApplication()
     fSieveHist = new TH2D(
         "h_sieve_cpy", 
         "Sieve-coordinates;dx/dz_{sv};dy/dz_{sv}", 
-        200, xsv_draw_range[0], xsv_draw_range[1], 
-        200, ysv_draw_range[0], ysv_draw_range[1]
+        200, GetDrawRange_x_min(), GetDrawRange_x_max(), 
+        200, GetDrawRange_y_min(), GetDrawRange_y_max()
     ); 
     
     for (const auto& ev : fEventData) fSieveHist->Fill( ev.Xsv.dxdz, ev.Xsv.dydz ); 
@@ -611,7 +611,7 @@ void PickSieveHoleApp::DoEvaluate()
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DoneEvaluate()
 {
-    const char* const here = "DoneEvaluate"; 
+    const char* const here = "PickSieveHoleApp::DoneEvaluate"; 
 #ifdef DEBUG
     Info(here, "Enter DoneEvaluate() body"); 
 #endif 

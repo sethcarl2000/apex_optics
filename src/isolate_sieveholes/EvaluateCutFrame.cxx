@@ -1,20 +1,24 @@
-#include "EvaluateCutFrame.h"
+// APEX headers
+#include <isolate_sieveholes/EvaluateCutFrame.h>
+#include <RMatrix.h>
+#include <NPoly.h> 
+#include <ApexOptics.h> 
+// ROOT headers
 #include <TF1.h>
 #include <TFitResult.h>
 #include <TFitResultPtr.h>
 #include <TStyle.h>
+#include <TPad.h> 
+#include <TVirtualPad.h> 
 #include <TCanvas.h>
-#include <RMatrix.h>
+#include <TObject.h> 
 #include <TBox.h>
-#include <ApexOptics.h> 
 #include <TGraphErrors.h> 
-#include <RMatrix.h> 
 #include <Math/Minimizer.h>
 #include <Math/Functor.h> 
 #include <Math/Factory.h> 
-#include <NPoly.h> 
-#include <RMatrix.h> 
 #include <ROOT/RVec.hxx>
+// stdlib headers
 #include <cmath> 
 #include <thread> 
 
@@ -23,6 +27,33 @@ using ApexOptics::Trajectory_t;
 
 namespace {
     constexpr double pi = 3.14159265359; 
+
+
+    /// @brief Given TObject passed with a unique name, remove from the list of drawn objects in the pad, then deletes object. 
+    void delete_drawn_object(TObject* obj, TVirtualPad* pad) {       
+        
+        if (!pad) { 
+            throw logic_error("in <EvaluateCutFrame -> delete_drawn_object>: Ptr to TVirtualPad (2nd arg) is null");
+            return;  
+        }  
+
+        if (!obj) {
+#ifdef DEBUG
+            printf("Info in <%s>: Ptr to TObject passed is null.\n", __func__);          
+#endif
+            return; 
+        }
+
+#ifdef DEBUG
+        printf("Info in <%s>: Attepmting to delete TObject with name '%s'\n", __func__, obj->GetName());          
+#endif 
+        
+        //remove the object from the TVirtualPad (and any sub-pads recursively)
+        pad->RecursiveRemove(obj); 
+
+        //delete the object itself 
+        if (obj) delete obj; 
+    }
 }
 
 EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p, 
@@ -37,14 +68,18 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     : TGMainFrame( p, 1400, 800 ), 
     fParent{_parent},
     fRDF{nullptr}, 
+    fData{&data},
     fSelectedSieveHole{_hd}, 
     fFpcoord_cut_width{fp_cut_width}
 {   
-    const char* const here ="EvaluateCutFrame(constructor)"; 
+    const char* const here = "EvaluateCutFrame::constructor"; 
 
 #ifdef DEBUG
-    Info(here, "In constructor body"); 
+    Info(here, "Entering constructor body"); 
 #endif
+
+    // in this 'app state', we are picking limits to evaluate the fits within  
+    fAppState = kNone; 
 
     const int polynomial_degree =3; 
 
@@ -65,16 +100,16 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     const double sin_theta  = sin( fSelectedSieveHole->cut_angle * pi / 180. );  
 
     fHist_holes = new TH2D("h_xy_temp", "", 
-        75, xsv_draw_range[0], xsv_draw_range[1],
-        75, ysv_draw_range[0], ysv_draw_range[1] 
+        75, fParent->GetDrawRange_x_min(), fParent->GetDrawRange_x_max(),
+        75, fParent->GetDrawRange_y_min(), fParent->GetDrawRange_y_max() 
     ); 
-    fY_fp    = HistAndLimit(new TH2D("h_y_fp",    "y_fp vs x_fp",     75, xfp_draw_range[0], xfp_draw_range[1], 75, -0.070, +0.055)); 
-    fDxdz_fp = HistAndLimit(new TH2D("h_dxdz_fp", "dx/dz_fp vs x_fp", 75, xfp_draw_range[0], xfp_draw_range[1], 75, -0.035, +0.025)); 
-    fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 75, xfp_draw_range[0], xfp_draw_range[1], 75, -0.060, +0.040)); 
+    fY_fp    = HistAndLimit(new TH2D("h_y_fp",    "y_fp vs x_fp",     75, fParent->GetDrawRange_xfp_min(), fParent->GetDrawRange_xfp_max(), 75, -0.070, +0.055)); 
+    fDxdz_fp = HistAndLimit(new TH2D("h_dxdz_fp", "dx/dz_fp vs x_fp", 75, fParent->GetDrawRange_xfp_min(), fParent->GetDrawRange_xfp_max(), 75, -0.035, +0.025)); 
+    fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 75, fParent->GetDrawRange_xfp_min(), fParent->GetDrawRange_xfp_max(), 75, -0.060, +0.040)); 
     
 
     /// @return 'true' if a given event is inside the sieve-coordinate cut, and 'false' if not. 
-    auto is_inside_cut = [cos_theta, sin_theta, cut_width, cut_height, cut_x, cut_y](const EventData& ev)
+    fCutFcn = [cos_theta, sin_theta, cut_width, cut_height, cut_x, cut_y](const EventData& ev)
     {
         //now, only include events which are inside our 'cut ellipse' 
         double x = ev.Xsv.dxdz - cut_x; 
@@ -86,13 +121,12 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
         if ( u*u + v*v < 1. ) { return true; } else { return false; }
     };
     //_________________________________________________________________________________________
-    
 
-    for (const auto& ev : data) {
+    for (const auto& ev : *fData) {
 
         fHist_holes->Fill( ev.Xsv.dxdz, ev.Xsv.dydz );
 
-        if (is_inside_cut(ev)) {
+        if (fCutFcn(ev)) {
             fY_fp.hist   ->Fill( ev.Xfp.x, ev.Xfp.y );
             fDxdz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
             fDydz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dydz ); 
@@ -100,7 +134,7 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     }
 
 #ifdef DEBUG
-    printf("Number of events in cut: %zi\n", data.size()); 
+    printf("Number of events in cut: %zi\n", fData->size()); 
 #endif 
 
     //create the histograms
@@ -125,47 +159,15 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     circ->SetLineColor(kRed); 
     circ->SetLineWidth(2); 
     circ->Draw(); 
-
-    //draws the results of the fits on the tcanavs
-    auto DrawFitsOnCanvas = [this](NPoly poly)
-    {   
-        auto fcn_poly = [poly](double *x, double *par){
-            return poly.Eval({x[0], par[0]}); 
-        };
-        auto tf1_poly = new TF1("poly", fcn_poly, this->fXfp_draw_min, this->fXfp_draw_max, 1);
-
-        tf1_poly->SetLineWidth(1); 
-
-        //draw the minimum raster value of our fit
-        tf1_poly->SetParameter(0, -1.); 
-        tf1_poly->SetLineColor(kRed); 
-        tf1_poly->DrawCopy("SAME");
-
-        //draw the maximum raster value of our fit
-        tf1_poly->SetParameter(0, +1.);
-        tf1_poly->SetLineColor(kBlack); 
-        tf1_poly->DrawCopy("SAME");
-
-        delete tf1_poly; 
-    }; 
-
-    //get the min/max of the raster, and split it up into 'n_raster_partitions'  
-    cout << "Fitting polynomials___{ y... " << flush; 
-    auto poly_y_fp    = FitPolynomialToFP(data, is_inside_cut, &Trajectory_t::y); 
-    cout << "dx/dz... " << flush; 
-    auto poly_dxdz_fp = FitPolynomialToFP(data, is_inside_cut, &Trajectory_t::dxdz); 
-    cout << "dy/dz... " << flush; 
-    auto poly_dydz_fp = FitPolynomialToFP(data, is_inside_cut, &Trajectory_t::dydz); 
-    cout << "}. done"<< endl; 
     
     
 #ifdef DEBUG
     cout << "Cut histogram drawn" << endl;  
 #endif
     //gStyle->SetOptStat(0); 
-    canv->cd(2); fY_fp.hist     ->Draw(draw_option); DrawFitsOnCanvas(poly_y_fp); 
-    canv->cd(3); fDxdz_fp.hist  ->Draw(draw_option); DrawFitsOnCanvas(poly_dxdz_fp); 
-    canv->cd(4); fDydz_fp.hist  ->Draw(draw_option); DrawFitsOnCanvas(poly_dydz_fp); 
+    canv->cd(2); fY_fp.hist     ->Draw(draw_option); 
+    canv->cd(3); fDxdz_fp.hist  ->Draw(draw_option);
+    canv->cd(4); fDydz_fp.hist  ->Draw(draw_option);
 
 #ifdef DEBUG
     cout << "FP-histograms drawn" << endl; 
@@ -175,10 +177,6 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     canv->Update(); 
     canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked()"); 
 
-    fSelectedSieveHole->y_fp    = poly_y_fp; 
-    fSelectedSieveHole->dxdz_fp = poly_dxdz_fp; 
-    fSelectedSieveHole->dydz_fp = poly_dydz_fp; 
-
     fFrame_canv->AddFrame(fEcanvas, new TGLayoutHints(kLHintsExpandX | kLHintsExpandY, 10,10,10,10)); 
 
     AddFrame(fFrame_canv, new TGLayoutHints(kLHintsExpandX | kLHintsExpandY, 10,10)); 
@@ -186,14 +184,25 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     fFrame_buttons = new TGHorizontalFrame(this, 1600, 50); 
 
     //Reject button
+    // the Reject button is active in every state. 
+    fButton_Reject = new TGTextButton(fFrame_buttons, "&Reject", 1); 
+    fButton_Reject->Connect("Clicked()", "EvaluateCutFrame", this, "DoReject()"); 
+    fFrame_buttons->AddFrame(fButton_Reject, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5));
+
+    //Save button
     fButton_Save = new TGTextButton(fFrame_buttons, "&Save", 1); 
     fButton_Save->Connect("Clicked()", "EvaluateCutFrame", this, "DoSave()"); 
     fFrame_buttons->AddFrame(fButton_Save, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)); 
+    
+    //Fit button
+    fButton_Fit = new TGTextButton(fFrame_buttons, "&Fit", 1); 
+    fButton_Fit->Connect("Clicked()", "EvaluateCutFrame", this, "DoFit()"); 
+    fFrame_buttons->AddFrame(fButton_Fit, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5));
 
-    //Reject button
-    fButton_Reject = new TGTextButton(fFrame_buttons, "&Reject", 1); 
-    fButton_Reject->Connect("Clicked()", "EvaluateCutFrame", this, "DoReject()"); 
-    fFrame_buttons->AddFrame(fButton_Reject, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5)); 
+    //Reset Fits button
+    fButton_ResetFits = new TGTextButton(fFrame_buttons, "&Reset Fits", 1); 
+    fButton_ResetFits->Connect("Clicked()", "EvaluateCutFrame", this, "DoResetFits()"); 
+    fFrame_buttons->AddFrame(fButton_ResetFits, new TGLayoutHints(kLHintsRight | kLHintsCenterY, 20, 10, 5, 5));
 
     //connect the exit of this app to the 'DoneEvaluate' 
     Connect("CloseWindow()", "PickSieveHoleApp", fParent, "DoneEvaluate()"); 
@@ -205,16 +214,192 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     MapWindow();
     Resize(GetDefaultSize()); 
     MapSubwindows(); 
-
+        
+    // in this 'app state', we are picking limits to evaluate the fits within  
+    fAppState = kPickLimits; 
     UpdateButtons(); 
+
+
 
 #ifdef DEBUG 
     Info(here, "Exiting constructor"); 
 #endif 
 }   
 //_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::DoResetFits()
+{
+#ifdef DEBUG
+    Info(__func__, "Enter Fcn body"); 
+#endif
+
+    if (fAppState != kEvaluated) {
+        throw logic_error("in <EvaluateCutFrame::DoResetFits>: "
+            "Call to 'DoResteFits' made when application is not in state 'kEvaluated'; this should not be possible."
+        ); 
+        return; 
+    }
+    
+    //Get a ptr to the canvas
+    auto canv = fEcanvas->GetCanvas(); 
+    if (!canv) {
+        throw logic_error("in <EvaluateCutFrame::DoResetFits>: "
+            "ptr to canvas is null"
+        ); 
+        return; 
+    }
+
+#ifdef DEBUG
+    Info(__func__, "Wiping polynomials"); 
+#endif
+    //wipe the polynomials
+    fSelectedSieveHole->y_fp    = NPoly(2); 
+    fSelectedSieveHole->dxdz_fp = NPoly(2); 
+    fSelectedSieveHole->dydz_fp = NPoly(2); 
+
+#ifdef DEBUG
+    Info(__func__, "Deleting drawn fits (if they exist)"); 
+#endif
+    //delete drawn fits
+    delete_drawn_object(fY_fp.fit_hi,    canv); 
+    delete_drawn_object(fY_fp.fit_lo,    canv); 
+    delete_drawn_object(fDxdz_fp.fit_hi, canv); 
+    delete_drawn_object(fDxdz_fp.fit_lo, canv); 
+    delete_drawn_object(fDydz_fp.fit_hi, canv); 
+    delete_drawn_object(fDydz_fp.fit_lo, canv); 
+
+#ifdef DEBUG
+    Info(__func__, "Flushing the canvas (and all sub-pads)"); 
+#endif
+    canv->Modified(); 
+    canv->Update(); 
+
+#ifdef DEBUG
+    Info(__func__, "Setting fAppState = kPickLimits, and updating buttons"); 
+#endif
+
+    //update the buttons
+    fAppState = kPickLimits; 
+    UpdateButtons(); 
+
+#ifdef DEBUG
+    Info(__func__, "End Fcn body"); 
+#endif
+}
+//_____________________________________________________________________________________________________________________________________
+void EvaluateCutFrame::DoFit()
+{
+#ifdef DEBUG
+    Info(__func__, "Enter fcn body"); 
+#endif  
+
+    if (fAppState != kPickLimits) {
+        throw logic_error("in <EvaluateCutFrame::DoFit>: "
+            "Call to 'DoFit' made when application is not in state 'kPickLimits'; this should not be possible."
+        ); 
+        return; 
+    }
+
+    if (is_nan(fX_min) || is_nan(fX_max)) {
+        throw logic_error("in <EvaluateCutFrame::DoFit>: "
+            "One or both x_fp limits are NaN; it should not be possible to execute fit in this program state"
+        );
+        return;
+    } 
+
+    //now, we can do the fits.
+    TCanvas *canv = fEcanvas->GetCanvas(); 
+
+    if (!canv) return; 
+
+    //disable other buttons while we're fitting
+#ifdef DEBUG
+    Info(__func__, "Setting fAppState to 'kNone"); 
+#endif
+    fAppState = kNone; 
+    UpdateButtons(); 
+
+
+    //draws the results of the fits on the tcanavs
+    //_______________________________________________________________________________________________
+    auto DrawFitsOnCanvas = [this](NPoly poly, HistAndLimit* hl, TVirtualPad* vpad)
+    {   
+        vpad->cd(); 
+
+        auto fcn_poly = [poly](double *x, double *par){
+            return poly.Eval({x[0], par[0]}); 
+        };
+        auto tf1_poly = new TF1("poly", fcn_poly, fX_min, fX_max, 1);
+
+        tf1_poly->SetLineWidth(1); 
+
+        auto& fit_lo = hl->fit_lo; 
+        auto& fit_hi = hl->fit_hi;
+
+        //draw the minimum raster value of our fit
+        tf1_poly->SetParameter(0, -1.); 
+        tf1_poly->SetLineColor(kRed); 
+
+        delete_drawn_object(fit_lo, vpad, ); 
+        fit_lo = (TF1*)tf1_poly->Clone(Form("%s_fit_lo",hl->hist->GetName()));
+        fit_lo->Draw("SAME");
+
+        //draw the maximum raster value of our fit
+        tf1_poly->SetParameter(0, +1.);
+        tf1_poly->SetLineColor(kBlack); 
+
+        delete_drawn_object(fit_hi, vpad); 
+        fit_hi = (TF1*)tf1_poly->Clone(Form("%s_fit_hi",hl->hist->GetName()));
+        fit_hi->Draw("SAME");
+
+        delete tf1_poly; 
+    }; 
+    //______________________________________________________________________________________________
+
+    //these polynomials map from {x_fp, y_hcs} => {focal plane variables}
+    NPoly poly_y_fp(2), poly_dxdz_fp(2), poly_dydz_fp(2); 
+
+    //get the min/max of the raster, and split it up into 'n_raster_partitions'  
+    cout << "Fitting polynomials___{ y... " << flush; 
+
+    poly_y_fp    = FitPolynomialToFP(fCutFcn, &Trajectory_t::y); 
+    fSelectedSieveHole->y_fp    = poly_y_fp; 
+    DrawFitsOnCanvas(poly_y_fp,    &fY_fp,      canv->cd(2));       
+    canv->Modified(); canv->Update();  
+    
+    cout << "dx/dz... " << flush; 
+    
+    poly_dxdz_fp = FitPolynomialToFP(fCutFcn, &Trajectory_t::dxdz); 
+    fSelectedSieveHole->dxdz_fp = poly_dxdz_fp; 
+    DrawFitsOnCanvas(poly_dxdz_fp, &fDxdz_fp,   canv->cd(3)); 
+    canv->Modified(); canv->Update();  
+    
+    cout << "dy/dz... " << flush; 
+    
+    poly_dydz_fp = FitPolynomialToFP(fCutFcn, &Trajectory_t::dydz); 
+    fSelectedSieveHole->dydz_fp = poly_dydz_fp; 
+    DrawFitsOnCanvas(poly_dydz_fp, &fDydz_fp,   canv->cd(4)); 
+    canv->Modified(); canv->Update();  
+    
+    cout << "}. done"<< endl; 
+
+#ifdef DEBUG
+    Info(__func__, "Setting fAppState to 'kEvaluated'"); 
+#endif
+
+    fAppState = kEvaluated; 
+    UpdateButtons(); 
+
+#ifdef DEBUG
+    Info(__func__, "Exit fcn body"); 
+#endif
+}
+//_____________________________________________________________________________________________________________________________________
+//_____________________________________________________________________________________________________________________________________
+//_____________________________________________________________________________________________________________________________________
 void EvaluateCutFrame::HandleCanvasClicked()
 {
+    if (fAppState != kPickLimits) return; 
+
     //get canvas event information
     TCanvas* canvas = fEcanvas->GetCanvas();
     if (!canvas) return;
@@ -276,6 +461,8 @@ void EvaluateCutFrame::DrawLimits()
         throw logic_error("in <EvaluateCutFrame::DrawLimits>: canvas from 'fEcanvas' is null.");
         return; 
     }
+    
+    if (is_nan(fX_min) || is_nan(fX_max)) return; 
 
     //determine whether or not to draw the limits
     //draw box limits on each histogram
@@ -291,28 +478,23 @@ void EvaluateCutFrame::DrawLimits()
 
         canv->cd(++i_canv); 
 
-        if (fX_min != fX_min || fX_max != fX_max) return; 
-            
         auto y_ax = hl->hist->GetYaxis(); 
 
-        if (hl->lim_low) delete hl->lim_low; 
+        delete_drawn_object(hl->lim_low); 
+
         hl->lim_low = new TLine(
-            fX_min, 
-            y_ax->GetXmin(), 
-            fX_min,
-            y_ax->GetXmax() 
+            fX_min, y_ax->GetXmin(), 
+            fX_min, y_ax->GetXmax() 
         );  
          
         hl->lim_low->SetLineColor(line_color); 
         hl->lim_low->Draw(); 
-            
+        
+        delete_drawn_object(hl->lim_high); 
 
-        if (hl->lim_high) delete hl->lim_high; 
         hl->lim_high = new TLine(
-            fX_max, 
-            y_ax->GetXmin(), 
-            fX_max,
-            y_ax->GetXmax() 
+            fX_max, y_ax->GetXmin(), 
+            fX_max, y_ax->GetXmax() 
         );   
 
         hl->lim_high->SetLineColor(line_color);
@@ -326,20 +508,45 @@ void EvaluateCutFrame::DrawLimits()
 //_____________________________________________________________________________________________________________________________________
 void EvaluateCutFrame::UpdateButtons()
 {
-    if (fX_min == fX_min && fX_max == fX_max) { 
-        fButton_Save->MapWindow(); 
-    } else { 
-        fButton_Save->UnmapWindow(); 
+    //first -- unmap all buttons, *except* the reject button (the only button which ought to be usable in any state)
+    fButton_Save     ->UnmapWindow(); 
+    fButton_Fit      ->UnmapWindow(); 
+    fButton_ResetFits->UnmapWindow(); 
+    fButton_Reject   ->UnmapWindow();  
+    
+    fButton_Reject->MapWindow(); 
+
+    switch (fAppState) {
+
+        case kNone : break; 
+
+        case kPickLimits : {
+            
+            //check if valid limits have been picked. if not, only the 'reject button should be available 
+            if (is_nan(fX_min) || is_nan(fX_max)) break;
+            
+            //otherwise, we're ready to fit
+            fButton_Fit->MapWindow(); 
+            break; 
+        }
+
+        case kEvaluated : {
+
+            //if valid limits have been picked. 
+            fButton_ResetFits->MapWindow();
+            fButton_Save->MapWindow(); 
+            break; 
+        }
     }
 }
-//_____________________________________________________________________________________________________________________________________
+//__________________________________________________e___________________________________________________________________________________
 //_____________________________________________________________________________________________________________________________________
 void EvaluateCutFrame::DoSave() 
 {
     if (fSelectedSieveHole) {
         fSelectedSieveHole->is_evaluated = true; 
 
-        if (fX_max != fX_max || fX_min != fX_min) {
+        if (is_nan(fX_min) || is_nan(fX_max)) {
             throw logic_error("in <EvaluateCutFrame::DoSave>: fX_min and/or fX_max is NaN, which should not be possible.");
             return; 
         }
@@ -487,7 +694,8 @@ void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t
     char name[200]; sprintf(name, "%s_poly", hist->GetName()); 
 
     if (!points.empty()) {
-        auto f1_poly = new TF1(name, buff, xfp_draw_range[0], xfp_draw_range[1]); 
+
+        auto f1_poly = new TF1(name, buff, fParent->GetDrawRange_xfp_min(), fParent->GetDrawRange_xfp_max()); 
         f1_poly->SetLineColor(kRed); 
         f1_poly->SetLineWidth(2); 
         int i=0; for (double coeff : poly) f1_poly->SetParameter(i++, coeff); 
@@ -502,7 +710,6 @@ void EvaluateCutFrame::Draw_Hist_Points_Poly(TH2D* hist, const vector<FitPoint_t
 }
 //_____________________________________________________________________________________________________________________________________
 NPoly EvaluateCutFrame::FitPolynomialToFP(
-    const vector<EventData>& data, 
     const function<bool(const EventData&)>& is_inside_cut, 
     double Trajectory_t::*coord
 ) const 
@@ -531,10 +738,13 @@ NPoly EvaluateCutFrame::FitPolynomialToFP(
     RVec<double> B(n_elems, 0.);
     RMatrix A(n_elems,n_elems, 0.); 
     
-    for (const auto& event : data) {
+    for (const auto& event : *fData) {
 
         //see if this event is inside the cut
         if (is_inside_cut(event)==false) continue; 
+
+        //check to see if this even is inside the x_fp cut
+        if (event.Xfp.x < fX_min || event.Xfp.x > fX_max ) continue; 
 
         auto&& Xmu = poly.Eval_noCoeff({event.Xfp.x, event.raster_index}); 
         
@@ -575,14 +785,14 @@ NPoly EvaluateCutFrame::FitPolynomialToFP(
     const double objective_sigma = 0.0025; 
 
     //____________________________________________________________________________________________
-    auto objective_fcn = [n_elems,objective_sigma,&poly_objective,&data,&is_inside_cut,coord](const double *par)
+    auto objective_fcn = [n_elems,objective_sigma,&poly_objective,&is_inside_cut,coord,this](const double *par)
     {
         //set the parameters of the polynomal
         for (int i=0; i<n_elems; i++) poly_objective.Get_elem(i)->coeff = par[i]; 
 
         double val=0.; 
 
-        for (const auto& event : data) {
+        for (const auto& event : *fData) {
 
             //check if this event is inside the cut
             if (is_inside_cut(event)==false) continue;  

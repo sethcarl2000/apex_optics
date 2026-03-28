@@ -18,6 +18,15 @@
 
 class EvaluateCutFrame : public TGMainFrame {
 private: 
+
+    //valid states of the app
+    enum AppState {
+        kNone = 0,      //startup of the app / intermediate state (disables buttons)
+        kPickLimits,    //picking limits for fitting on the focal-plane plots
+        kEvaluated,     //fits evaluated, ready to accept / reject 
+    };
+    AppState fAppState{kNone}; 
+
     TGHorizontalFrame *fFrame_canv; 
     TRootEmbeddedCanvas *fEcanvas; 
 
@@ -25,11 +34,16 @@ private:
 
     TGTextButton *fButton_Save; 
     TGTextButton *fButton_Reject; 
+    TGTextButton *fButton_Fit; 
+    TGTextButton *fButton_ResetFits; 
 
     struct HistAndLimit {
         
         TH2D *hist{nullptr}; 
         TLine *lim_low{nullptr}, *lim_high{nullptr}; 
+        
+        TF1 *fit_lo; 
+        TF1 *fit_hi; 
 
         HistAndLimit(TH2D* _hist=nullptr) : hist{_hist} {}; 
 
@@ -53,6 +67,12 @@ private:
 
     SieveHoleData *fSelectedSieveHole{nullptr}; 
 
+    //the function this points to should return 'true' if a given event is inside the cut, and 'false' otherwise
+    std::function<bool(const EventData&)> fCutFcn; 
+
+    //data for all events 
+    const std::vector<EventData>* fData;  
+
     //type of canvas event passed to 'fEventType' 
     int fEventType{-1}; 
 
@@ -68,7 +88,6 @@ private:
     double fX_min{DOUBLE_NAN}, fX_max{DOUBLE_NAN}; 
 
     NPoly FitPolynomialToFP(
-        const std::vector<EventData>& data,                             // input all events for this wire-run
         const std::function<bool(const EventData&)>& is_inside_cut,     // the cut for events on this particular hole
         double ApexOptics::Trajectory_t::*coord                         // the coordinate we're fitting to (y, dxdz, dydz)
     ) const; 
@@ -89,6 +108,8 @@ public:
     //slots for button signals
     void DoSave(); 
     void DoReject(); 
+    void DoFit();
+    void DoResetFits();  
     
     void HandleCanvasClicked(); 
     

@@ -26,10 +26,10 @@ enum ECanvasEventType {
     kLeaveObj=53 
 };  
 
-constexpr double xsv_draw_range[] = { -0.0675, +0.0675 }; 
-constexpr double ysv_draw_range[] = { -0.0350, +0.0350 }; 
 
-constexpr double xfp_draw_range[] = { -0.725, +0.725 };  
+/// @param x arg 
+/// @return 'true' if arg is nan, 'false' if not
+inline bool is_nan(double arg) { return arg != arg; }
 
 struct FPcoordPolynomial {
     ROOT::RVec<double> poly{};
