@@ -81,7 +81,7 @@ public:
                     const char* branch_vertical="dydz_sv"     
                     ); 
 
-    ~SaveOutputFrame() { Cleanup(); } 
+    ~SaveOutputFrame(); 
 
     void DoSave(); 
     void DoExit(); 

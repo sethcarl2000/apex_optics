@@ -31,6 +31,27 @@
 class PickSieveHoleApp : public TGMainFrame {
 private:
 
+    //pointer to the (one) singleton instance of this app 
+    static PickSieveHoleApp *fInstance; 
+
+    enum AppState : int32_t {
+
+        kNone = 0, 
+        
+        kAppDisabled  = 1 << 0, // if this bitflag is active, then user interactivity is disabled
+        
+        kHoleSelected   = 1 << 1, // if this bitflag is active, then a sieve-hole has been selected 
+
+        kEvaluateCutFrame = (kAppDisabled | kHoleSelected | (1 << 2)), // The 'EvaluateCutFrame' app is active; this app is disabled 
+
+        kSelectHole             = (1 << 3), // Selecting new sieve-hole (not yet selected)
+        kAlreadyEvaluated       = (kHoleSelected | 1 << 4), // selected a hole which has already been evaluated 
+        kPickCutOnPlot          = (kHoleSelected | 1 << 5), // selected a sieve hole which has not been evaluated yet
+        kReadyToEvaluate        = (kHoleSelected | 1 << 6)
+    }; 
+    AppState fAppState{kNone}; 
+    
+
     UInt_t fWindow_width, fWindow_height; 
     const TGWindow* fptr_TGWindow{nullptr}; 
     std::string fPath_infile; 
@@ -43,16 +64,28 @@ private:
 
     TGHorizontalFrame *fFrame_PickHoleButtons; 
     TGHorizontalFrame *fFrame_numbers; 
+    
+    
+    ApexOptics::OpticsTarget_t fTarget; //the optics target we're looking at 
+    
+    
     //buttons, sorted by the 'status' in which they appear
     TGTextButton*  fButton_Exit;     //Exit
 
-    ApexOptics::OpticsTarget_t fTarget; //the optics target we're looking at 
-    
     //additional buttons when a hole is picked on the plot
     TGTextButton*  fButton_Evaluate; //evaluate this hole
 
+    //button which appears when a hole is picked which has already been evaluated
+    TGTextButton*  fButton_Delete;   //delete this hole which has already been evaluated
+
+    //button to reset drawn plots
+    TGTextButton*  fButton_ResetPlots; 
+    
+
     //label for the currently selected hole
     TGLabel* fLabel_selectedHole; 
+
+
 
     TGNumberEntry* fNumber_cutWidth; 
     TGLabel*       fLabel_cutWidth;  
@@ -69,8 +102,6 @@ private:
     const double fCutAngle_default =  0.; //units: degrees
     const double fCutAngle_max     = 30.; //units: degrees
 
-    //button which appears when a hole is picked which has already been evaluated
-    TGTextButton* fButton_Delete;   //delete this hole which has already been evaluated
     
     //entering a file path in a text window*/ 
     TGTextButton* fButton_Save_Output; 
@@ -135,6 +166,9 @@ private:
     double ysv_draw_range[2] = { -0.0350, +0.0350 }; 
     double xfp_draw_range[2] = { -0.725, +0.725 };  
 
+    /// @brief  Attempts to delete 'obj' from all drawn sub-pads of this application (noop when passed a nullptr -- it's fine to do.)  
+    void DeleteDrawnObject(TObject* obj); 
+
 public:
     PickSieveHoleApp(const TGWindow* p, 
                      UInt_t w, 
@@ -152,17 +186,24 @@ public:
 
     //add an optics model to use with the reconstruction
     void SetOpticsModel(const ModularOpticsModel* model) { fOpticsModel=model; }; 
+
+    /// @return ptr to singleton instance of PickSieveHoleApp
+    static PickSieveHoleApp* Instance() { return fInstance; } 
     
     ~PickSieveHoleApp();
     
     void CloseWindow();     //close the window
     void DoExit();          //exit button (exits)
     void WriteOutput(); 
+    void DoneWriteOutput(); 
+
 
     void DoEvaluate();        //execute the evaluation loop for the selected sievehole
     void DoneEvaluate();      //this is executed upon exiting the EvaluateCutApp 
 
     void DoDelete();          //delete the sieve-hole which is currently selected 
+
+    void DoResetPlots();      //reset and redraw all plots
     
     void HandleCanvasClick_data();    //handle the canvas being clicked (data histogram)
     void HandleCanvasClick_drawing(); //handle the canvas beign clicked (drawing histogram)

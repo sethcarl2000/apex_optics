@@ -20,6 +20,8 @@
 class EvaluateCutFrame : public TGMainFrame {
 private: 
 
+    PickSieveHoleApp* fParent; 
+
     //valid states of the app
     enum AppState {
         kNone = 0,      //startup of the app / intermediate state (disables buttons)
@@ -62,8 +64,6 @@ private:
 
     const double fFpcoord_cut_width; 
 
-    PickSieveHoleApp *fParent; 
-
     ROOT::RDF::RNode *fRDF{nullptr}; 
 
     SieveHoleData *fSelectedSieveHole{nullptr}; 
@@ -98,7 +98,6 @@ private:
 
 public: 
     EvaluateCutFrame(   const TGWindow *p, 
-                        PickSieveHoleApp *_parent, 
                         const std::vector<EventData>&data, 
                         SieveHoleData *_hd,
                         const double fp_cut_width, 

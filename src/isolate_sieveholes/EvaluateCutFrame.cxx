@@ -31,7 +31,6 @@ namespace {
 }
 
 EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p, 
-                                    PickSieveHoleApp *_parent, 
                                     const vector<EventData>& data, 
                                     SieveHoleData *_hd,
                                     const double fp_cut_width, 
@@ -40,13 +39,18 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
                                     const char* draw_option,
                                     const unsigned int palette )
     : TGMainFrame( p, 1400, 800 ), 
-    fParent{_parent},
     fRDF{nullptr}, 
     fData{&data},
     fSelectedSieveHole{_hd}, 
     fFpcoord_cut_width{fp_cut_width}
 {   
     const char* const here = "EvaluateCutFrame::constructor"; 
+
+    fParent = PickSieveHoleApp::Instance(); 
+    if (!fParent) {
+        Error(__func__, "static ptr to singleton instance of 'PickSieveHoleApp' is null... something has gone terribly wrong here."); 
+        return; 
+    }
 
 #ifdef DEBUG
     Info(here, "Entering constructor body"); 

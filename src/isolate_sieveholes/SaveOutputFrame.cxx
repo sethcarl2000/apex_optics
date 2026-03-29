@@ -1,8 +1,9 @@
 #include "SaveOutputFrame.h"
+#include <isolate_sieveholes/PickSieveHoleApp.h>
 #include <ROOT/RDataFrame.hxx>
 #include <TParameter.h>
 #include <string> 
-#include <cmath> 
+#include <cmath>
 #include <optional>
 #include <ApexOptics.h> 
 #include <TRandom3.h> 
@@ -308,7 +309,15 @@ void SaveOutputFrame::DoSave()
     DoExit(); 
 }
 //_________________________________________________________________________________________________________________________________
-void SaveOutputFrame::DoExit() { CloseWindow(); }
 //_________________________________________________________________________________________________________________________________
+SaveOutputFrame::~SaveOutputFrame() { 
+    //let the pick sieve-hole app know that our business is done 
+    auto main_app = PickSieveHoleApp::Instance(); 
+    if (main_app) main_app->DoneWriteOutput(); 
+    Cleanup(); 
+}
+//_________________________________________________________________________________________________________________________________
+void SaveOutputFrame::DoExit() { CloseWindow(); }
+//____________________________________________________________ _____________________________________________________________________
 
 ClassImp(SaveOutputFrame); 
