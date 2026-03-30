@@ -648,16 +648,21 @@ void PickSieveHoleApp::DoEvaluate()
         fCurrentWindow = kWindow_EvalSieveHole; 
     }
     
-    new EvaluateCutFrame(
-        gClient->GetRoot(), 
-        fEventData, 
-        fSelectedSieveHole, 
-        fFpcoord_cut_width, 
-        "dxdz_sv", "dydz_sv", "col", 
-        kBird
-    );
-    
     fAppState = kEvaluateCutFrame; 
+
+    //see if an EvaluateCutFrame app already exists. if not, let's make a new one. 
+    if (EvaluateCutFrame::Instance()==nullptr) {
+
+        new EvaluateCutFrame(
+            gClient->GetRoot(), 
+            fEventData
+        );
+    }
+
+    //tell the evaluate cut frame app to evaluate this sieve-hole 
+    EvaluateCutFrame::Instance()->EvaluateCut(
+        fSelectedSieveHole
+    );
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DoneEvaluate()
@@ -841,15 +846,15 @@ void PickSieveHoleApp::WriteOutput()
     fAppState = AppState{fAppState | kAppDisabled}; 
 
     new SaveOutputFrame(
-            gClient->GetRoot(), 
-            900, 500,  
-            fSieveHoleData,
-            fRDF,
-            Get_IsRHRS(),
-            GetReactVertex(),
-            fRastMin, fRastMax, 
-            fFpcoord_cut_width
-        );
+        gClient->GetRoot(), 
+        900, 500,  
+        fSieveHoleData,
+        fRDF,
+        Get_IsRHRS(),
+        GetReactVertex(),
+        fRastMin, fRastMax, 
+        fFpcoord_cut_width
+    );
 }
 //_____________________________________________________________________________________________________________________________________
 void PickSieveHoleApp::DoneWriteOutput()

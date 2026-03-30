@@ -20,7 +20,14 @@
 class EvaluateCutFrame : public TGMainFrame {
 private: 
 
+    //ptr to singleton instance of EvaluateCutFrame
+    static EvaluateCutFrame *fInstance; 
+
     PickSieveHoleApp* fParent; 
+
+    //some drawing options
+    std::string fBranch_x, fBranch_y, fDrawOption; 
+    unsigned int fPalette; 
 
     //valid states of the app
     enum AppState {
@@ -54,17 +61,11 @@ private:
             if (lim_low)  delete lim_low; 
             if (lim_high) delete lim_high; 
         }
-
-        void DrawLim_low (double val);
-        void DrawLim_high(double val);  
     }; 
     TH2D *fHist_holes;
     //*fHist_yfp, *fHist_dxdzfp, *fHist_dydzfp; 
     HistAndLimit fY_fp, fDxdz_fp, fDydz_fp; 
 
-    const double fFpcoord_cut_width; 
-
-    ROOT::RDF::RNode *fRDF{nullptr}; 
 
     SieveHoleData *fSelectedSieveHole{nullptr}; 
 
@@ -96,15 +97,27 @@ private:
     /// @brief  Attempts to delete 'obj' from all drawn sub-pads of this application (noop when passed a nullptr -- it's fine to do.)  
     void DeleteDrawnObject(TObject* obj); 
 
+    /// @brief  Cleans up all data from histograms
+    void ClearHistograms(); 
+
 public: 
-    EvaluateCutFrame(   const TGWindow *p, 
-                        const std::vector<EventData>&data, 
-                        SieveHoleData *_hd,
-                        const double fp_cut_width, 
-                        const char* branch_x="dxdz_sv", 
-                        const char* branch_y="dydz_sv", 
-                        const char* draw_option="col2",
-                        const unsigned int palette=kBird    );
+    
+    EvaluateCutFrame(   
+        const TGWindow *p, 
+        const std::vector<EventData>&data, 
+        const char* branch_x="dxdz_sv", 
+        const char* branch_y="dydz_sv", 
+        const char* draw_option="col",
+        const unsigned int palette=kBird    
+    );
+
+    void EvaluateCut(
+        SieveHoleData *_hd
+    );  
+
+    //access to the singleton-instance of EvaluateCutFrame.
+    //creation of the singleton instance (for the first time) is managed by PickSieveHoleApp 
+    static EvaluateCutFrame *Instance() { return fInstance; }; 
      
     ~EvaluateCutFrame(); 
 

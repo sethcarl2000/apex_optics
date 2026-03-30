@@ -30,20 +30,29 @@ namespace {
 
 }
 
+
+
+EvaluateCutFrame* EvaluateCutFrame::fInstance = nullptr; 
+
+//____________________________________________________________________________________________________________________________
+//____________________________________________________________________________________________________________________________
+//____________________________________________________________________________________________________________________________
 EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p, 
-                                    const vector<EventData>& data, 
-                                    SieveHoleData *_hd,
-                                    const double fp_cut_width, 
+                                    const vector<EventData>& data,
                                     const char* branch_x, 
                                     const char* branch_y, 
                                     const char* draw_option,
                                     const unsigned int palette )
-    : TGMainFrame( p, 1400, 800 ), 
-    fRDF{nullptr}, 
-    fData{&data},
-    fSelectedSieveHole{_hd}, 
-    fFpcoord_cut_width{fp_cut_width}
-{   
+    : fData{&data}, 
+    fBranch_x{branch_x}, 
+    fBranch_y{branch_y}, 
+    fDrawOption{draw_option}, 
+    fPalette{palette}
+{
+    fInstance = this; 
+
+    TGMainFrame( p, 1400, 800 );
+
     const char* const here = "EvaluateCutFrame::constructor"; 
 
     fParent = PickSieveHoleApp::Instance(); 
@@ -59,7 +68,6 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     // in this 'app state', we are picking limits to evaluate the fits within  
     fAppState = kNone; 
 
-    const int polynomial_degree =3; 
 
     //setup the window
     SetCleanup(kDeepCleanup); 
@@ -67,15 +75,6 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     fFrame_canv = new TGHorizontalFrame(this, 1400, 800); 
 
     fEcanvas = new TRootEmbeddedCanvas("ECanvas_eval", fFrame_canv, 1400, 800); 
-
-    const double cut_x      = fSelectedSieveHole->cut_x; 
-    const double cut_y      = fSelectedSieveHole->cut_y; 
-    const double cut_width  = fSelectedSieveHole->cut_width; 
-    const double cut_height = fSelectedSieveHole->cut_height; 
-    const double cut_angle  = fSelectedSieveHole->cut_angle; 
-
-    const double cos_theta  = cos( fSelectedSieveHole->cut_angle * pi / 180. );
-    const double sin_theta  = sin( fSelectedSieveHole->cut_angle * pi / 180. );  
 
     fHist_holes = new TH2D("h_xy_temp", "", 
         75, fParent->GetDrawRange_x_min(), fParent->GetDrawRange_x_max(),
@@ -86,74 +85,10 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     fDydz_fp = HistAndLimit(new TH2D("h_dydz_fp", "dy/dz_fp vs x_fp", 75, fParent->GetDrawRange_xfp_min(), fParent->GetDrawRange_xfp_max(), 75, -0.060, +0.040)); 
     
 
-    /// @return 'true' if a given event is inside the sieve-coordinate cut, and 'false' if not. 
-    fCutFcn = [cos_theta, sin_theta, cut_width, cut_height, cut_x, cut_y](const EventData& ev)
-    {
-        //now, only include events which are inside our 'cut ellipse' 
-        double x = ev.Xsv.dxdz - cut_x; 
-        double y = ev.Xsv.dydz - cut_y; 
-        
-        double u = ( cos_theta*x + sin_theta*y )/cut_width; 
-        double v = ( cos_theta*y - sin_theta*x )/cut_height; 
+    auto canv = fEcanvas->GetCanvas(); 
 
-        if ( u*u + v*v < 1. ) { return true; } else { return false; }
-    };
-    //_________________________________________________________________________________________
-
-    for (const auto& ev : *fData) {
-
-        fHist_holes->Fill( ev.Xsv.dxdz, ev.Xsv.dydz );
-
-        if (fCutFcn(ev)) {
-            fY_fp.hist   ->Fill( ev.Xfp.x, ev.Xfp.y );
-            fDxdz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
-            fDydz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dydz ); 
-        }
-    }
-
-#ifdef DEBUG
-    printf("Number of events in cut: %zi\n", fData->size()); 
-#endif 
-
-    //create the histograms
-    TCanvas *canv = fEcanvas->GetCanvas(); 
-
-    gStyle->SetPalette(palette); 
-    
-    canv->cd(); 
-    canv->Divide(2,2); 
-
-    canv->cd(1); fHist_holes->Draw("col2"); 
-    auto circ = new TEllipse(
-        fSelectedSieveHole->cut_x, 
-        fSelectedSieveHole->cut_y, 
-        fSelectedSieveHole->cut_width,
-        fSelectedSieveHole->cut_height, 
-        0, 360,
-        cut_angle
-    ); 
-
-    circ->SetFillStyle(0); 
-    circ->SetLineColor(kRed); 
-    circ->SetLineWidth(2); 
-    circ->Draw(); 
-    
-    
-#ifdef DEBUG
-    cout << "Cut histogram drawn" << endl;  
-#endif
-    //gStyle->SetOptStat(0); 
-    canv->cd(2); fY_fp.hist     ->Draw(draw_option); 
-    canv->cd(3); fDxdz_fp.hist  ->Draw(draw_option);
-    canv->cd(4); fDydz_fp.hist  ->Draw(draw_option);
-
-#ifdef DEBUG
-    cout << "FP-histograms drawn" << endl; 
-#endif
-
-    canv->Modified(); 
-    canv->Update(); 
     canv->Connect("ProcessedEvent(Int_t,Int_t,Int_t,TObject*)", "EvaluateCutFrame", this, "HandleCanvasClicked()"); 
+    canv->Divide(2,2); 
 
     fFrame_canv->AddFrame(fEcanvas, new TGLayoutHints(kLHintsExpandX | kLHintsExpandY, 10,10,10,10)); 
 
@@ -194,14 +129,104 @@ EvaluateCutFrame::EvaluateCutFrame( const TGWindow *p,
     MapSubwindows(); 
         
     // in this 'app state', we are picking limits to evaluate the fits within  
-    fAppState = kPickLimits; 
+    fAppState = kNone; 
     UpdateButtons(); 
-
-
 
 #ifdef DEBUG 
     Info(here, "Exiting constructor"); 
 #endif 
+}
+//____________________________________________________________________________________________________________________________
+//____________________________________________________________________________________________________________________________
+//____________________________________________________________________________________________________________________________
+//____________________________________________________________________________________________________________________________
+
+//____________________________________________________________________________________________________________________________
+void EvaluateCutFrame::EvaluateCut(SieveHoleData* _hd)
+{    
+    fSelectedSieveHole = _hd; 
+
+    const double cut_x      = fSelectedSieveHole->cut_x; 
+    const double cut_y      = fSelectedSieveHole->cut_y; 
+    const double cut_width  = fSelectedSieveHole->cut_width; 
+    const double cut_height = fSelectedSieveHole->cut_height; 
+    const double cut_angle  = fSelectedSieveHole->cut_angle; 
+
+    const double cos_theta  = cos( fSelectedSieveHole->cut_angle * pi / 180. );
+    const double sin_theta  = sin( fSelectedSieveHole->cut_angle * pi / 180. );  
+
+    //clear & re-create the histograms 
+    TCanvas *canv = fEcanvas->GetCanvas(); 
+    if (!canv) {
+        Error(__func__, "The 'TCanvas*' contained within the embedded canvas is null. Unable to draw / evaluate fits."); 
+        return; 
+    }
+    
+    //delete & reset this histogram  
+    ClearHistograms(); 
+    
+    /// @return 'true' if a given event is inside the sieve-coordinate cut, and 'false' if not. 
+    fCutFcn = [cos_theta, sin_theta, cut_width, cut_height, cut_x, cut_y](const EventData& ev)
+    {
+        //now, only include events which are inside our 'cut ellipse' 
+        double x = ev.Xsv.dxdz - cut_x; 
+        double y = ev.Xsv.dydz - cut_y; 
+        
+        double u = ( cos_theta*x + sin_theta*y )/cut_width; 
+        double v = ( cos_theta*y - sin_theta*x )/cut_height; 
+
+        if ( u*u + v*v < 1. ) { return true; } else { return false; }
+    };
+    //_________________________________________________________________________________________
+
+    for (const auto& ev : *fData) {
+
+        fHist_holes->Fill( ev.Xsv.dxdz, ev.Xsv.dydz );
+
+        if (fCutFcn(ev)) {
+            fY_fp.hist   ->Fill( ev.Xfp.x, ev.Xfp.y );
+            fDxdz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
+            fDydz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dydz ); 
+        }
+    }
+
+#ifdef DEBUG
+    printf("Number of events in cut: %zi\n", fData->size()); 
+#endif 
+
+    gStyle->SetPalette(fPalette); 
+    
+
+    canv->cd(1); fHist_holes->Draw(fDrawOption.data()); 
+    auto circ = new TEllipse(
+        fSelectedSieveHole->cut_x, 
+        fSelectedSieveHole->cut_y, 
+        fSelectedSieveHole->cut_width,
+        fSelectedSieveHole->cut_height, 
+        0, 360,
+        cut_angle
+    ); 
+
+    circ->SetFillStyle(0); 
+    circ->SetLineColor(kRed); 
+    circ->SetLineWidth(2); 
+    circ->Draw(); 
+    
+#ifdef DEBUG
+    cout << "Cut histogram drawn" << endl;  
+#endif
+    //gStyle->SetOptStat(0); 
+    canv->cd(2); fY_fp.hist   ->Draw(fDrawOption.data()); 
+    canv->cd(3); fDxdz_fp.hist->Draw(fDrawOption.data());
+    canv->cd(4); fDydz_fp.hist->Draw(fDrawOption.data());
+
+#ifdef DEBUG
+    cout << "FP-histograms drawn" << endl; 
+#endif
+
+    fAppState = kPickLimits; 
+    UpdateButtons(); 
+    DrawLimits();
 }   
 //_____________________________________________________________________________________________________________________________________
 void EvaluateCutFrame::DoResetFits()
@@ -515,6 +540,9 @@ void EvaluateCutFrame::UpdateButtons()
     fButton_Fit      ->UnmapWindow(); 
     fButton_ResetFits->UnmapWindow(); 
     fButton_Reject   ->UnmapWindow();  
+
+    //if the app is in the 'disabled' state, don't show any buttons
+    if (fAppState == kNone) return; 
     
     fButton_Reject->MapWindow(); 
 
@@ -542,6 +570,15 @@ void EvaluateCutFrame::UpdateButtons()
     }
 }
 //__________________________________________________e___________________________________________________________________________________
+void EvaluateCutFrame::ClearHistograms()
+{
+    if (fHist_holes)    fHist_holes   ->Reset(); 
+    if (fY_fp.hist)     fY_fp.hist    ->Reset(); 
+    if (fDxdz_fp.hist)  fDxdz_fp.hist ->Reset(); 
+    if (fDydz_fp.hist)  fDydz_fp.hist ->Reset(); 
+    fEcanvas->GetCanvas()->Modified();
+    fEcanvas->GetCanvas()->Update();
+}
 //_____________________________________________________________________________________________________________________________________
 void EvaluateCutFrame::DoSave() 
 {
@@ -561,7 +598,10 @@ void EvaluateCutFrame::DoSave()
         return; 
     }
     //exit this window 
-    CloseWindow();
+    fAppState = kNone; 
+    ClearHistograms(); 
+    UpdateButtons(); 
+
     fParent->DoneEvaluate(); 
 }
 //_____________________________________________________________________________________________________________________________________
@@ -584,7 +624,10 @@ void EvaluateCutFrame::DoReject()
         return; 
     }
     //exit this window 
-    CloseWindow(); 
+    fAppState = kNone;
+    ClearHistograms();  
+    UpdateButtons(); 
+
     fParent->DoneEvaluate(); 
 
 #ifdef DEBUG 

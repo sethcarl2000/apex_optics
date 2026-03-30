@@ -28,6 +28,9 @@
 #include <vector>
 #include <string> 
 
+class EvaluateCutFrame; 
+class SaveOutputFrame; 
+
 class PickSieveHoleApp : public TGMainFrame {
 private:
 
@@ -170,16 +173,22 @@ private:
     void DeleteDrawnObject(TObject* obj); 
 
 public:
-    PickSieveHoleApp(const TGWindow* p, 
-                     UInt_t w, 
-                     UInt_t h, 
-                     const bool is_RHRS, 
-                     const char* path_infile,
-                     const char* target_name="none",
-                     const char* branch_x="dxdz_sv",
-                     const char* branch_y="dydz_sv", 
-                     const char* drawing_option="col2", 
-                     unsigned int palette=kSunset);
+    
+    PickSieveHoleApp(
+        const TGWindow* p, 
+        UInt_t w, 
+        UInt_t h, 
+        const bool is_RHRS, 
+        const char* path_infile,
+        const char* target_name="none",
+        const char* branch_x="dxdz_sv",
+        const char* branch_y="dydz_sv", 
+        const char* drawing_option="col2", 
+        unsigned int palette=kSunset
+    );
+
+
+    
 
     //launch the application 
     void LaunchApplication(); 
