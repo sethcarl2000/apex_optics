@@ -118,12 +118,6 @@ public:
     
     //create fit points by fitting the profile of each x-bin of the histogram
     struct FitPoint_t { double x,y,sigma,N; };
-    std::vector<FitPoint_t> CreatePointsFromHist(TH2D* hist); 
-
-    //create a polynomial fit of the given degree from the points given
-    ROOT::RVec<double> FitPolynomialToPoints(const std::vector<FitPoint_t>& points, const int poly_degree); 
-      
-    void Draw_Hist_Points_Poly(TH2D* hist, const std::vector<FitPoint_t>& points, const ROOT::RVec<double>& poly, const char* draw_option); 
 
     void UpdateButtons(); 
     void DrawLimits();     
