@@ -179,6 +179,11 @@ void EvaluateCutFrame::EvaluateCut(SieveHoleData* _hd)
     };
     //_________________________________________________________________________________________
 
+    unsigned long int n_events_in_cut=0; 
+    for (const auto& ev : *fData) { if (fCutFcn(ev)) n_events_in_cut++; }
+
+    fDataInCut.clear(); fDataInCut.reserve(n_events_in_cut); 
+
     for (const auto& ev : *fData) {
 
         fHist_holes->Fill( ev.Xsv.dxdz, ev.Xsv.dydz );
@@ -187,6 +192,8 @@ void EvaluateCutFrame::EvaluateCut(SieveHoleData* _hd)
             fY_fp.hist   ->Fill( ev.Xfp.x, ev.Xfp.y );
             fDxdz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dxdz ); 
             fDydz_fp.hist->Fill( ev.Xfp.x, ev.Xfp.dydz ); 
+        
+            fDataInCut.push_back(ev); 
         }
     }
 
@@ -697,10 +704,7 @@ NPoly EvaluateCutFrame::FitPolynomialToFP(
     RVec<double> B(n_elems, 0.);
     RMatrix A(n_elems,n_elems, 0.); 
     
-    for (const auto& event : *fData) {
-
-        //see if this event is inside the cut
-        if (is_inside_cut(event)==false) continue; 
+    for (const auto& event : fDataInCut) {
 
         //check to see if this even is inside the x_fp cut
         if (event.Xfp.x < fX_min || event.Xfp.x > fX_max ) continue; 
@@ -742,23 +746,23 @@ NPoly EvaluateCutFrame::FitPolynomialToFP(
 
     NPoly poly_objective(poly);     
 
-    const double objective_sigma = 0.0025; 
+    const double objective_sigma = 0.0020; 
 
-    //____________________________________________________________________________________________
+    //_________________________________________________________________________________________________________
     auto objective_fcn = [n_elems,objective_sigma,&poly_objective,&is_inside_cut,coord,this](const double *par)
     {
         //set the parameters of the polynomal
-        for (int i=0; i<n_elems; i++) poly_objective.Get_elem(i)->coeff = par[i]; 
+        //for (int i=0; i<n_elems; i++) poly_objective.Get_elem(i)->coeff = par[i]; 
 
         double val=0.; 
 
-        for (const auto& event : *fData) {
+        for (const auto& event : fDataInCut) {
 
-            //check if this event is inside the cut
-            if (is_inside_cut(event)==false) continue;  
+            //check to see if this even is inside the x_fp cut
+            if (event.Xfp.x < fX_min || event.Xfp.x > fX_max ) continue;
 
             //if we just added this to the objective function sum, it would be a regular chi2-fit... 
-            double arg = ( event.Xfp.*coord - poly_objective.Eval({event.Xfp.x, event.raster_index}) ) / objective_sigma;
+            double arg = ( event.Xfp.*coord - poly_objective.Eval(par, {event.Xfp.x, event.raster_index}) ) / objective_sigma;
 
             //but we stick it in the arg of a gaussian, so that we can mitigate the influence of outlier events. 
             val += -exp( -0.5*arg*arg ); 
@@ -766,7 +770,7 @@ NPoly EvaluateCutFrame::FitPolynomialToFP(
 
         return val; 
     };
-    //____________________________________________________________________________________________
+    //_________________________________________________________________________________________________________
     ROOT::EnableImplicitMT(); 
 
     ROOT::Math::Minimizer *minimizer = ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"); 

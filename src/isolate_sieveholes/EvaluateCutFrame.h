@@ -74,6 +74,8 @@ private:
 
     //data for all events 
     const std::vector<EventData>* fData;  
+    
+    std::vector<EventData> fDataInCut{}; 
 
     //type of canvas event passed to 'fEventType' 
     int fEventType{-1}; 
