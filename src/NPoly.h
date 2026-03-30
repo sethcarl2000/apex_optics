@@ -46,6 +46,8 @@ class NPoly : public TObject {
   ROOT::RVec<double> Eval_noCoeff(const ROOT::RVec<double> &X) const;
   
   double Eval(const ROOT::RVec<double> &coeff, const ROOT::RVec<double> &X) const; 
+  double Eval(const double* coeff, const ROOT::RVec<double>&X ) const; 
+
   double Eval(const ROOT::RVec<double> &X) const;
   
   //compute the gradient w/r/t each of the input coordinates

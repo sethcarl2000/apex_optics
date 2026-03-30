@@ -92,6 +92,14 @@ double NPoly::Eval(const vecd &coeff, const vecd &X) const
       (int)coeff.size() );
       return -1e30;
     }
+  }
+  
+  return Eval(coeff.data(), X); 
+}
+//_____________________________________________________________________________
+double NPoly::Eval(const double* coeff, const vecd &X) const
+{
+  if (fRangeChecksEnabled) { 
           
     if ((int)X.size() != Get_nDoF()) { 
       Error("Eval(vecd,vecd)", "Size of input vector (%i) does not match poly nDoF (%i)",
