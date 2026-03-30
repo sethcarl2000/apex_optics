@@ -48,12 +48,14 @@ NPoly::~NPoly() {/*destructor*/};
 //_____________________________________________________________________________
 vecd NPoly::Eval_noCoeff(const vecd &X) const
 {
-  //check to make sure that the input vector is the right size
-  if ((int)X.size() != Get_nDoF()) {
-    Error("NPoly::Eval_noCoeff",
-	  "Size of input vector (%i) does not match poly nDoF (%i)",
-	  (int)X.size(), Get_nDoF());
-    return {};
+ if (fRangeChecksEnabled) {
+    //check to make sure that the input vector is the right size
+    if ((int)X.size() != Get_nDoF()) {
+      Error("NPoly::Eval_noCoeff",
+      "Size of input vector (%i) does not match poly nDoF (%i)",
+      (int)X.size(), Get_nDoF());
+      return {};
+    }
   }
 
   vecd vals; vals.reserve(Get_nElems());
@@ -61,7 +63,9 @@ vecd NPoly::Eval_noCoeff(const vecd &X) const
   const int max_pow = Get_maxPower(); 
   double X_pows[Get_nDoF()][max_pow + 1]; 
   for (int d=0; d<Get_nDoF(); d++) {
-    for (int p=0; p<=max_pow; p++) X_pows[d][p] = pow(X[d], p); 
+    double Xpow; 
+    X_pows[d][0] = (Xpow = 1.); 
+    for (int p=1; p<=max_pow; p++) { X_pows[d][p] = (Xpow *= X[d]); }  
   }
 
   for (const NPolyElem &elem : fElems) {
@@ -80,22 +84,32 @@ vecd NPoly::Eval_noCoeff(const vecd &X) const
 //_____________________________________________________________________________
 double NPoly::Eval(const vecd &coeff, const vecd &X) const
 {
-  if ((int)coeff.size() != Get_nElems()) { 
-    Error("Eval(vecd,vecd)",
-	  "Wrong number of coeffs. given: expected %i, recieved %i.",
-	  Get_nElems(),
-	  (int)coeff.size() );
-    return -1e30;
+  if (fRangeChecksEnabled) { 
+    if ((int)coeff.size() != Get_nElems()) { 
+      Error("Eval(vecd,vecd)",
+      "Wrong number of coeffs. given: expected %i, recieved %i.",
+      Get_nElems(),
+      (int)coeff.size() );
+      return -1e30;
+    }
+          
+    if ((int)X.size() != Get_nDoF()) { 
+      Error("Eval(vecd,vecd)", "Size of input vector (%i) does not match poly nDoF (%i)",
+      (int)X.size(), Get_nDoF());
+      return -1e30;
+    }
   }
-        
-  if ((int)X.size() != Get_nDoF()) { 
-    Error("Eval(vecd,vecd)", "Size of input vector (%i) does not match poly nDoF (%i)",
-	  (int)X.size(), Get_nDoF());
-    return -1e30;
-  }
-      
+
   //now, actually evaluate
   double val=0.; 
+
+  const int max_pow = Get_maxPower(); 
+  double X_pows[Get_nDoF()][max_pow + 1]; 
+  for (int d=0; d<Get_nDoF(); d++) {
+    double Xpow; 
+    X_pows[d][0] = (Xpow = 1.); 
+    for (int p=1; p<=max_pow; p++) { X_pows[d][p] = (Xpow *= X[d]); }  
+  }
 
   //for each element, raise each val in X to the right power, the multiply
   // by the coressponding coeff.
@@ -107,24 +121,11 @@ double NPoly::Eval(const vecd &coeff, const vecd &X) const
     double elem_val=1.;
     
     for (int d=0; d<Get_nDoF(); d++) {
-      if (elem.powers[d]>0) elem_val *= pow( X[d], elem.powers[d] );
+      if (elem.powers[d]>0) elem_val *= X_pows[d][elem.powers[d]];
     }
     //check to see if this is the one element for which all pows. are zero
     val += elem_val * coeff[i++]; 
-	
-  }//for (const auto &elem : fElems)
-
-  /*for (unsigned int i=0; i<Get_nElems(); i++) { const auto& elem = fElems[i]; 
-    
-    double elem_val=1.;
-    
-    for (int d=0; d<Get_nDoF(); d++) {
-      if (elem.powers[d]>0) elem_val *= pow( X[d], elem.powers[d] );
-    }
-    //check to see if this is the one element for which all pows. are zero
-    val += elem_val * coeff[i]; 
-	
-  }//for (i=0; i<Get_nElems(); i++) */
+  }
       
   return val;
 }
@@ -132,15 +133,16 @@ double NPoly::Eval(const vecd &coeff, const vecd &X) const
 double NPoly::Eval(const vecd &X) const 
 {
   //same as above, but use the coefficients 'hard-coded' to each element
-  
-  if ((int)X.size() != Get_nDoF()) { 
-    throw logic_error(Form(
-      "in <NPoly::Eval(vecd)>: Size of input vector (%zi) does not match poly nDoF (%u)",
-	    X.size(), Get_nDoF()
-    )); 
-    return std::numeric_limits<double>::quiet_NaN();
+  if (fRangeChecksEnabled) {
+    if ((int)X.size() != Get_nDoF()) { 
+      throw logic_error(Form(
+        "in <NPoly::Eval(vecd)>: Size of input vector (%zi) does not match poly nDoF (%u)",
+        X.size(), Get_nDoF()
+      )); 
+      return std::numeric_limits<double>::quiet_NaN();
+    }
   }
-      
+
   //now, actually evaluate
   double val=0.;
 
@@ -169,19 +171,21 @@ double NPoly::Eval(const vecd &X) const
 //_____________________________________________________________________________
 vecd NPoly::Gradient(const vecd &coeff, const vecd &X) const
 {
-  if (coeff.size() != Get_nElems()) { 
-    Error("NPoly::Eval()",
-	  "Wrong number of coeffs. given; expected %i, recieved %i.",
-	  Get_nElems(), (int)coeff.size() );
-    return {};
-  }
-  
-  if ((int)X.size() != fnDoF) { 
-    Error("NPoly::Eval_noCoeff",
-	  "Size of input vector (%i) does not match poly nDoF (%i)",
-	  (int)X.size(), fnDoF);
-    return {};
-  }
+  if (fRangeChecksEnabled) {
+    if (coeff.size() != Get_nElems()) { 
+      Error("NPoly::Eval()",
+      "Wrong number of coeffs. given; expected %i, recieved %i.",
+      Get_nElems(), (int)coeff.size() );
+      return {};
+    }
+    
+    if ((int)X.size() != fnDoF) { 
+      Error("NPoly::Eval_noCoeff",
+      "Size of input vector (%i) does not match poly nDoF (%i)",
+      (int)X.size(), fnDoF);
+      return {};
+    }
+  } 
 
   vecd grad(fnDoF,0.); 
   
@@ -220,7 +224,7 @@ vecd NPoly::Gradient(const vecd &X) const
 {
   //same as above, but use the coefficients 'hard-coded' to each element
   
-  if ((int)X.size() != Get_nDoF()) { 
+  if (fRangeChecksEnabled) {
     Error("Gradient()", "Size of input vector (%i) does not match poly nDoF (%i)",
 	  (int)X.size(), (int)Get_nDoF());
     return {};
@@ -261,7 +265,7 @@ RMatrix NPoly::Hessian(const vecd &X) const
 {
   //same as above, but use the coefficients 'hard-coded' to each element
   
-  if ((int)X.size() != Get_nDoF()) { 
+  if (fRangeChecksEnabled) {
     Error("Hessian()", "Size of input vector (%i) does not match poly nDoF (%i)",
 	  (int)X.size(), (int)Get_nDoF());
     return {};

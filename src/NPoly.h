@@ -86,6 +86,8 @@ class NPoly : public TObject {
   //for debug purposes, print
   void Print() const;
   
+  /// @brief If 'true' then range checks for input args will be performed for each calculation. 'false' otherwise 
+  void Set_EnableRangeChecks(bool opt) { fRangeChecksEnabled=opt; }
 
   //these following methods will be used for symbolic computation; 
   // for example, symbolically computing the result of feeding the output of one NPolyArray into the input of another. 
@@ -110,8 +112,12 @@ private:
 
   int f_maxPower; 
   
+  //if this is true, then range checks will be performed 
+  bool fRangeChecksEnabled{true}; 
+
   ROOT::RVec<NPolyElem> fElems;
   
+
   //construct all possible polynomial elemts for which the sum of the exponents for all DoF is <= max_power. 
   void AutoConstructPoly(const int max_power, const int nDoF); 
   
