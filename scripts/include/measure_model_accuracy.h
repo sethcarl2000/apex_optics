@@ -89,6 +89,9 @@ public:
     /// drawing palette to use for 2D histograms 
     int fPalette = kBird; 
 
+    /// if true, then J.Williamson's results for the accuracy will be drawn. 
+    bool fDraw_prev_results=false; 
+
     /// drawing parameters for dxdz & dydz fits
     int fLineColor_dxdz=kBlack;  
     int fLineColor_dydz=kBlack; 
@@ -413,11 +416,10 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
             c_wires->Modified(); c_wires->Update(); 
  
                         
-            //now, add an estimate for VDC smearing
-            for (auto& hRMS : hole_and_RMS[iwire](arm)) {
+            /*for (auto& hRMS : hole_and_RMS[iwire](arm)) {
                 hRMS.dxdz = sqrt( hRMS.dxdz*hRMS.dxdz + vdc_smearing_dxdz_sv*vdc_smearing_dxdz_sv ); 
                 hRMS.dydz = sqrt( hRMS.dydz*hRMS.dydz + vdc_smearing_dydz_sv*vdc_smearing_dydz_sv ); 
-            }
+            }*/
 
         }; 
 
@@ -436,7 +438,7 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
 
     }
 
-    vector<double> pts_mass, pts_error; 
+    vector<double> pts_mass, pts_error_total, pts_error_optics, pts_error_MS, pts_error_vdc; 
 
     //now that we have an estimate for the error oat each hole position, we need to use the monte-carlo data 
     // to estimate its error. 
@@ -504,7 +506,54 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                 const string arm_prefix = (arm & ArmMode::kRHRS) ? "R_" : "L_"; 
                 const bool arm_bool = (arm & ArmMode::kRHRS); 
 
-                rna.Define(arm_prefix+"traj_hcs_smeared", [&rand, &hole_and_RMS, &targets, arm, arm_bool, &find_bestfit_hole, V1_zcut, V3_zcut, this](
+                rna.Define(arm_prefix+"traj_hcs_smeared_full", [&rand, &hole_and_RMS, &targets, arm, arm_bool, vdc_smearing_dxdz_sv, vdc_smearing_dydz_sv, &find_bestfit_hole, V1_zcut, V3_zcut, this](
+                    double x, 
+                    double y, 
+                    double dxdz, 
+                    double dydz, 
+                    double dpp, 
+                    const TVector3& vtx_hcs
+                ) {
+                    //find which wire this event is closest to (based on z-vetex position)
+                    int i_wire=1;  
+                    if (vtx_hcs.z() > V3_zcut) i_wire=2; //V3 
+                    if (vtx_hcs.z() < V1_zcut) i_wire=0; //V1
+                    
+                    //find which measured sieve-hole this event is closest to (based on dx/dz and dy/dz in sieve coordinates)
+                    int best_hole_id = find_bestfit_hole(true, targets[i_wire], hole_and_RMS[i_wire](arm), dxdz, dydz, vtx_hcs);
+
+                    const auto& hRMS = hole_and_RMS[i_wire](arm).at(best_hole_id); 
+
+                    double rms_dx = sqrt( 
+                        hRMS.dxdz*hRMS.dxdz + 
+                        kRMS_multiple_scattering*kRMS_multiple_scattering + 
+                        vdc_smearing_dxdz_sv*vdc_smearing_dxdz_sv 
+                    );  
+                    double rms_dy = sqrt( 
+                        hRMS.dydz*hRMS.dydz + 
+                        kRMS_multiple_scattering*kRMS_multiple_scattering + 
+                        vdc_smearing_dydz_sv*vdc_smearing_dydz_sv 
+                    );
+
+                    Trajectory_t traj_scs{
+                        x, 
+                        y, 
+                        dxdz + rand.Gaus()*rms_dx,
+                        dydz + rand.Gaus()*rms_dy,
+                        dpp 
+                    };
+
+                    return ApexOptics::SCS_to_HCS(arm_bool, traj_scs); 
+                }, {
+                    arm_prefix+"x_sv", 
+                    arm_prefix+"y_sv", 
+                    arm_prefix+"dxdz_sv", 
+                    arm_prefix+"dydz_sv", 
+                    arm_prefix+"dpp_sv", 
+                    arm_prefix+"position_vtx"
+                }); 
+
+                rna.Define(arm_prefix+"traj_hcs_smeared_optics", [&rand, &hole_and_RMS, &targets, arm, arm_bool, &find_bestfit_hole, V1_zcut, V3_zcut, this](
                     double x, 
                     double y, 
                     double dxdz, 
@@ -525,8 +574,8 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                     Trajectory_t traj_scs{
                         x, 
                         y, 
-                        dxdz + rand.Gaus()*hRMS.dxdz + rand.Gaus()*kRMS_multiple_scattering, 
-                        dydz + rand.Gaus()*hRMS.dydz + rand.Gaus()*kRMS_multiple_scattering,
+                        dxdz + rand.Gaus()*hRMS.dxdz,
+                        dydz + rand.Gaus()*hRMS.dydz,
                         dpp 
                     };
 
@@ -540,10 +589,61 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                     arm_prefix+"dpp_sv", 
                     arm_prefix+"position_vtx"
                 }); 
+
+                rna.Define(arm_prefix+"traj_hcs_smeared_MS", [&rand, &hole_and_RMS, &targets, arm, arm_bool, &find_bestfit_hole, V1_zcut, V3_zcut, this](
+                    double x, 
+                    double y, 
+                    double dxdz, 
+                    double dydz, 
+                    double dpp
+                ) {
+                    Trajectory_t traj_scs{
+                        x, 
+                        y, 
+                        dxdz + rand.Gaus()*kRMS_multiple_scattering, 
+                        dydz + rand.Gaus()*kRMS_multiple_scattering,
+                        dpp 
+                    };
+
+                    return ApexOptics::SCS_to_HCS(arm_bool, traj_scs); 
+
+                }, {
+                    arm_prefix+"x_sv", 
+                    arm_prefix+"y_sv", 
+                    arm_prefix+"dxdz_sv", 
+                    arm_prefix+"dydz_sv", 
+                    arm_prefix+"dpp_sv", 
+                }); 
+                
+                rna.Define(arm_prefix+"traj_hcs_smeared_vdc", [&rand, arm_bool, vdc_smearing_dxdz_sv, vdc_smearing_dydz_sv, this](
+                    double x, 
+                    double y, 
+                    double dxdz, 
+                    double dydz, 
+                    double dpp
+                ) {
+                    Trajectory_t traj_scs{
+                        x, 
+                        y, 
+                        dxdz + rand.Gaus()*vdc_smearing_dxdz_sv, 
+                        dydz + rand.Gaus()*vdc_smearing_dydz_sv,
+                        dpp 
+                    };
+
+                    return ApexOptics::SCS_to_HCS(arm_bool, traj_scs); 
+
+                }, {
+                    arm_prefix+"x_sv", 
+                    arm_prefix+"y_sv", 
+                    arm_prefix+"dxdz_sv", 
+                    arm_prefix+"dydz_sv", 
+                    arm_prefix+"dpp_sv"
+                }); 
+            
             }
 
-            rna.Define("m2_reco", [hrs_momentum](Trajectory_t R_traj, Trajectory_t L_traj)
-            {
+            /// @return invariant mass, given target trajectories
+            auto compute_invariant_mass = [hrs_momentum](Trajectory_t R_traj, Trajectory_t L_traj){
                 double R_p = hrs_momentum*(1. + R_traj.dpp); 
                 double L_p = hrs_momentum*(1. + L_traj.dpp); 
                 
@@ -554,11 +654,26 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
                 double P2 = (R_momentum + L_momentum).Mag2(); 
                 //ignoring correction from electron/positron mass
                 return E*E - P2; 
-            }, {"R_traj_hcs_smeared", "L_traj_hcs_smeared"}); 
-                
-            rna.Define("m_reco", [hrs_momentum](double m2){ return sqrt(m2); }, {"m2_reco"}); 
+            };
 
-            rna.Define("invariant_mass_error", [&mA](double m_reco, double m)
+            rna.Define("m2_reco_full",   compute_invariant_mass,    {"R_traj_hcs_smeared_full",     "L_traj_hcs_smeared_full"}); 
+            rna.Define("m2_reco_optics", compute_invariant_mass,    {"R_traj_hcs_smeared_optics",   "L_traj_hcs_smeared_optics"}); 
+            rna.Define("m2_reco_MS",     compute_invariant_mass,    {"R_traj_hcs_smeared_MS",       "L_traj_hcs_smeared_MS"}); 
+            rna.Define("m2_reco_vdc",    compute_invariant_mass,    {"R_traj_hcs_smeared_vdc",      "L_traj_hcs_smeared_vdc"}); 
+
+            /// @param m2_name name of invariant mass^2 column 
+            /// @return stddev of this reconstruction about the mean 
+            auto Get_inv_mass_stddev = [&rna, &mA](const char* m2_name) {
+                const auto err_name = Form("err_%s",m2_name);
+                auto my_df = rna.Get(); 
+                return *my_df.Define(err_name, [&mA](double m2_reco, double m)
+                    {
+                        mA = m; 
+                        return sqrt(m2_reco) - m;   
+                    }, {m2_name, "invariant_mass"}).StdDev(err_name); 
+            }; 
+
+            /*rna.Define("invariant_mass_error", [&mA](double m_reco, double m)
             { 
                 mA = m; 
                 return m_reco - m; 
@@ -567,18 +682,25 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
             hist_error = rna.Get().Histo1D<double>(
                 {"h_err", "Invariant Mass error.;reco-m_{A} - m_{A};", 200, -8., +8.}, 
                 "invariant_mass_error"
-            ); 
+            );*/
+
+            pts_error_total .push_back( Get_inv_mass_stddev("m2_reco_full") );
+            pts_error_optics.push_back( Get_inv_mass_stddev("m2_reco_optics") );
+            pts_error_MS    .push_back( Get_inv_mass_stddev("m2_reco_MS") );
+            pts_error_vdc   .push_back( Get_inv_mass_stddev("m2_reco_vdc") );     
+
+            printf("A' mass: %.0f MeV,  RMS %.3f MeV\n", mA, pts_error_total.back()); cout << flush; 
+            
+            pts_mass.push_back( mA );
         
         } catch (const std::exception& e) {
             Error(__func__, "Something went wrong trying to define the A'-prime mass error hist.\n what(): %s\n", e.what()); 
             return -1; 
         }
 
-        double rms = hist_error->GetStdDev(); 
-        printf("A' mass: %.0f MeV,  RMS %.3f MeV\n", mA, rms); cout << flush; 
+        ///double rms = hist_error->GetStdDev(); 
         
-        pts_error.push_back( rms );
-        pts_mass.push_back( mA ); 
+        
         
         /* 
         printf(" ~~ total rms, mrad (dxdz/dydz) %.3f / %.3f\n", 
@@ -631,16 +753,14 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
         double ret=_x[0]; for (int i=1; i<_n; i++) { ret = max( _x[i], ret ); } return ret; 
     }; 
 
-    const double max_mass = max<double>( 
-        get_array_max(RMS_JW,           n_pts_JW), 
-        get_array_max(pts_error.data(), pts_error.size()) 
-    );  
+    const double max_mass = get_array_max(pts_error_total.data(), pts_error_total.size());  
 
     //create a new TGraph which is meant to draw the 'frame' on which the other graphs will be drawn
     double pts_frame_M[]    = { x_min, x_max }; 
     double pts_frame_RMS[]  = { 0.,    0. }; 
     
     new TCanvas; 
+    auto legend = new TLegend(); 
     auto g_frame = new TGraph(2, pts_frame_M, pts_frame_RMS ); 
 
     g_frame->SetMaximum( max_mass*1.1 );
@@ -649,27 +769,37 @@ int MeasureModelAccuracy::EvaluateModel(std::function<ROOT::RDF::RNode(ArmMode::
     g_frame->SetTitle("m_{A} vs #sigma_{m_{A}} (MeV/c^{2})"); 
     g_frame->Draw(); 
 
-    auto g = new TGraph(pts_mass.size(), pts_mass.data(), pts_error.data()); 
+    auto g_total    = new TGraph(pts_mass.size(), pts_mass.data(), pts_error_total.data()); 
+    auto g_optics   = new TGraph(pts_mass.size(), pts_mass.data(), pts_error_optics.data()); 
+    auto g_MS       = new TGraph(pts_mass.size(), pts_mass.data(), pts_error_MS.data()); 
+    auto g_vdc      = new TGraph(pts_mass.size(), pts_mass.data(), pts_error_vdc.data()); 
     
-    g->SetMarkerStyle(kOpenCircle); 
-    g->Draw("SAME PL"); 
+    
+    g_total->SetMarkerStyle(kFullSquare); 
+    g_total->Draw("SAME PL"); 
+    legend->AddEntry(g_total, "Total"); 
 
-    /*/overall weighted error 
-    printf("total RMS, mrad (dxdz/dydz): %.3f / %.3f\n", 
-        1.e3*sqrt(dxdz_total_square_error/dxdz_total_statweight), 
-        1.e3*sqrt(dydz_total_square_error/dydz_total_statweight)
-    );*/ 
+    g_optics->SetMarkerStyle(kOpenCircle); 
+    g_optics->SetMarkerColor(kRed); 
+    g_optics->SetLineColor(kRed); 
+    g_optics->SetLineStyle(kDashed);
+    g_optics->Draw("SAME PL");
+    legend->AddEntry(g_optics, "Optics"); 
     
-    auto g_JW = new TGraph(n_pts_JW, mass_JW, RMS_JW);
+    g_MS->SetMarkerStyle(kPlus); 
+    g_MS->SetMarkerColor(kBlue); 
+    g_MS->SetLineColor(kBlue); 
+    g_MS->SetLineStyle(kDashed);
+    g_MS->Draw("SAME PL");
+    legend->AddEntry(g_MS, "M.S."); 
     
-    g_JW->SetMarkerStyle(kFullSquare); 
-    g_JW->SetMarkerColor(kBlue);
-    g_JW->SetLineColor(kBlue); 
-    g_JW->Draw("SAME PL");
+    g_vdc->SetMarkerStyle(kMultiply); 
+    g_vdc->SetMarkerColor(kBlack); 
+    g_vdc->SetLineColor(kBlack); 
+    g_vdc->SetLineStyle(kBlack);
+    g_vdc->Draw("SAME PL");
+    legend->AddEntry(g_vdc, "VDC Res."); 
 
-    auto legend = new TLegend(); 
-    legend->AddEntry(g,    "Current Estimate"); 
-    legend->AddEntry(g_JW, "John Williamson (thesis)"); 
     legend->Draw(); 
 
     return 0; 
