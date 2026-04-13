@@ -5,6 +5,7 @@
 #include <ApexOptics.h>
 #include <AngleRecoTester.h>
 #include "RDFNodeAccumulator.h"
+#include "BothArmValue_t.h"
 #include <SieveHole.h> 
 #include <ArmMode.h>
 //ROOT headers
@@ -37,15 +38,6 @@ struct HoleAndAngles_t {
     double dydz; 
 }; 
 
-//very holder for quantities that have one copy for each arm. 
-template<typename T> struct BothArmValue_t {
-    T R; 
-    T L; 
-
-    T& operator() (ArmMode::Bit flag) { 
-        if (flag & ArmMode::kRHRS) { return R; } else { return L; }
-    }
-};
 
 //give this a general function, and it will perform some operation on both arms 
 
