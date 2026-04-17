@@ -62,7 +62,7 @@ FwdProdModel::FwdProdModel()
     fModel_R->CreateChainRev({
 
         // sv <= [Poly] <= fp
-        {"data/poly/fits_29Mar/V123_fp_sv_R_4ord.dat", branches_sv, 4} 
+        {"data/poly/fits_29Mar/V123_fp_sv_R_3ord.dat", branches_sv, 4} 
     }); 
 
     fModel_R->CreateChainFwd({
@@ -78,7 +78,7 @@ FwdProdModel::FwdProdModel()
     fModel_L->CreateChainRev({
 
         // sv <= [Poly] <= fp
-        {"data/poly/fits_22Mar/V123_fp_sv_L_4ord.dat", branches_sv, 4} 
+        {"data/poly/fits_22Mar/V123_fp_sv_L_3ord.dat", branches_sv, 4} 
     }); 
 
     fModel_L->CreateChainFwd({
