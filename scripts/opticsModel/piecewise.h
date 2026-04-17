@@ -26,6 +26,8 @@
 class PiecewiseModel : public ModularOpticsModel {
 private: 
 
+    const bool fIs_RHRS; 
+
     /// The optics model to be used (R or L arm)
     NPoly fPoly_zhcs; 
     NPolyArray fParr_v1, fParr_v2, fParr_v3;
@@ -42,24 +44,25 @@ private:
 
 public: 
 
-    std::string fPath_poly_v1{"data/poly/fits_22Mar/V1_fp_sv_L_2ord.dat"}; 
-    std::string fPath_poly_v2{"data/poly/fits_22Mar/V2_fp_sv_L_2ord.dat"}; 
-    std::string fPath_poly_v3{"data/poly/fits_22Mar/V3_fp_sv_L_2ord.dat"}; 
-    
-    PiecewiseModel(const char* path_zhcs_poly="data/poly/fits_22Mar/V123_fp_z-hcs_L_5ord.dat"); 
+    std::string fPath_L_poly_v1{"data/poly/fits_22Mar/V1_fp_sv_L_2ord.dat"}; 
+    std::string fPath_L_poly_v2{"data/poly/fits_22Mar/V2_fp_sv_L_2ord.dat"}; 
+    std::string fPath_L_poly_v3{"data/poly/fits_22Mar/V3_fp_sv_L_2ord.dat"}; 
+
+    std::string fPath_R_poly_v1{"data/poly/fits_29Mar/V1_fp_sv_R_2ord.dat"};
+    std::string fPath_R_poly_v2{"data/poly/fits_29Mar/V2_fp_sv_R_2ord.dat"};
+    std::string fPath_R_poly_v3{"data/poly/fits_29Mar/V3_fp_sv_R_2ord.dat"};
+
+    PiecewiseModel(const char* path_zhcs_poly="data/poly/fits_22Mar/V123_fp_z-hcs_L_5ord.dat", const bool is_RHRS=false); 
     ~PiecewiseModel() {}; 
 
     ROOT::RDF::RNode DefineOutputs(ROOT::RDF::RNode node_in) const; 
 };
-
-
-PiecewiseModel::PiecewiseModel(const char* path_zhcs_poly)
+PiecewiseModel::PiecewiseModel(const char* path_zhcs_poly, const bool is_RHRS)
+    : fIs_RHRS{is_RHRS}
 {   
-    
     //parse z-hcs polynomial 
     fPoly_zhcs = NPoly(4); 
     ApexOptics::Parse_NPoly_from_file(path_zhcs_poly, "z_hcs", &fPoly_zhcs); 
-
     
     //this is a very simple interpolation 
     double sum_z{0.}, sum_z2{0.}, sum_z3{0.}, sum_z4{0.}; 
@@ -76,9 +79,15 @@ PiecewiseModel::PiecewiseModel(const char* path_zhcs_poly)
     });
 
     //parse arrays for each wire
-    fParr_v1 = ApexOptics::Parse_NPolyArray_from_file(fPath_poly_v1.data(), branches_sv, 4); 
-    fParr_v2 = ApexOptics::Parse_NPolyArray_from_file(fPath_poly_v2.data(), branches_sv, 4); 
-    fParr_v3 = ApexOptics::Parse_NPolyArray_from_file(fPath_poly_v3.data(), branches_sv, 4); 
+    if (is_RHRS) {
+        fParr_v1 = ApexOptics::Parse_NPolyArray_from_file(fPath_R_poly_v1.data(), branches_sv, 4); 
+        fParr_v2 = ApexOptics::Parse_NPolyArray_from_file(fPath_R_poly_v2.data(), branches_sv, 4); 
+        fParr_v3 = ApexOptics::Parse_NPolyArray_from_file(fPath_R_poly_v3.data(), branches_sv, 4); 
+    } else {
+        fParr_v1 = ApexOptics::Parse_NPolyArray_from_file(fPath_L_poly_v1.data(), branches_sv, 4); 
+        fParr_v2 = ApexOptics::Parse_NPolyArray_from_file(fPath_L_poly_v2.data(), branches_sv, 4); 
+        fParr_v3 = ApexOptics::Parse_NPolyArray_from_file(fPath_L_poly_v3.data(), branches_sv, 4); 
+    }
 } 
 
 ROOT::RDF::RNode PiecewiseModel::DefineOutputs(ROOT::RDF::RNode node_in) const 

@@ -7,6 +7,7 @@
 #include "ModularOpticsModel.h"
 #include <ApexOptics.h> 
 #include <ArmMode.h> 
+#include <RMatrix.h> 
 //ROOT headers
 #include <TVector3.h> 
 #include <ROOT/RVec.hxx>
@@ -19,7 +20,7 @@
 #include <stdexcept> 
 
 /// @brief Implement the 'chained' optics model, and then submit it to 'measure_model_accuracy.h' to be tested
-class ChainedModel : public ModularOpticsModel {
+class FwdProdModel : public ModularOpticsModel {
 private: 
 
     /// The optics model to be used (R or L arm)
@@ -37,19 +38,24 @@ private:
 
     ArmMode::Bit fArmMode{ ArmMode::kNone }; 
 
+    int fPivotElement=0; 
+
 public: 
 
-    ChainedModel(ArmMode::Bit arm_mode=ArmMode::kBoth); 
-    ~ChainedModel() {}; 
+    struct TrajAndZ_t {
+        ApexOptics::Trajectory_t R_Xsv, L_Xsv; 
+        double z_hcs; 
+    };
+
+    FwdProdModel(); 
+    ~FwdProdModel() {}; 
 
     ROOT::RDF::RNode DefineOutputs(ROOT::RDF::RNode node_in) const; 
 };
 
 
-ChainedModel::ChainedModel(ArmMode::Bit arm_mode)
-    : fArmMode{arm_mode}
+FwdProdModel::FwdProdModel()
 {   
-    
     //create right-arm model_____________________________________________________________________________________
     fModel_R = new ChainedOpticsModel(true); 
 
@@ -83,68 +89,78 @@ ChainedModel::ChainedModel(ArmMode::Bit arm_mode)
     }); 
 } 
 
-ROOT::RDF::RNode ChainedModel::DefineOutputs(ROOT::RDF::RNode node_in) const 
+ROOT::RDF::RNode FwdProdModel::DefineOutputs(ROOT::RDF::RNode node_in) const 
 {
     using namespace std; 
     using namespace ApexOptics; 
+    using RVecD = ROOT::RVec<double>; 
 
     RDFNodeAccumulator rna(node_in); 
            
-    rna.DefineIfMissing("position_vtx", [](TVector3 vtx){ return vtx; }, {"R_position_vtx"}); 
+    rna.DefineIfMissing("position_vtx", [](TVector3 vtx){ return vtx; }, {"L_position_vtx"}); 
 
-    switch (fArmMode) {
-        case ArmMode::kBoth : {
-            rna.Overwrite("R_Xfp", [](double x, double y, double dxdz, double dydz)
-            {
-                return Trajectory_t{x,y,dxdz,dydz}; 
-            }, {"R_x_fp","R_y_fp","R_dxdz_fp","R_dydz_fp"}); 
+    rna.Overwrite("R_Xfp", [](const RVecD& x, const RVecD& y, const RVecD& dxdz, const RVecD& dydz)
+    {
+        return Trajectory_t{x[0],y[0],dxdz[0]-x[0]/6.,dydz[0]}; 
+    }, {"R_x_fp","R_y_fp","R_dxdz_fp","R_dydz_fp"}); 
+
+    rna.Overwrite("L_Xfp", [](const RVecD& x, const RVecD& y, const RVecD& dxdz, const RVecD& dydz)
+    {
+        return Trajectory_t{x[0],y[0],dxdz[0]-x[0]/6.,dydz[0]}; 
+    }, {"L_x_fp","L_y_fp","L_dxdz_fp","L_dydz_fp"}); 
+
+    rna.Define("R_Xsv_reco", [this](const Trajectory_t& Xfp)
+    {
+        return fModel_R->Compute_Xsv_first_guess(Xfp); 
+    }, {"R_Xfp"});
+
+    rna.Define("L_Xsv_reco", [this](const Trajectory_t& Xfp)
+    {
+        return fModel_L->Compute_Xsv_first_guess(Xfp); 
+    }, {"L_Xfp"});
+
+    rna.Define("reco_position_vtx", [](const Trajectory_t& R_Xsv_scs, const Trajectory_t& L_Xsv_scs)
+    {   
+        auto R_Xsv = SCS_to_HCS(true,  R_Xsv_scs); 
+        auto L_Xsv = SCS_to_HCS(false, L_Xsv_scs); 
         
-            rna.Overwrite("L_Xfp", [](double x, double y, double dxdz, double dydz)
-            {
-                return Trajectory_t{x,y,dxdz,dydz}; 
-            }, {"L_x_fp","L_y_fp","L_dxdz_fp","L_dydz_fp"}); 
+        TVector3 s1( R_Xsv.dxdz, R_Xsv.dydz, 1. );         
+        TVector3 s2( L_Xsv.dxdz, L_Xsv.dydz, 1. ); 
 
-            rna = Add_branches_from_Trajectory_t(rna.Get(), "R_Xsv_reco", {
-                "R_x_sv", "R_y_sv", "R_dxdz_sv", "R_dydz_sv", "R_dpp_sv"
-            }); 
-            rna = Add_branches_from_Trajectory_t(rna.Get(), "L_Xsv_reco", {
-                "L_x_sv", "L_y_sv", "L_dxdz_sv", "L_dydz_sv", "L_dpp_sv"
-            }); 
-            break; 
-        }
-        case ArmMode::kRHRS : {
-            rna.Overwrite("Xfp", [](double x, double y, double dxdz, double dydz)
-            {
-                return Trajectory_t{x,y,dxdz,dydz}; 
-            }, {"x_fp","y_fp","dxdz_fp","dydz_fp"}); 
-            rna.Define("Xsv_reco", [this](const Trajectory_t& Xfp, const TVector3& vtx_hcs)
-            {
-                return fModel_R->Compute_Xsv(Xfp, vtx_hcs); 
-            }, {"Xfp", "position_vtx"}); 
-            rna = Add_branches_from_Trajectory_t(rna.Get(), "Xsv_reco", {
-                "reco_x_sv", "reco_y_sv", "reco_dxdz_sv", "reco_dydz_sv", "reco_dpp_sv"
-            });
-            break;  
-        }
-        case ArmMode::kLHRS : {
-            rna.Overwrite("Xfp", [](double x, double y, double dxdz, double dydz)
-            {
-                return Trajectory_t{x,y,dxdz,dydz}; 
-            }, {"x_fp","y_fp","dxdz_fp","dydz_fp"}); 
-            rna.Define("Xsv_reco", [this](const Trajectory_t& Xfp, const TVector3& vtx_hcs)
-            {
-                return fModel_L->Compute_Xsv(Xfp, vtx_hcs); 
-            }, {"Xfp", "position_vtx"}); 
-            rna = Add_branches_from_Trajectory_t(rna.Get(), "Xsv_reco", {
-                "reco_x_sv", "reco_y_sv", "reco_dxdz_sv", "reco_dydz_sv", "reco_dpp_sv"
-            });
-            break;  
-        }
-        default : {
-            throw invalid_argument("in <ChainedModel::DefineOutputs>: Model's arm mode specification is not valid; must be kLHRS, kRHRS, or kBoth.");
-            break;  
-        }
-    }
+        TVector3 r1( R_Xsv.x, R_Xsv.y, 0. ); 
+        TVector3 r2( L_Xsv.x, L_Xsv.y, 0. ); 
+
+        TVector3 R = r1 - r2;
+
+        //dot products
+        double s1s1 = s1.Mag2(); 
+        double s1s2 = s1 * s2; 
+        double s2s2 = s2.Mag2(); 
+
+        RVecD B{ -R*s1, R*s2 }; 
+
+        double det = s1s1*s2s2 - (s1s2*s1s2); 
+
+        RMatrix A(2,2, {
+            s2s2/det, s1s2/det,
+            s1s2/det, s1s1/det  
+        });
+
+        RVecD t = A*B; 
+
+        TVector3 closest_approach_R = s1*t[0] + r1; 
+        TVector3 closest_approach_L = s2*t[1] + r2; 
+
+        return 0.5*(closest_approach_L + closest_approach_R); 
+
+    }, {"R_Xsv_reco", "L_Xsv_reco"}); 
+
+    rna = Add_branches_from_Trajectory_t(rna.Get(), "R_Xsv_reco", {
+        "R_x_sv", "R_y_sv", "R_dxdz_sv", "R_dydz_sv", "R_dpp_sv"
+    }); 
+    rna = Add_branches_from_Trajectory_t(rna.Get(), "L_Xsv_reco", {
+        "L_x_sv", "L_y_sv", "L_dxdz_sv", "L_dydz_sv", "L_dpp_sv"
+    }); 
 
     return rna.Get(); 
 }
