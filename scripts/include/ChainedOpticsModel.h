@@ -62,8 +62,8 @@ public:
         }
     }
 
-    NPolyArrayChain* GetChain_fwd() { return &fChainFwd; }
-    NPolyArrayChain* GetChain_rev() { return &fChainRev; } 
+    const NPolyArrayChain* GetChain_fwd() { return &fChainFwd; }
+    const NPolyArrayChain* GetChain_rev() { return &fChainRev; } 
 
     ApexOptics::Trajectory_t Compute_Xsv_first_guess(ApexOptics::Trajectory_t Xfp) const {
         return ApexOptics::RVec_to_Trajectory_t(

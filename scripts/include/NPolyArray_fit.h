@@ -3,7 +3,7 @@
 
 //Apex-optics headers
 #include <ApexOptics.h> 
-#include "include/RDFNodeAccumulator.h"
+#include "RDFNodeAccumulator.h"
 //ROOT headers 
 #include <TFile.h>
 #include <TVector3.h>
@@ -56,12 +56,6 @@ int NPolyArray_fit( const int poly_order,
         return -1; 
     }
     
-    //check if we can load the apex optics lib
-    if (gSystem->Load("libApexOptics") < 0) {
-        Error(__func__, "libApexOptics could not be loaded."); 
-        return 1; 
-    }
-
     auto infile = new TFile(path_infile, "READ");
 
     //check if the infile could be opened

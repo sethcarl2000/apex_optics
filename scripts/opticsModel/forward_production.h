@@ -101,12 +101,12 @@ ROOT::RDF::RNode FwdProdModel::DefineOutputs(ROOT::RDF::RNode node_in) const
 
     rna.Overwrite("R_Xfp", [](const RVecD& x, const RVecD& y, const RVecD& dxdz, const RVecD& dydz)
     {
-        return Trajectory_t{x[0],y[0],dxdz[0]-x[0]/6.,dydz[0]}; 
+        return Trajectory_t{x[0],y[0],dxdz[0],dydz[0]}; 
     }, {"R_x_fp","R_y_fp","R_dxdz_fp","R_dydz_fp"}); 
 
     rna.Overwrite("L_Xfp", [](const RVecD& x, const RVecD& y, const RVecD& dxdz, const RVecD& dydz)
     {
-        return Trajectory_t{x[0],y[0],dxdz[0]-x[0]/6.,dydz[0]}; 
+        return Trajectory_t{x[0],y[0],dxdz[0],dydz[0]}; 
     }, {"L_x_fp","L_y_fp","L_dxdz_fp","L_dydz_fp"}); 
 
     rna.Define("R_Xsv_reco", [this](const Trajectory_t& Xfp)
