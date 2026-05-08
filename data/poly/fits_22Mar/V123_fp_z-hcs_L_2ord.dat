@@ -1,0 +1,23 @@
+# Polynomial metadata: 
+# -- Order: 2
+# -- Trained on data: 'temp.root'
+# -- Input branches: { x_fp y_fp dxdz_fp dydz_fp }
+# -- Time created: Mon Mar 23 00:16:41 2026
+
+poly-DoF 4
+is-RHRS 0
+z_hcs   2   0   0   0   -8.067769075e-02
+z_hcs   1   1   0   0   +1.066166644e+01
+z_hcs   1   0   1   0   +1.402487191e-01
+z_hcs   1   0   0   1   +1.374794807e+00
+z_hcs   1   0   0   0   +3.041522692e-01
+z_hcs   0   2   0   0   +3.817807543e+01
+z_hcs   0   1   1   0   +2.325530529e+02
+z_hcs   0   1   0   1   -9.191917353e+01
+z_hcs   0   1   0   0   +4.208146500e+00
+z_hcs   0   0   2   0   -2.405516067e+02
+z_hcs   0   0   1   1   -4.070245863e+01
+z_hcs   0   0   1   0   +8.798722868e-01
+z_hcs   0   0   0   2   +2.879741770e+01
+z_hcs   0   0   0   1   -1.439832042e+01
+z_hcs   0   0   0   0   -1.176734655e-01

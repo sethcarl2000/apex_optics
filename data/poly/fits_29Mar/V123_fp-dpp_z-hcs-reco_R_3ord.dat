@@ -1,0 +1,64 @@
+# Polynomial metadata: 
+# -- Order: 3
+# -- Trained on data: 'temp.root'
+# -- Input branches: { x_fp y_fp dxdz_fp dydz_fp dpp_sv }
+# -- Time created: Wed Apr  1 23:34:01 2026
+
+poly-DoF 5
+is-RHRS 1
+z_hcs_reco   3   0   0   0   0   -1.774497735e+02
+z_hcs_reco   2   1   0   0   0   -1.590730925e+02
+z_hcs_reco   2   0   1   0   0   +6.894761119e+02
+z_hcs_reco   2   0   0   1   0   +1.869788697e+02
+z_hcs_reco   2   0   0   0   1   +6.955777017e+03
+z_hcs_reco   2   0   0   0   0   -5.109246025e+01
+z_hcs_reco   1   2   0   0   0   +6.881736616e+02
+z_hcs_reco   1   1   1   0   0   -5.867639349e+02
+z_hcs_reco   1   1   0   1   0   +4.077688761e+02
+z_hcs_reco   1   1   0   0   1   +5.046614257e+03
+z_hcs_reco   1   1   0   0   0   -1.921649718e+01
+z_hcs_reco   1   0   2   0   0   +1.937239433e+02
+z_hcs_reco   1   0   1   1   0   -2.414440956e+03
+z_hcs_reco   1   0   1   0   1   -2.058478621e+04
+z_hcs_reco   1   0   1   0   0   +1.450851143e+02
+z_hcs_reco   1   0   0   2   0   -4.932990974e+02
+z_hcs_reco   1   0   0   1   1   -4.744842860e+03
+z_hcs_reco   1   0   0   1   0   +1.922361957e+01
+z_hcs_reco   1   0   0   0   2   -9.143180733e+04
+z_hcs_reco   1   0   0   0   1   +1.434545392e+03
+z_hcs_reco   1   0   0   0   0   +6.292718343e+00
+z_hcs_reco   0   3   0   0   0   -1.871312812e+02
+z_hcs_reco   0   2   1   0   0   +3.254204244e+03
+z_hcs_reco   0   2   0   1   0   -2.325515401e+03
+z_hcs_reco   0   2   0   0   1   -9.043992043e+03
+z_hcs_reco   0   2   0   0   0   +5.716079830e+01
+z_hcs_reco   0   1   2   0   0   +1.043648213e+04
+z_hcs_reco   0   1   1   1   0   +1.517755970e+03
+z_hcs_reco   0   1   1   0   1   +1.193337278e+04
+z_hcs_reco   0   1   1   0   0   -3.126606838e+02
+z_hcs_reco   0   1   0   2   0   +9.375826582e+03
+z_hcs_reco   0   1   0   1   1   +4.586492761e+03
+z_hcs_reco   0   1   0   1   0   +2.921549161e+01
+z_hcs_reco   0   1   0   0   2   -3.774762117e+04
+z_hcs_reco   0   1   0   0   1   +2.143044856e+02
+z_hcs_reco   0   1   0   0   0   -4.530450438e+00
+z_hcs_reco   0   0   3   0   0   -4.226986217e+03
+z_hcs_reco   0   0   2   1   0   +1.051976762e+04
+z_hcs_reco   0   0   2   0   1   +6.657308228e+03
+z_hcs_reco   0   0   2   0   0   -1.015502207e+02
+z_hcs_reco   0   0   1   2   0   +4.217467186e+03
+z_hcs_reco   0   0   1   1   1   +2.656005995e+04
+z_hcs_reco   0   0   1   1   0   -5.481126440e+01
+z_hcs_reco   0   0   1   0   2   +1.548481989e+05
+z_hcs_reco   0   0   1   0   1   -1.764952611e+03
+z_hcs_reco   0   0   1   0   0   -4.756608501e+00
+z_hcs_reco   0   0   0   3   0   -1.619184523e+03
+z_hcs_reco   0   0   0   2   1   +4.938373678e+03
+z_hcs_reco   0   0   0   2   0   -2.608863976e+02
+z_hcs_reco   0   0   0   1   2   +2.985739674e+04
+z_hcs_reco   0   0   0   1   1   -3.758709506e+02
+z_hcs_reco   0   0   0   1   0   +9.863239107e+00
+z_hcs_reco   0   0   0   0   3   +4.041476643e+05
+z_hcs_reco   0   0   0   0   2   -9.924424292e+03
+z_hcs_reco   0   0   0   0   1   -8.372986294e+01
+z_hcs_reco   0   0   0   0   0   +1.004161286e-01

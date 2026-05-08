@@ -1,0 +1,28 @@
+# Polynomial metadata: 
+# -- Order: 1
+# -- Trained on data: 'data/sieve_holes/fits_14Nov/V123-MC.root'
+# -- Input branches: { fwd_x_fp fwd_y_fp fwd_dxdz_fp fwd_dydz_fp }
+# -- Time created: Fri Nov 14 12:59:28 2025
+
+poly-DoF 4
+is-RHRS 0
+dxdz_fp   1   0   0   0   -8.722344975e-04
+dxdz_fp   0   1   0   0   -2.078031854e-03
+dxdz_fp   0   0   1   0   +9.835756722e-01
+dxdz_fp   0   0   0   1   -2.038491033e-02
+dxdz_fp   0   0   0   0   +9.055457520e-04
+dydz_fp   1   0   0   0   -5.606469536e-04
+dydz_fp   0   1   0   0   -4.776468208e-02
+dydz_fp   0   0   1   0   -1.343133803e-02
+dydz_fp   0   0   0   1   +1.121785523e+00
+dydz_fp   0   0   0   0   -5.110849782e-03
+x_fp   1   0   0   0   +1.000732587e+00
+x_fp   0   1   0   0   +9.756215456e-02
+x_fp   0   0   1   0   -5.990555076e-01
+x_fp   0   0   0   1   -7.049463122e-02
+x_fp   0   0   0   0   -8.608389163e-03
+y_fp   1   0   0   0   +2.602889116e-03
+y_fp   0   1   0   0   +1.087646508e+00
+y_fp   0   0   1   0   -6.647159233e-02
+y_fp   0   0   0   1   -5.043831040e-01
+y_fp   0   0   0   0   -1.105680354e-02

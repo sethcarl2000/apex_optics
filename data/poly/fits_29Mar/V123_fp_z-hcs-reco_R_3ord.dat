@@ -1,0 +1,43 @@
+# Polynomial metadata: 
+# -- Order: 3
+# -- Trained on data: 'temp.root'
+# -- Input branches: { x_fp y_fp dxdz_fp dydz_fp }
+# -- Time created: Wed Apr  1 23:28:43 2026
+
+poly-DoF 4
+is-RHRS 1
+z_hcs_reco   3   0   0   0   +7.820672290e-03
+z_hcs_reco   2   1   0   0   +1.022665435e+01
+z_hcs_reco   2   0   1   0   -4.740549688e+00
+z_hcs_reco   2   0   0   1   -4.529836244e+00
+z_hcs_reco   2   0   0   0   -1.189857976e-02
+z_hcs_reco   1   2   0   0   +8.478393016e+01
+z_hcs_reco   1   1   1   0   +4.868147726e+01
+z_hcs_reco   1   1   0   1   +5.435442455e+02
+z_hcs_reco   1   1   0   0   -6.643836658e+00
+z_hcs_reco   1   0   2   0   +3.520917794e+02
+z_hcs_reco   1   0   1   1   -1.407031611e+02
+z_hcs_reco   1   0   1   0   +2.766594310e+00
+z_hcs_reco   1   0   0   2   +2.323246199e+01
+z_hcs_reco   1   0   0   1   -5.936653891e+00
+z_hcs_reco   1   0   0   0   +5.392250040e-02
+z_hcs_reco   0   3   0   0   -7.908419911e+02
+z_hcs_reco   0   2   1   0   +9.127236751e+02
+z_hcs_reco   0   2   0   1   +5.139303668e+02
+z_hcs_reco   0   2   0   0   +1.973063735e+01
+z_hcs_reco   0   1   2   0   +1.148338326e+04
+z_hcs_reco   0   1   1   1   +6.578263737e+03
+z_hcs_reco   0   1   1   0   -1.021319545e+02
+z_hcs_reco   0   1   0   2   +4.294146544e+03
+z_hcs_reco   0   1   0   1   +4.016842877e+01
+z_hcs_reco   0   1   0   0   -3.828138548e+00
+z_hcs_reco   0   0   3   0   -2.834334800e+03
+z_hcs_reco   0   0   2   1   +9.338928526e+03
+z_hcs_reco   0   0   2   0   -1.635011172e+02
+z_hcs_reco   0   0   1   2   +3.336669105e+02
+z_hcs_reco   0   0   1   1   +1.718550495e+01
+z_hcs_reco   0   0   1   0   +4.751891027e-01
+z_hcs_reco   0   0   0   3   +5.901587254e+02
+z_hcs_reco   0   0   0   2   -2.423142139e+02
+z_hcs_reco   0   0   0   1   +9.213997780e+00
+z_hcs_reco   0   0   0   0   +1.289114028e-01
