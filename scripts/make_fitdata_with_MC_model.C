@@ -80,15 +80,15 @@ int make_fitdata_with_MC_model(const char* path_infile, const char* path_outfile
     delete infile;
 
     //this polynomial will only be used to compute dp/p, as a funciton of sieve coordinates. 
-    const char* path_NPolyArray_dpp   = "data/csv/poly_prod_fp_sv_L_5ord.dat";  // dp/p <======= fp
+    const char* path_NPolyArray_dpp   = is_RHRS?"data/poly/mc_fp_sv_R_5ord.dat":"data/poly/mc_fp_sv_L_5ord.dat";  // dp/p <======= fp
 
-    const char* path_NPolyArray_sv_q1 = "data/csv/poly_prod_sv_q1_L_5ord.dat";  //   sv => q1 
-    const char* path_NPolyArray_q1_fp = "data/csv/poly_prod_q1_fp_L_5ord.dat";  //         q1 => fp 
-    const char* path_NPolyArray_sv_fp = "data/csv/poly_prod_sv_fp_L_5ord.dat";  //   sv =======> fp 
+    const char* path_NPolyArray_sv_q1 = is_RHRS?"data/poly/mc_sv_q1_R_5ord.dat":"data/poly/mc_sv_q1_L_5ord.dat";  //   sv => q1 
+    const char* path_NPolyArray_q1_fp = is_RHRS?"data/poly/mc_q1_fp_R_5ord.dat":"data/poly/mc_q1_fp_L_5ord.dat";  //         q1 => fp 
+    const char* path_NPolyArray_sv_fp = is_RHRS?"data/poly/mc_sv_fp_R_5ord.dat":"data/poly/mc_sv_fp_L_5ord.dat";  //   sv =======> fp 
 
-    const char* path_NPolyArray_fp_sv = "data/csv/poly_prod_fp_sv_L_5ord.dat";  //   sv <======= fp 
-    const char* path_NPolyArray_fp_q1 = "data/csv/poly_prod_fp_q1_L_5ord.dat";  //         q1 <= fp 
-    const char* path_NPolyArray_q1_sv = "data/csv/poly_prod_q1_sv_L_5ord.dat";  //   sv <= q1 
+    const char* path_NPolyArray_fp_sv = is_RHRS?"data/poly/mc_fp_sv_R_5ord.dat":"data/poly/mc_fp_sv_L_5ord.dat";  //   sv <======= fp 
+    const char* path_NPolyArray_fp_q1 = is_RHRS?"data/poly/mc_fp_q1_R_5ord.dat":"data/poly/mc_fp_q1_L_5ord.dat";  //         q1 <= fp 
+    const char* path_NPolyArray_q1_sv = is_RHRS?"data/poly/mc_q1_sv_R_5ord.dat":"data/poly/mc_q1_sv_L_5ord.dat";  //   sv <= q1 
 
 
     //try to parse the polynomials from files. catch any exceptions, if they occur. 
