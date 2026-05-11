@@ -14,6 +14,7 @@
 int isolate_sieveholes( const bool is_RHRS, 
                         const char* path_infile,
                         const char* target_name = "V2",
+                        const char* path_poly="data/poly/fits_30Dec/V1-v05_fp_sv_R_4ord.dat",
                         const char* coord_x ="dxdz_sv",
                         const char* coord_y ="dydz_sv",
                         const char* drawing_option ="col", 
@@ -30,9 +31,11 @@ int isolate_sieveholes( const bool is_RHRS,
                          drawing_option,
                          palette);
 
-    ForwardModel model("data/poly/fits_30Dec/V2-v05_fp_sv_R_4ord.dat"); 
+    ForwardModel model(path_poly); 
 
     app->SetOpticsModel(&model); 
+
+    app->SetDrawRange_y(-0.0375, +0.0475); 
 
     app->LaunchApplication(); 
 
