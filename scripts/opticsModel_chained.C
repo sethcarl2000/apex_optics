@@ -21,7 +21,7 @@
 /// @brief Implement the 'chained' optics model, and then submit it to 'measure_model_accuracy.h' to be tested
 int opticsModel_chained() 
 {
-    using namespace std; 
+    using namespace std;
     
     const vector<string> branches_sv{"x_sv","y_sv","dxdz_sv","dydz_sv","dpp_sv"};
     const vector<string> branches_q1{"x_q1","y_q1","dxdz_q1","dydz_q1","dpp_q1"};
@@ -39,7 +39,7 @@ int opticsModel_chained()
     model_R->CreateChainRev({
 
         // sv <= [Poly] <= fp
-        {"data/poly/fits_30Dec/V123-v01_fp_sv_R_4ord.dat", branches_sv, 4} 
+        {"data/poly/fits_29Mar/V123_fp_sv_R_4ord.dat", branches_sv, 4} 
     }); 
 
     model_R->CreateChainFwd({
@@ -55,7 +55,7 @@ int opticsModel_chained()
     model_L->CreateChainRev({
 
         // sv <= [Poly] <= fp
-        {"data/poly/fits_21Dec/V123_fp_sv_L_4ord.dat", branches_sv, 4} 
+        {"data/poly/fits_22Mar/V123_fp_sv_L_4ord.dat", branches_sv, 4} 
     }); 
 
     model_L->CreateChainFwd({
