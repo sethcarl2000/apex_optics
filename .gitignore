@@ -4,3 +4,20 @@ src/build
 #ignore data directory
 data/mc
 data/replay
+
+# old_optics_dir
+old_optics_dir
+
+# histograms
+histos
+
+# data (by default)
+data
+
+# .vscode data
+.vscode 
+
+# other misc. root files, PDFs and PNGs 
+*.root
+*.pdf
+*.png
