@@ -25,6 +25,11 @@ using vecd = RVec<double>;
 
 using namespace std;
 
+namespace {
+  constexpr char kClassName[] = "NPoly"; 
+  constexpr double kNaN_double = std::numeric_limits<double>::quiet_NaN(); 
+}
+
 //_____________________________________________________________________________
 NPoly::NPoly(const int nDoF, const int order) :
   fnDoF(nDoF), f_maxPower(0)
@@ -51,9 +56,10 @@ vecd NPoly::Eval_noCoeff(const vecd &X) const
  if (fRangeChecksEnabled) {
     //check to make sure that the input vector is the right size
     if ((int)X.size() != Get_nDoF()) {
-      Error("NPoly::Eval_noCoeff",
-      "Size of input vector (%i) does not match poly nDoF (%i)",
-      (int)X.size(), Get_nDoF());
+      throw logic_error(Form("in <%s::%s>: "
+        "Size of input vector (%i) does not match poly nDoF (%i)",
+        kClassName, __func__, (int)X.size(), Get_nDoF()
+      ));
       return {};
     }
   }
@@ -86,11 +92,11 @@ double NPoly::Eval(const vecd &coeff, const vecd &X) const
 {
   if (fRangeChecksEnabled) { 
     if ((int)coeff.size() != Get_nElems()) { 
-      Error("Eval(vecd,vecd)",
-      "Wrong number of coeffs. given: expected %i, recieved %i.",
-      Get_nElems(),
-      (int)coeff.size() );
-      return -1e30;
+      throw logic_error(Form("in <%s::%s>: "
+        "Wrong number of coeffs. given: expected %i, recieved %i.",
+        kClassName, __func__, Get_nElems(), (int)coeff.size() 
+      ));
+      return kNaN_double; 
     }
   }
   
@@ -102,9 +108,11 @@ double NPoly::Eval(const double* coeff, const vecd &X) const
   if (fRangeChecksEnabled) { 
           
     if ((int)X.size() != Get_nDoF()) { 
-      Error("Eval(vecd,vecd)", "Size of input vector (%i) does not match poly nDoF (%i)",
-      (int)X.size(), Get_nDoF());
-      return -1e30;
+      throw logic_error(Form("in <%s::%s>: "
+        "Size of input vector (%i) does not match poly nDoF (%i)",
+        kClassName, __func__, (int)X.size(), Get_nDoF()
+      ));
+      return kNaN_double;
     }
   }
 
@@ -143,11 +151,11 @@ double NPoly::Eval(const vecd &X) const
   //same as above, but use the coefficients 'hard-coded' to each element
   if (fRangeChecksEnabled) {
     if ((int)X.size() != Get_nDoF()) { 
-      throw logic_error(Form(
-        "in <NPoly::Eval(vecd)>: Size of input vector (%zi) does not match poly nDoF (%u)",
-        X.size(), Get_nDoF()
+      throw logic_error(Form("in <%s::%s>: "
+        "Size of input vector (%zi) does not match poly nDoF (%u)",
+        kClassName, __func__, X.size(), Get_nDoF()
       )); 
-      return std::numeric_limits<double>::quiet_NaN();
+      return kNaN_double;
     }
   }
 
@@ -181,16 +189,18 @@ vecd NPoly::Gradient(const vecd &coeff, const vecd &X) const
 {
   if (fRangeChecksEnabled) {
     if (coeff.size() != Get_nElems()) { 
-      Error("NPoly::Eval()",
-      "Wrong number of coeffs. given; expected %i, recieved %i.",
-      Get_nElems(), (int)coeff.size() );
+      throw logic_error(Form("in <%s::%s>: "
+        "Wrong number of coeffs. given; expected %i, recieved %i.",
+        kClassName, __func__, Get_nElems(), (int)coeff.size() 
+      ));
       return {};
     }
     
-    if ((int)X.size() != fnDoF) { 
-      Error("NPoly::Eval_noCoeff",
-      "Size of input vector (%i) does not match poly nDoF (%i)",
-      (int)X.size(), fnDoF);
+    if ((int)X.size() != Get_nDoF()) { 
+      throw logic_error(Form("in <%s::%s>: "
+        "Size of input vector (%i) does not match poly nDoF (%i)",
+        kClassName, __func__, (int)X.size(), Get_nDoF()
+      ));
       return {};
     }
   } 
@@ -233,9 +243,13 @@ vecd NPoly::Gradient(const vecd &X) const
   //same as above, but use the coefficients 'hard-coded' to each element
   
   if (fRangeChecksEnabled) {
-    Error("Gradient()", "Size of input vector (%i) does not match poly nDoF (%i)",
-	  (int)X.size(), (int)Get_nDoF());
-    return {};
+    if ((unsigned int)X.size() != Get_nDoF()) {
+      throw logic_error(Form("in <%s::%s>: "
+        "Size of input vector (%i) does not match poly nDoF (%i)",
+        kClassName, __func__, (int)X.size(), (int)Get_nDoF()
+      ));
+      return {};
+    }
   }
   
   //now, actually evaluate
@@ -274,9 +288,13 @@ RMatrix NPoly::Hessian(const vecd &X) const
   //same as above, but use the coefficients 'hard-coded' to each element
   
   if (fRangeChecksEnabled) {
-    Error("Hessian()", "Size of input vector (%i) does not match poly nDoF (%i)",
-	  (int)X.size(), (int)Get_nDoF());
-    return {};
+    if ((int)X.size() != (int)Get_nDoF()) {
+      throw logic_error(Form("in <%s::%s>: "
+        "Size of input vector (%i) does not match poly nDoF (%i)",
+        kClassName, __func__, (int)X.size(), (int)Get_nDoF()
+      ));
+      return {};
+    }
   }
   
   //now, actually evaluate
@@ -388,8 +406,10 @@ void NPoly::Add_element(const RVec<int> &pows, double coefficient)
 void NPoly::Add_element(const NPoly::NPolyElem& elem)
 {
   if (elem.powers.size()!=Get_nDoF()) {
-    Error("Add_element", "Num. of powers (%i) incorrect size for this Poly's DoF (%i)",
-	  (int)elem.powers.size(), Get_nDoF());
+    throw logic_error(Form("in <%s::%s>: "
+      "Num. of powers (%i) incorrect size for this Poly's DoF (%i)",
+	    kClassName, __func__, (int)elem.powers.size(), Get_nDoF()
+    ));
     return;
   }
   
