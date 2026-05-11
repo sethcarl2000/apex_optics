@@ -29,6 +29,8 @@ struct HoleData_t {
     TVector3 position_vtx_scs; 
 }; 
 
+// this script takes the *old* format of holefit data, and converts it to useful output for the polynomial-training scripts. 
+// no longer in use (the 'isolate_sieveholes' software does this for itself now). 
 int convert_holefit_data(size_t n_events_to_generate, const bool is_RHRS, const char* path_infile, const char* path_outfile) 
 {
     const char* const here = "convert_holefit_data"; 

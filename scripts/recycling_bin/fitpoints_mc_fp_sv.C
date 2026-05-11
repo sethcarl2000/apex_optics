@@ -19,6 +19,9 @@ struct Track_t {
     double x,y,dxdz,dydz,dpp; 
 };
 
+// (11 May 2026) - this script is now depreciated (same functionality is performed by 'create_MC_polynomial_models')
+
+
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 //if you want to avoid creating (or overwriting) a db-file, just enter "" as the db-file name, and only the histograms will be drawn instead. 
 int fitpoints_mc_fp_sv( const int poly_order=2,

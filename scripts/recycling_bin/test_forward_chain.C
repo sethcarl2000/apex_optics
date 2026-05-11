@@ -10,8 +10,10 @@
 #include "include/TestAngleReco.h"
 #include "include/ChainedOpticsModel.h"
 #include "include/Add_branch_from_Trajectory_t.h"
+#include "opticsModel/chained.h"
 #include <AngleRecoTester.h> 
 #include <TParameter.h>
+#include <TBox.h> 
 #include <ApexOptics.h> 
 #include <TVector3.h> 
 #include <TSystem.h> 
@@ -122,7 +124,7 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
 
         // sv <= [Poly] <= fp
         //{"data/poly/fits_5Dec/V123_fp_sv_4ord.dat", branches_sv, 4} //*/ 
-        {"data/poly/fits_21Dec/V123_fp_sv_L_4ord.dat", branches_sv, 4} //*/ 
+        {"data/poly/fits_30Dec/V123-v01_fp_sv_R_4ord.dat", branches_sv, 4} //*/ 
 
         /*/ sv <= [Poly] <= fp-fwd <= _Poly7_ <= fp
         {"data/csv/poly_fits_fp_fp-fwd_L_4ord.dat", branches_fwd_fp, 4}, 
@@ -158,8 +160,8 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
         {"data/csv/poly_fits_q1-rev_sv_L_4ord.dat", branches_sv,     5} //*/ 
     
         // sv => [Poly] => fp-fwd => _Poly_ => fp 
-        {"data/poly/mc_sv_fp_L_4ord.dat",            branches_fp, 5},
-        {"data/poly/fits_21Dec/V123_fp-fwd_fp_L_3ord.dat", branches_fp, 4} 
+        {"data/poly/mc_sv_fp_R_4ord.dat",            branches_fp, 5},
+        {"data/poly/fits_30Dec/V123_fp-fwd_fp_R_3ord.dat", branches_fp, 4} 
         //*/ 
     
     }); 
@@ -212,6 +214,28 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
 
     printf("Processing %li events from file '%s'...", n_events, path_infile); cout << endl; 
     
+    
+    ChainedModel chained_model(ArmMode::kRHRS); 
+    rna = chained_model.DefineOutputs(rna.Get()); 
+
+    
+    //create both histograms
+    auto hist_xy = rna.Get()
+        .Histo2D({"h_xy",     "x_{sv} vs y_{sv} (linear dp/p correction);x_{sv};y_{sv}", 200, -0.125, 0.125, 200, -0.125, 0.125}, "reco_x_sv", "reco_y_sv");
+    
+    auto hist_angles = rna.Get()
+        .Histo2D({"h_angles", "dx/dz_{sv} vs dy/dz_{sv} (linear dp/p correction);dx/dx_{sv};dy/dz_{sv}", 200, range_dxdz[0],range_dxdz[1], 200, range_dydz[0],range_dydz[1]}, "reco_dxdz_sv", "reco_dydz_sv"); 
+
+    TCanvas *c; 
+    c = new TCanvas("c_z_reco", "angles and x & y", 1400, 700);
+    c->Divide(2,1); 
+    gStyle->SetPalette(kBird); 
+    c->cd(1); hist_xy    ->DrawCopy("col");
+    c->cd(2); hist_angles->DrawCopy("col");
+    return 0; 
+
+#if 0 
+    /*
     rna.Define("Xfp", [](double x, double y, double dxdz, double dydz)
         {
             return Trajectory_t{ x, y, dxdz, dydz };
@@ -258,7 +282,9 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
         Error(here, "RDFNodeAccumulator reached error status when defining branches.\n Message: %s", rna.GetErrorMsg().c_str()); 
         return -1; 
     }
+
     
+    /*
     rna = Add_branch_from_Trajectory_t(rna.Get(), "Xsv_first_guess", {
         {"fg_x_sv",    &Trajectory_t::x},
         {"fg_y_sv",    &Trajectory_t::y},
@@ -278,7 +304,8 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
         "corr_y_sv",
         "corr_dxdz_sv",
         "corr_dydz_sv"
-    }); 
+    }); */ 
+
 
     rna.Define("y_pos", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}); 
 
@@ -295,20 +322,10 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
     auto hist_z_dy_nocut = rna.Get()
         .Histo2D<double>({"h_z_dy_nocut", "No PID cut;z_{tg};dy/dz_{sv}", 200, -0.4, +0.4, 200, -0.04, 0.03}, "z_reco_vertical", "reco_dydz_sv"); 
 
-   
-
     auto hist_z = rna.Get()
         .Histo1D<double>({"h_z", "Z_{hcs} reconstruction;z_{tg};", 200, -0.4, +0.4}, "z_reco_vertical"); 
 
     
-    //create both histograms
-    auto hist_xy = rna.Get()
-        .Histo2D({"h_xy",     "x_{sv} vs y_{sv} (linear dp/p correction);x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "reco_x_sv", "reco_y_sv");
-    
-    auto hist_angles = rna.Get()
-        .Histo2D({"h_angles", "dx/dz_{sv} vs dy/dz_{sv} (linear dp/p correction);dx/dx_{sv};dy/dz_{sv}", 200, range_dxdz[0],range_dxdz[1], 200, range_dydz[0],range_dydz[1]}, "reco_dxdz_sv", "reco_dydz_sv"); 
-    
-
     //create both histograms
     auto hist_fg_xy = rna.Get()
         .Histo2D({"h_fg_xy",     "x_{sv} vs y_{sv};x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "fg_x_sv", "fg_y_sv");
@@ -323,67 +340,52 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
 
-
+    /* 
     AngleRecoTester angle_tester(is_RHRS, target, rna.Get()); 
 
-    auto dxdz   = AngleRecoTester::kDxdz; 
-    auto dydz   = AngleRecoTester::kDydz; 
-    auto slopes = AngleRecoTester::kSlopes; 
+    auto kDxdz   = AngleRecoTester::kDxdz; 
+    auto kDydz   = AngleRecoTester::kDydz; 
+    auto kSlopes = AngleRecoTester::kSlopes; 
     
     angle_tester.SetRange_dxdz(range_dxdz[0], range_dxdz[1]);
     angle_tester.SetRange_dydz(range_dydz[0], range_dydz[1]);
 
-    angle_tester.Measure(dxdz, 
-        4,13, 
-        1,8, 
+    //angle_tester.SetFlag(AngleRecoTester::kDraw_slope_points); 
+
+    //measure dxdz
+    angle_tester.Measure(kDxdz, 
+        4,12, 
+        3,7, 
         1.35, 0.50, 1.00
-    );
-
-    angle_tester.Measure(dydz | slopes, 
-        4,13, 
-        1,8, 
-        1.35, 0.50, 1.00
-    );
-
-    return 0; 
-
-    /*/Measure lab-vertical angle (dxdz)
-    TestAngleReco::Evaluate(is_RHRS, TestAngleReco::kDxdz, rna.Get(), target, 
-        4,13, 
-        1,8, 
-        1.35, 0.50, 1.00,
-        "reco_dxdz_sv", "reco_dydz_sv",
-        false, 
-        range_dxdz[0], range_dxdz[1],
-        range_dydz[0], range_dydz[1]
     ); 
 
-    //Measure lab-horizontal angle (dydz)
-    TestAngleReco::Evaluate(is_RHRS, TestAngleReco::kDydz, rna.Get(), target, 
-        4,13, 
-        2,10, 
-        1.25, 0.65, 0.20,
-        "reco_dxdz_sv", "reco_dydz_sv",
-        true, 
-        range_dxdz[0], range_dxdz[1],
-        range_dydz[0], range_dydz[1]
-    ); 
+    //measure dydz
+    angle_tester.Measure(kDydz | kSlopes, 
+        4,12, 
+        3,7, 
+        1.35, 0.50, 1.00
+    );
 
     return 0;  //*/ 
 
     TCanvas *c; 
     c = new TCanvas("c_z_reco", c_title, 700, 700);
-    
+    gStyle->SetPalette(kBird); 
+    hist_xy->DrawCopy("col");
+    auto box = new TBox(-50e-3,-30e-3, +50e-3,+30e-3); 
+    box->SetFillStyle(0); 
+    box->Draw(); 
+
+    return 0; 
 
     hist_z->DrawCopy(); 
-
 
     c = new TCanvas("c1", c_title, 1200, 600); 
     c->SetLeftMargin(0.12); c->SetRightMargin(0.05); 
     c->Divide(2,1, 0.01,0.01); 
 
     c->cd(1); hist_fg_xy->DrawCopy("col2"); 
-    c->cd(2); hist_xy->DrawCopy("col2");
+    c->cd(2); 
     
     c = new TCanvas("c2", c_title, 1200, 600); 
     c->Divide(2,1, 0.01,0.01); 
@@ -392,4 +394,5 @@ int test_forward_chain( const char* path_infile ="data/replay/real_L_V2.root",
     c->cd(2); hist_angles->DrawCopy("col2"); 
 
     return 0; 
+#endif 
 }

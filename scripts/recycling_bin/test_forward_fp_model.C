@@ -8,6 +8,7 @@
 #include <NPolyArrayChain.h> 
 #include <Interactive3dHist.hxx>
 #include <ApexOptics.h> 
+#include <AngleRecoTester.h> 
 //ROOT headers
 #include <ApexOptics.h> 
 #include <TVector3.h> 
@@ -124,7 +125,7 @@ int test_forward_fp_model( const char* path_infile ="data/replay/real_L_V2.root"
         }, {"Xfp_fwd"});
 
     
-    const int n_iterations = 3;  
+    const int n_iterations = 1;  
     const double fp_error_threshold = 1e-6; 
 
     rna.Define("Xsv_reco", [&model, n_iterations, fp_error_threshold](Trajectory_t Xfp_fwd, Trajectory_t Xsv, TVector3 vtx_hcs)
@@ -135,10 +136,12 @@ int test_forward_fp_model( const char* path_infile ="data/replay/real_L_V2.root"
             auto&& Xsv_rvec = ApexOptics::Trajectory_t_to_RVec(Xsv); 
             auto&& Xfp_rvec = ApexOptics::Trajectory_t_to_RVec(Xfp_fwd); 
             
-            for (int n_it=0; n_it<n_iterations; n_it++) {
+            for (int n_it=0; n_it<n_iterations;) {
                 
                 //first, use the first-order taylor expansion of our optics model to match-up with the vertical raster
                 Xsv = model->Compute_Xsv(Xfp_fwd, vtx_hcs, Xsv_rvec);
+
+                if (++n_it >= n_iterations) break; 
 
                 //now, match up the new, interpolated value of Xsv to the known value of Xfp.  
                 Xsv_rvec = ApexOptics::Trajectory_t_to_RVec(Xsv); 
@@ -226,29 +229,31 @@ int test_forward_fp_model( const char* path_infile ="data/replay/real_L_V2.root"
     //set the color pallete
     gStyle->SetPalette(kSunset); 
     gStyle->SetOptStat(0); 
+    
+    
+    AngleRecoTester angle_tester(is_RHRS, target, rna.Get()); 
 
-    /*/Measure lab-vertical angle (dxdz)
-    TestAngleReco::Evaluate(is_RHRS, TestAngleReco::kDxdz, rna.Get(), target, 
-        4,13, 
-        1,8, 
-        1.35, 0.50, 1.00,
-        "reco_dxdz_sv", "reco_dydz_sv",
-        false, 
-        range_dxdz[0], range_dxdz[1],
-        range_dydz[0], range_dydz[1]
-    ); 
+    auto dxdz   = AngleRecoTester::kDxdz; 
+    auto dydz   = AngleRecoTester::kDydz; 
+    auto slopes = AngleRecoTester::kSlopes; 
+    
+    angle_tester.SetRange_dxdz(range_dxdz[0], range_dxdz[1]);
+    angle_tester.SetRange_dydz(range_dydz[0], range_dydz[1]);
 
-    //Measure lab-horizontal angle (dydz)
-    TestAngleReco::Evaluate(is_RHRS, TestAngleReco::kDydz, rna.Get(), target, 
+    //measure dxdz
+    angle_tester.Measure(dxdz, 
         4,12, 
-        1,10, 
-        1.25, 0.65, 0.20,
-        "reco_dxdz_sv", "reco_dydz_sv",
-        true, 
-        range_dxdz[0], range_dxdz[1],
-        range_dydz[0], range_dydz[1]
+        1,8, 
+        1.35, 0.50, 1.00
     ); 
-    return 0;  //*/ 
+
+    //measure dydz
+    angle_tester.Measure(dydz | slopes, 
+        4,12, 
+        1,8, 
+        1.35, 0.50, 1.00
+    );
+    return 0; 
 
     TCanvas *c; 
     c = new TCanvas("c_z_reco", c_title, 700, 700); 

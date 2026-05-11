@@ -9,7 +9,8 @@
 using namespace std; 
 using namespace ROOT::VecOps; 
 
-//this covnversion is for monte-carlo data
+//this covnversion is for monte-carlo data.
+// (11 May 26) This script is depreciated, as the code in the 'apex_mc_generator' repo now does this for itself.
 int convert_mc_to_fpcoords(const char* path_infile, const char* path_outfile, const char* tree_name="tracks_fp") 
 {
 

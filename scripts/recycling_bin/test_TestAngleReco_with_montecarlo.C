@@ -41,13 +41,11 @@ EvaluatedAngleResult_t Spoil_data_and_measure(const double gaus_noise, ROOT::RDF
 
 int test_TestAngleReco_with_montecarlo(const char* path_infile, const char* target_name)
 {
-    const char* const here = "test_TestAngleReco_with_montecarlo"; 
-
     randGen = new TRandom3; 
     
     auto param_bool = Get_TParameter_from_TFile<bool>(path_infile, "is_RHRS"); 
     if (!param_bool.has_value()) {
-        Error(here, "Unable to extract 'is_RHRS' TParameter, from file '%s'.", path_infile); 
+        Error(__func__, "Unable to extract 'is_RHRS' TParameter, from file '%s'.", path_infile); 
         return -1; 
     }
     const bool is_RHRS = param_bool.value(); 
@@ -72,25 +70,28 @@ int test_TestAngleReco_with_montecarlo(const char* path_infile, const char* targ
         
         EvaluatedAngleResult_t result; 
         
-        auto result_dydz = TestAngleReco::Evaluate(
-            is_RHRS, TestAngleReco::kDydz, df, target,
-            4, 13, 
-            0, 10, 
-            1.25, 0.50, 0.20,
-            "dxdz_spoil", "dydz_spoil",
-            -0.045, +0.055,
-            -0.035, +0.020
-        ); 
-
         auto result_dxdz = TestAngleReco::Evaluate(
             is_RHRS, TestAngleReco::kDxdz, df, target,
             4, 13, 
             0, 10, 
             1.25, 0.50, 1.00,
             "dxdz_spoil", "dydz_spoil",
+            false, 
             -0.045, +0.055,
             -0.035, +0.020
         ); 
+
+        auto result_dydz = TestAngleReco::Evaluate(
+            is_RHRS, TestAngleReco::kDydz, df, target,
+            4, 13, 
+            0, 10, 
+            1.25, 0.50, 0.20,
+            "dxdz_spoil", "dydz_spoil",
+            true,
+            -0.045, +0.055,
+            -0.035, +0.020
+        ); 
+
         if (!(result_dxdz.has_value() && result_dydz.has_value())) return result; 
 
         result.dxdz = result_dxdz.value();
@@ -205,6 +206,7 @@ int test_TestAngleReco_with_montecarlo(const char* path_infile, const char* targ
         1, 10, 
         1.25, 0.50, 1.00,
         "dxdz_spoil", "dydz_spoil",
+        false,
         -0.045, +0.055,
         -0.035, +0.020
     ); 
@@ -215,6 +217,7 @@ int test_TestAngleReco_with_montecarlo(const char* path_infile, const char* targ
         1, 10, 
         1.25, 0.50, 0.25,
         "dxdz_spoil", "dydz_spoil",
+        true,
         -0.045, +0.055,
         -0.035, +0.020
     ); 

@@ -119,9 +119,9 @@ public:
 
 
 namespace {
-    constexpr double beam_energy = 2.200;    /// beam energy, GeV
-    constexpr double m_A         = 0.320;    /// Rest mass of A', GeV/c2
-    constexpr double m_e         = 0.501e-3; /// e+/e- rest mass, GeV/c2 
+    constexpr double beam_energy = 2200.;    /// beam energy, GeV
+    constexpr double m_A         =  320.;    /// Rest mass of A', GeV/c2
+    constexpr double m_e         =    0.501; /// e+/e- rest mass, GeV/c2 
     constexpr double E_electron = m_A/2.;    /// electron/positrion energy in A' rest frame, GeV
         
     constexpr double beam_E2 = beam_energy*beam_energy; 
@@ -133,7 +133,7 @@ namespace {
 
     constexpr int N_foils = 10;     /// number of production foils
 
-    constexpr double spectrometer_p0 = 1.108; //GeV/c 
+    constexpr double spectrometer_p0 = 1104.; //GeV/c 
     
     uniform_real_distribution<double> rand_generator(0., 1.); 
 
@@ -256,193 +256,8 @@ int metropolis_A_production(const bool is_RHRS)
     random_device rd; 
     twister = mt19937(rd()); 
     
-    /*/perform a metropolis update
-    auto metropolis_update = [  is_RHRS,
 
-                                x_sweep_range,      //metropolis random-walk parameters 
-                                theta_sweep_range, 
-                                phi_sweep_range, 
-                                foil_jump_prob, 
-                                rotation_RMS, 
-
-                                range_R_x_sv, range_R_y_sv, //detector acceptances
-                                range_L_x_sv, range_L_y_sv, 
-                                range_dp, 
-
-                                p_electron_mag  //electron momentum magnitude in A' rest frame
-                            ](MetPhasePoint_t& point) 
-    {
-
-        auto new_point = point; 
-
-        new_point.x     += (1. - 2.*Rand())*x_sweep_range; 
-        new_point.theta += (1. - 2.*Rand())*theta_sweep_range; 
-        new_point.phi   += (1. - 2.*Rand())*phi_sweep_range; 
-        
-        new_point.amplitude = A_production_amplitude(new_point.x, new_point.theta);  
-
-        double jump_r = Rand(); 
-        if (jump_r < foil_jump_prob) {
-            //decide whether to jump to the next or previous foil
-            if (jump_r / foil_jump_prob < 0.5) { new_point.foil_num += +1; } else { new_point.foil_num += -1; } 
-            //fix the new foil num if its out-of-range
-            if (new_point.foil_num < 0) new_point.foil_num = 0; 
-            if (new_point.foil_num >= N_foils) new_point.foil_num = N_foils-1; 
-        }
-        
-        //get a new electorn direction (in A' rest frame)
-        new_point.P_electron = Random_rotation(new_point.P_electron, rotation_RMS); 
-
-        new_point.P_electron = new_point.P_electron.Unit() * p_electron_mag; 
-
-        double E_a = new_point.x * beam_energy; 
-        double p_A_mag = sqrt( (E_a*E_a) - m_A2 ); 
-
-        TVector3 p_A(
-            p_A_mag * cos(new_point.theta) * cos(new_point.phi), 
-            p_A_mag * sin(new_point.theta) * sin(new_point.phi), 
-            p_A_mag * cos(new_point.theta)
-        ); 
-
-        //now, in the rest-frame of the A', we generate the directions of the positron / electron randomly
-        double gamma_A = E_a / m_A; 
-        double beta_A  = sqrt( 1. - 1./(gamma_A*gamma_A) ); 
-
-        //_________________________________________________________________________________________
-        //take a vector in the rest-frame of the A', and boost it to the lab frame
-        auto boost_and_rotate = [gamma_A, beta_A, &new_point](const TVector3 &p, double E)
-        {
-            TVector3 p_boost(
-                p[0], 
-                p[1], 
-                gamma_A * (p[2] + beta_A*E)
-            ); 
-            
-            //so, now that we've boosed the momentum back to the lab, 
-            //let's rotate this vector, so that it's boost is in line with the momentum of the A' 
-            p_boost.RotateX( new_point.theta );
-            p_boost.RotateZ( new_point.phi );
-            
-            return p_boost; 
-        };
-        //_________________________________________________________________________________________
-        
-        //randomly generate the vertex, in line with the production target geometry        
-        new_point.x_hcs = 2.e-3*( 1. - 2.*Rand() ); 
-        new_point.y_hcs = 2.e-3*( 1. - 2.*Rand() ); 
-
-        TVector3 vertex(
-            new_point.x_hcs, 
-            new_point.y_hcs,
-            Get_foil_z(new_point.foil_num)
-        ); 
-
-        //check the acceptances of the electron and positron
-        new_point.Pe_boosted = boost_and_rotate(new_point.P_electron, E_electron); 
-        new_point.Pp_boosted = boost_and_rotate(-1.*new_point.P_electron, E_electron); 
-
-        new_point.in_acceptance = true; 
-        
-        //reject update if the new electron is outside the momentum range
-        if (fabs(new_point.Pe_boosted.Mag() - spectrometer_p0)/spectrometer_p0 > range_dp) { new_point.in_acceptance=false; } 
-        if (fabs(new_point.Pp_boosted.Mag() - spectrometer_p0)/spectrometer_p0 > range_dp) { new_point.in_acceptance=false; } 
-
-        //___________________________________________________________________________________________________
-        auto check_acceptance = [&](const TVector3& p, bool is_RHRS)
-        {   
-            Trajectory_t traj_HCS{
-                vertex.x() + (p.x()/p.z())*(0. - vertex.z()), 
-                vertex.y() + (p.y()/p.z())*(0. - vertex.z()), 
-                p.x()/p.z(), 
-                p.y()/p.z(), 
-                p.Mag()
-            }; 
-
-            auto traj_SCS = ApexOptics::HCS_to_SCS(is_RHRS, traj_HCS);
-            
-            double xmin = is_RHRS ? range_R_x_sv[0] : range_L_x_sv[0]; 
-            double xmax = is_RHRS ? range_R_x_sv[1] : range_L_x_sv[1]; 
-
-            if (traj_SCS.x > xmax || traj_SCS.x < xmin) return false;   
-         
-            double ymin = is_RHRS ? range_R_y_sv[0] : range_L_y_sv[0]; 
-            double ymax = is_RHRS ? range_R_y_sv[1] : range_L_y_sv[1];     
-
-            if (traj_SCS.y > ymax || traj_SCS.y < ymin) return false; 
-
-            return true; 
-        };
-        //___________________________________________________________________________________________________
-
-        if (check_acceptance(new_point.Pp_boosted, true)  == false) { new_point.in_acceptance=false; } 
-        if (check_acceptance(new_point.Pe_boosted, false) == false) { new_point.in_acceptance=false; } 
-
-        
-#if VERBOSE
-        Trajectory_t tj_e_HCS{
-            vertex.x() + (new_point.Pe_boosted.x()/new_point.Pe_boosted.z())*(0. - vertex.z()), 
-            vertex.y() + (new_point.Pe_boosted.y()/new_point.Pe_boosted.z())*(0. - vertex.z()), 
-            new_point.Pe_boosted.x()/new_point.Pe_boosted.z(), 
-            new_point.Pe_boosted.y()/new_point.Pe_boosted.z(), 
-            new_point.Pe_boosted.Mag()
-        }; 
-
-        auto tj_e_SCS = ApexOptics::HCS_to_SCS(false, tj_e_HCS);
-
-        Trajectory_t tj_p_HCS{
-            vertex.x() + (new_point.Pp_boosted.x()/new_point.Pp_boosted.z())*(0. - vertex.z()), 
-            vertex.y() + (new_point.Pp_boosted.y()/new_point.Pp_boosted.z())*(0. - vertex.z()), 
-            new_point.Pp_boosted.x()/new_point.Pp_boosted.z(), 
-            new_point.Pp_boosted.y()/new_point.Pp_boosted.z(), 
-            new_point.Pp_boosted.Mag()
-        }; 
-
-        auto tj_p_SCS = ApexOptics::HCS_to_SCS(true, tj_p_HCS);
-
-        printf(
-            " ~~~~~~~~~~~~~~~~ phase-space: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-            "   x_hcs       %-3.4f mm\n"
-            "   y_hcs       %-3.4f mm\n"
-            "   foil #      %i\n"
-            "   P[electron] - A' rest frame:  (%-.1f, %-.1f, %-.1f) MeV/c\n"
-            "   A':\n"
-            "       EA/E0   = 1.0 - %.2e\n"
-            "       theta_A = %-.3f mrad\n"
-            "       phi_A   = %-3.1f deg\n"
-            "   Electron:\n"
-            "       x_sv = %-.3f mm\n"
-            "       y_sv = %-.3f mm\n"
-            "   Positron:\n"
-            "       x_sv = %-.3f mm\n"
-            "       y_sv = %-.3f mm\n"
-            " inside acceptance? %s\n", 
-            new_point.x_hcs*1e3,
-            new_point.y_hcs*1e3, 
-            new_point.foil_num,
-            new_point.P_electron.x()*1e3, new_point.P_electron.y()*1e3, new_point.P_electron.z()*1e3, 
-            1. - new_point.x, 
-            new_point.theta, 
-            new_point.phi * (180./pi), 
-            tj_e_SCS.x*1e3, 
-            tj_e_SCS.y*1e3, 
-            tj_p_SCS.x*1e3, 
-            tj_p_SCS.y*1e3, 
-            new_point.in_acceptance ? "yes" : "no"
-        );
-#endif 
-
-        //reject update
-        if ((!new_point.in_acceptance) && (point.in_acceptance)) { return; }
-
-        //if we've gotten here, we can consider an update. 
-        if ( new_point.amplitude > point.amplitude || new_point.amplitude/point.amplitude > Rand() ) {
-
-            point = new_point; 
-        }
-        return; 
-    }; */ 
-
-    AprimeGenerator Aprime_generator(320., 2200., 1108); 
+    AprimeGenerator Aprime_generator(m_A, beam_energy, spectrometer_p0); 
 
     TH2D* x_and_theta  = new TH2D("h", "A' produced;x;#theta_{A}", 200, 1. - 16e-5, 1., 200, -1.5, +1.5); 
 
@@ -452,7 +267,7 @@ int metropolis_A_production(const bool is_RHRS)
 
     TH2D* h_x_y = new TH2D(
         "h_x_y_sv", 
-        Form("electrons on LHRS sieve face - m_{A} = %.1f MeV/c^{2};x_{sv} mm (lab-vertical);y_{sv} mm (lab-horizontal)",m_A*1.e3), 
+        Form("electrons on LHRS sieve face - m_{A} = %.1f MeV/c^{2};x_{sv} mm (lab-vertical);y_{sv} mm (lab-horizontal)",m_A), 
         200,-120.,+120., 
         200,-120.,+120.
     ); 

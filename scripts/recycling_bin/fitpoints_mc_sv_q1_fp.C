@@ -10,7 +10,9 @@
 
 using namespace std; 
 
-using namespace ROOT::VecOps; 
+using namespace ROOT::VecOps;
+
+// (11 May 2026) - this script is now depreciated (same functionality is performed by 'create_MC_polynomial_models')
    
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int fitpoints_mc_sv_q1_fp( const int poly_order_svq1=2,

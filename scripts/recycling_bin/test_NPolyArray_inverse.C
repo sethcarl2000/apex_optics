@@ -28,7 +28,7 @@ using ApexOptics::Trajectory_t;
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_NPolyArray_inverse(    const char* path_infile="data/replay/real_L_V2_sieve.root",  
+int test_NPolyArray_inverse(    const char* path_infile="data/sieve_holes/fits_21Dec/V123.root",  
                                 const char* tree_name="tracks_fp" ) 
 {
     auto infile = new TFile(path_infile, "READ");
@@ -95,11 +95,15 @@ int test_NPolyArray_inverse(    const char* path_infile="data/replay/real_L_V2_s
                 parr_fp_sv.Eval({Xfp.x, Xfp.y, Xfp.dxdz, Xfp.dydz})
             ); 
         }, {"Xfp"});
+    
+    //let's test shifts in momentum. 
+    const double dpp_shift = -0.0005; 
 
-    rna.Define("Xfp_reco", [&parr_sv_fp](double x, double y, double dxdz, double dydz, double dpp)
+
+    rna.Define("Xfp_reco", [&parr_sv_fp, dpp_shift](double x, double y, double dxdz, double dydz, double dpp)
         {
             return ApexOptics::RVec_to_Trajectory_t(
-                parr_sv_fp.Eval({x,y,dxdz,dydz,dpp})
+                parr_sv_fp.Eval({x,y,dxdz,dydz,dpp + dpp_shift})
             ); 
         }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"});
 
@@ -174,8 +178,8 @@ int test_NPolyArray_inverse(    const char* path_infile="data/replay/real_L_V2_s
         "dydz_fp", "reco_dydz_fp");
 
     
-    constexpr double error_x = 5e-3; 
-    constexpr double error_y = 5e-3; 
+    constexpr double error_x    = 40e-3; 
+    constexpr double error_y    = 5e-3; 
     constexpr double error_dxdz = 5e-3; 
     constexpr double error_dydz = 5e-3; 
 
@@ -198,15 +202,15 @@ int test_NPolyArray_inverse(    const char* path_infile="data/replay/real_L_V2_s
 
     //set the color pallete
     gStyle->SetPalette(kSunset); 
-    gStyle->SetOptStat(1); 
+    gStyle->SetOptStat(0); 
 
     //PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col2", kSunset); 
     //return 0; 
     TCanvas* c; 
 
-    c = new TCanvas("c1", Form("2d plots. data: %s",path_infile), 1200, 700); 
+    c = new TCanvas("c1", Form("2d plots. data: '%s' dp/p shift: %+.5f",path_infile,dpp_shift), 1200, 700); 
     
-    c->Divide(2,2, 0.01,0.01); 
+    c->Divide(2,2, 0.01,0.01);
     int c_num=1; 
 
     const char* draw_option = "col2"; 
@@ -221,7 +225,7 @@ int test_NPolyArray_inverse(    const char* path_infile="data/replay/real_L_V2_s
     (c->cd(c_num++))->SetLeftMargin(0.15); hist_dydz->DrawCopy(draw_option); line->DrawLine(dydz_range[0],dydz_range[0], dydz_range[1],dydz_range[1]);
 
     
-    c = new TCanvas("c2", Form("1d plots. data: %s",path_infile), 1200, 700); 
+    c = new TCanvas("c2", Form("1d plots. data: '%s' dp/p shift: %+.5f",path_infile,dpp_shift), 1200, 700); 
     
     c->Divide(2,2, 0.01,0.01); 
     c_num=1; 

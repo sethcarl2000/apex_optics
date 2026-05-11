@@ -10,6 +10,7 @@
 
 using namespace std; 
 
+// (11 May 2026) - this script is now depreciated (same functionality is performed by 'create_MC_polynomial_models')
 
 //creates db '.dat' files for two sepearate polynomials:
 // the fp_q1 polynomials map from FOCAL PLANE coordinates to Q1 FRONT coordinates.

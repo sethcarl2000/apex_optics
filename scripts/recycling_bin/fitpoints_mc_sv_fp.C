@@ -10,6 +10,9 @@
 
 using namespace std; 
 
+// (11 May 2026) - this script is now depreciated (same functionality is performed by 'create_MC_polynomial_models')
+
+
 //creates db '.dat' files for polynomials which are meant to map from focal-plane coordinates to sieve coordinates. 
 int fitpoints_mc_sv_fp(  const int poly_order=2,
                          const char* path_infile="",
