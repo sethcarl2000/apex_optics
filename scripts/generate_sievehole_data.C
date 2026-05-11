@@ -109,12 +109,13 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_H3
 
     try {
         model->CreateChainRev({ // sv <= [Poly] q1-fwd <= _Poly_ <= fp 
-            {"data/csv/poly_fits_fp_q1-fwd_L_4ord.dat", branches_fwd_q1, 4}, 
-            {"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv,     5} 
+            {"data/poly/fits_6Nov/V123_fp_sv_4ord.dat", branches_sv, 4} 
+            //{"data/csv/poly_prod_q1_sv_L_4ord.dat",     branches_sv, 5} 
         }); 
 
         model->CreateChainFwd({ // sv => [Poly] => fp
-            {"data/csv/poly_prod_sv_fp_L_4ord.dat", branches_fp, 5} 
+            {"data/csv/poly_prod_sv_fp_L_4ord.dat",     branches_fp, 5},
+            {"data/poly/fits_6Nov/V123_fp-fwd_fp_1ord.dat", branches_fp, 4} 
         }); 
     
     } catch (const std::exception& e) {
@@ -132,16 +133,16 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_H3
     //try and make the RDataFrame
     RDFNodeAccumulator rna(ROOT::RDataFrame(tree_name, path_infile)); 
 
-    rna.Define("Xsv", [](double x, double y, double dxdz, double dydz, double dpp)
-        {
-            return Trajectory_t{x, y, dxdz, dydz, dpp}; 
-        }, {"x_sv", "y_sv", "dxdz_sv", "dydz_sv", "dpp_sv"});
-
     rna.Define("Xfp", [](double x, double y, double dxdz, double dydz)
         {
             return Trajectory_t{x, y, dxdz, dydz}; 
         }, {"x_fp", "y_fp", "dxdz_fp", "dydz_fp"}); 
     
+    rna.Define("Xsv", [model](const Trajectory_t& Xfp, const TVector3& vtx_hcs)
+        {
+            return model->Compute_Xsv(Xfp, vtx_hcs);  
+        }, {"Xfp", "position_vtx"});
+
     //now, we can compute where each sieve-hole SHOULD be
     vector<SieveHole> sieve_holes = ApexOptics::ConstructSieveHoles(is_RHRS); 
 
@@ -207,8 +208,15 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_H3
         }); 
     }
 
-    
-    auto hist_dx_dy_ptr = rna.Get().Histo2D<double>({"h", "hist xy", 100, -0.05,0.05, 200, -0.04,0.03}, "dxdz_sv","dydz_sv"); 
+    rna = Add_branch_from_Trajectory_t(rna.Get(), "Xsv", {
+        {"reco_x_sv", &Trajectory_t::x},
+        {"reco_y_sv", &Trajectory_t::y},
+        {"reco_dxdz_sv", &Trajectory_t::dxdz},
+        {"reco_dydz_sv", &Trajectory_t::dydz},
+        {"reco_dpp_sv", &Trajectory_t::dpp},
+    });
+
+    auto hist_dx_dy_ptr = rna.Get().Histo2D<double>({"h", "hist xy", 100, -0.05,0.05, 200, -0.04,0.03}, "reco_dxdz_sv","reco_dydz_sv"); 
 
     auto hist_dx_dy = (TH2D*)hist_dx_dy_ptr->Clone("hist_dx_dy"); 
 
@@ -264,11 +272,11 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_H3
 
     //cache the sieve-coords and fp-coords in memory, to make it faster. 
     auto df_cache = rna.Get().Cache({
-        "x_sv", 
-        "y_sv",
-        "dxdz_sv",
-        "dydz_sv",
-        "dpp_sv",
+        "reco_x_sv", 
+        "reco_y_sv",
+        "reco_dxdz_sv",
+        "reco_dydz_sv",
+        "reco_dpp_sv",
 
         "x_fp",
         "y_fp",
@@ -335,14 +343,14 @@ int generate_sievehole_data(const char* path_infile     = "data/replay/real_L_H3
             //create the 2d hist of the events in this box. 
             auto hist_box = df_cache  
                 //make a cut on events in our rectangle
-                .Filter([&](double dxdz){ return fabs(dxdz - hole_angle.dxdz_sv) < cut_halfwidth_x; }, {"dxdz_sv"})
-                .Filter([&](double dydz){ return fabs(dydz - hole_angle.dydz_sv) < cut_halfwidth_y; }, {"dydz_sv"})
+                .Filter([&](double dxdz){ return fabs(dxdz - hole_angle.dxdz_sv) < cut_halfwidth_x; }, {"reco_dxdz_sv"})
+                .Filter([&](double dydz){ return fabs(dydz - hole_angle.dydz_sv) < cut_halfwidth_y; }, {"reco_dydz_sv"})
                 
                 .Histo2D<double>({
                     "h_box", "", 
                     nbins_fit, hole_angle.dxdz_sv - cut_halfwidth_x, hole_angle.dxdz_sv + cut_halfwidth_x,
                     nbins_fit, hole_angle.dydz_sv - cut_halfwidth_y, hole_angle.dydz_sv + cut_halfwidth_y    
-                }, "dxdz_sv", "dydz_sv"); 
+                }, "reco_dxdz_sv", "reco_dydz_sv"); 
 
             //create each 1d-hist that we will attempt to fit
             auto fit_x = Fit_gauss_to_TH1D(hist_box->ProjectionX("h_box_dxdz")); 
