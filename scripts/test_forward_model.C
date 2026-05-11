@@ -96,7 +96,7 @@ public:
 //_______________________________________________________________________________________________________________________________________________
 //if you want to use the 'fp-sv' polynomial models, then have path_dbfile_2="". otherwise, the program will assume that the *first* dbfile
 // provided (path_dbfile_1) is the q1=>sv polynomials, and the *second* dbfile provided (path_dbfile_2) are the fp=>sv polynomials. 
-int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.root",
+int test_forward_model( const char* path_infile="data/replay/real_L_V2.root",
                         const char* path_dbfile="data/csv/poly_WireAndFoil_fp_sv_L_4ord.dat",  
                         const char* tree_name="tracks_fp" ) 
 {
@@ -249,10 +249,10 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
 
     //create both histograms
     auto hist_xy = rna.Get()
-        .Histo2D({"h_xy",     "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, 0.010}, "reco_x_sv", "reco_y_sv");
+        .Histo2D({"h_xy",     "Sieve-plane projection;x_{sv};y_{sv}", 200, -0.040, 0.045, 200, -0.045, +0.025}, "reco_x_sv", "reco_y_sv");
     
     auto hist_angles = rna.Get()
-        .Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, 0.03}, "reco_dxdz_sv", "reco_dydz_sv"); 
+        .Histo2D({"h_angles", "Sieve-plane projection;dx/dx_{sv};dy/dz_{sv}", 200, -0.05, 0.06, 200, -0.04, +0.04}, "reco_dxdz_sv", "reco_dydz_sv"); 
     
     auto hist_z_y = rna.Get()
         .Histo2D({"h_z_y",    "z_{tg} vs y_{sv};z_{tg};y_{sv}", 200, -0.4, 0.4, 200, -0.035, 0.035}, "z_reco_vertical", "reco_y_sv");
@@ -282,10 +282,11 @@ int test_forward_model( const char* path_infile="data/replay/real_L_V2_sieve.roo
     //return 0; 
     
     auto c = new TCanvas("c1", c_title, 1200, 600); 
+    gPad->SetLeftMargin(0.15); 
     c->Divide(2,1, 0.01,0.01); 
 
-    c->cd(1); hist_xy->DrawCopy("col2"); 
-    c->cd(2); hist_angles->DrawCopy("col2");
+    (c->cd(1))->SetLeftMargin(0.15); hist_xy->DrawCopy("col2"); 
+    (c->cd(2))->SetLeftMargin(0.15); hist_angles->DrawCopy("col2");
     
     auto c1 = new TCanvas("c2", c_title, 1200, 600); 
     c1->Divide(2,1, 0.01,0.01); 
