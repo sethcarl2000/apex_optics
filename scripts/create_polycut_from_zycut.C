@@ -5,7 +5,7 @@
 #include <ROOT/RVec.hxx>
 #include <TStyle.h>
 #include <TCanvas.h> 
-#include "include/Add_TParameter_to_TFile.h"
+#include "include/Get_TParameter_from_TFile.h"
 #include "include/RDFNodeAccumulator.h"
 #include <PolynomialCut.h> 
 
@@ -17,19 +17,12 @@ using namespace std;
 //this is basic script to launch the 'polynomial cut' app, based on cuts in the z_hcs & y_sv space.  
 int create_polycut_from_zycut(const char* path_infile) 
 {
-    const char* const here = "create_polycut_from_zycut"; 
+    
 
     ROOT::RDataFrame df("tracks_fp", path_infile); 
     RDFNodeAccumulator rna(df); 
 
-    //fetch which arm we're using, and catch any errors that may pop up 
-    auto is_RHRS_optional = Get_TParameter_from_TFile<bool>(path_infile, "is_RHRS"); 
-    
-    if (!is_RHRS_optional.has_value()) {
-        Error(here, "Unable to fetch 'is_RHRS' param from file."); 
-        return -1; 
-    }
-    const bool is_RHRS = is_RHRS_optional.value(); 
+    const bool is_RHRS = Get_TParameter_from_TFile<bool>(path_infile, "is_RHRS").value(); 
 
     rna.Define("Xsv", [](double x, double y, double dxdz, double dydz)
         {
@@ -40,7 +33,7 @@ int create_polycut_from_zycut(const char* path_infile)
         {
             return ApexOptics::SCS_to_HCS(is_RHRS, Xsv); 
         }, {"Xsv"});
-
+        
     //the new optics runs don't have this variable, so we need to define it for them. 
     rna.DefineIfMissing("y_hcs_corrected", [](TVector3 vtx){ return vtx.y(); }, {"position_vtx"}); 
 
