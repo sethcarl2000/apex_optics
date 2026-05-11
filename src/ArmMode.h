@@ -11,6 +11,10 @@ namespace ArmMode {
         kLHRS=1<<1, 
         kBoth=(kRHRS | kLHRS)
     };
+
+    //this is to keep compatability with older code which has not made the switch to the bit flag defined above. 
+    constexpr bool kRHRS_bool = true; 
+    constexpr bool kLHRS_bool = false; 
 }
 
 #endif 
