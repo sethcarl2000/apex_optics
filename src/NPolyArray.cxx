@@ -8,6 +8,9 @@
 #include <sstream> 
 #include <stdexcept> 
 
+namespace {
+    const char* kClassName = "NPolyArray";
+}
 
 using namespace std; 
 using namespace ROOT::VecOps; 
@@ -34,14 +37,13 @@ int NPolyArray::Get_nElems() const
 NPolyArray::NPolyArray(const vector<NPoly>& _polys) 
     : fStatus(NPolyArray::kNot_init)
 {
-    
-    const char* const here = "NPolyArray(vector<NPoly>)";
     //use the first polynomial to check the number of input DoF
     fDoF_out = _polys.size(); 
     fDoF_in  = 0; 
     
     if (fDoF_out < 1) { 
-        Error(here, "Input vector is empty. Cannot construct"); 
+            
+        Error(__func__, "Input vector is empty. Cannot construct"); 
         fStatus = NPolyArray::kError; 
         return; 
     }
@@ -49,7 +51,7 @@ NPolyArray::NPolyArray(const vector<NPoly>& _polys)
     fDoF_in = _polys.at(0).Get_nDoF(); 
     for (const NPoly& poly : _polys) {
         if (fDoF_in != poly.Get_nDoF()) {
-            Error(here, "DoF of input polys does not match. Cannot construct"); 
+            Error(__func__, "DoF of input polys does not match. Cannot construct"); 
             fDoF_in  =0; 
             fDoF_out =0; 
             fStatus = NPolyArray::kError; 
@@ -66,13 +68,12 @@ NPolyArray::NPolyArray(const vector<NPoly>& _polys)
 NPolyArray::NPolyArray(const vector<NPoly*>& _polys) 
     : fStatus(NPolyArray::kNot_init)
 {
-    const char* const here = "NPolyArray(vector<NPoly>)";
     //use the first polynomial to check the number of input DoF
     fDoF_out = _polys.size(); 
     fDoF_in  = 0; 
     
     if (fDoF_out < 1) { 
-        Error(here, "Input vector is empty. Cannot construct"); 
+        Error(__func__, "Input vector is empty. Cannot construct"); 
         fStatus = NPolyArray::kError; 
         return; 
     }
@@ -81,7 +82,7 @@ NPolyArray::NPolyArray(const vector<NPoly*>& _polys)
     fDoF_in = _polys.at(0)->Get_nDoF(); 
     for (const NPoly* poly : _polys) {
         if (fDoF_in != poly->Get_nDoF()) {
-            Error(here, "DoF of input polys does not match. Cannot construct"); 
+            Error(__func__, "DoF of input polys does not match. Cannot construct"); 
             fDoF_in  =0; 
             fDoF_out =0; 
             fStatus = NPolyArray::kError; 
@@ -98,10 +99,11 @@ NPolyArray::NPolyArray(const vector<NPoly*>& _polys)
 //______________________________________________________________________________________________
 RVec<double> NPolyArray::Eval(const RVec<double>& X) const 
 {
-    const char* const here = "Eval(const RVec<double>& X)"; 
-
     if ((int)X.size() != Get_DoF_in()) {
-        Error(here, "Input vec wrong size; %i, expected %i.", (int)X.size(), Get_DoF_in()); 
+        throw logic_error(Form(
+            "in <%s::%s>: Input vec wrong size; %i, expected %i.", 
+            kClassName, __func__, (int)X.size(), Get_DoF_in()
+        ));
         return {}; 
     }
 
@@ -115,8 +117,10 @@ RVec<double> NPolyArray::Eval(const RVec<double>& X) const
 const NPoly *NPolyArray::Get_poly(int i) const 
 {
     if (i<0 || i>=Get_DoF_out()) {
-        Error("Get_poly(int)", "Acess to array of polynomals out-of-range; asked for index %i, range is [0,%i].", 
-                i, Get_DoF_out()-1);
+        throw logic_error(Form(
+            "in <%s::%s>: Acess to array of polynomals out-of-range; asked for index %i, range is [0,%i].", 
+            kClassName, __func__, i, Get_DoF_out()-1
+        ));
         return nullptr; 
     }
     return &(fPolys.at(i)); 
@@ -125,8 +129,10 @@ const NPoly *NPolyArray::Get_poly(int i) const
 NPoly *NPolyArray::Get_poly(int i)
 {
     if (i<0 || i>=Get_DoF_out()) {
-        Error("Get_poly(int)", "Acess to array of polynomals out-of-range; asked for index %i, range is [0,%i].", 
-                i, Get_DoF_out()-1);
+        throw logic_error(Form(
+            "in <%s::%s>: Acess to array of polynomals out-of-range; asked for index %i, range is [0,%i].", 
+            kClassName, __func__, i, Get_DoF_out()-1
+        ));
         return nullptr; 
     }
     return &(fPolys.at(i)); 
@@ -135,8 +141,11 @@ NPoly *NPolyArray::Get_poly(int i)
 RMatrix NPolyArray::Jacobian(const RVec<double> &X) const 
 {
     if ((int)X.size() != Get_DoF_in()) {
-        Error("Jacobian()", "Input vector wrong size; got %i, expected %i", (int)X.size(), Get_DoF_in());
-        return RMatrix(0,0); 
+        throw logic_error(Form(
+            "in <%s::%s>: Input vector wrong size; got %i, expected %i", 
+            kClassName, __func__, (int)X.size(), Get_DoF_in()
+        ));
+        return RMatrix(0,0);
     }
     
     vector<double> J_vec; 
@@ -158,8 +167,11 @@ RMatrix NPolyArray::Jacobian(const RVec<double> &X) const
 RVec<RMatrix> NPolyArray::HessianTensor(const RVec<double> &X) const 
 {
     if ((int)X.size() != Get_DoF_in()) {
-        Error("HessianTensor()", "Input vector wrong size; got %i, expected %i", (int)X.size(), Get_DoF_in());
-        return {}; 
+        throw logic_error(Form(
+            "in <%s::%s>: Input vector wrong size; got %i, expected %i", 
+            kClassName, __func__, (int)X.size(), Get_DoF_in()
+        ));
+        return {};
     }
     
     vector<RMatrix> ret; ret.reserve(Get_DoF_out()); 
@@ -236,8 +248,10 @@ NPolyArray NPolyArray::Nest(const NPolyArray& output, const NPolyArray& input)
 int NPolyArray::Iterate_to_root(ROOT::RVec<double>& X, const ROOT::RVec<double>& Z, const int n_iterations, const double error_threshold) const
 {   
     if ( (int)X.size() != Get_DoF_in() || (int)Z.size() != Get_DoF_out() ) {
-        Error("Iterate_to_root", "input/output vec wrong size; got %i/%i, expected %i/%i.", 
-            (int)X.size(), (int)Z.size(), Get_DoF_in(), Get_DoF_out()); 
+        throw logic_error(Form("in <%s::%s>: "
+            "input/output vec wrong size; got %i/%i, expected %i/%i.", 
+            kClassName, __func__, (int)X.size(), (int)Z.size(), Get_DoF_in(), Get_DoF_out())
+        ); 
         return -1; 
     }
 
