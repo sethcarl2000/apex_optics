@@ -1,4 +1,7 @@
 
+#ifndef forward_production_h
+#define forward_production_h  
+
 //APEX headers
 #include "../include/RDFNodeAccumulator.h"
 #include "../include/TestAngleReco.h"
@@ -48,7 +51,6 @@ public:
     };
 
     FwdProdModel(); 
-    ~FwdProdModel() {}; 
 
     ROOT::RDF::RNode DefineOutputs(ROOT::RDF::RNode node_in) const; 
 };
@@ -95,49 +97,27 @@ ROOT::RDF::RNode FwdProdModel::DefineOutputs(ROOT::RDF::RNode node_in) const
     using namespace ApexOptics; 
     using RVecD = ROOT::RVec<double>; 
 
-    RDFNodeAccumulator rna(node_in); 
-           
-    rna.DefineIfMissing("position_vtx", [](TVector3 vtx){ return vtx; }, {"L_position_vtx"}); 
-
-    rna.Overwrite("R_Xfp", [](const RVecD& x, const RVecD& y, const RVecD& dxdz, const RVecD& dydz)
+    //___________________________________________________________________________________________
+    /// @brief compute closest approach of two trajectories (in hall coordinates)
+    auto get_closest_appoach = [](const Trajectory_t& R_scs, const Trajectory_t& L_scs)
     {
-        return Trajectory_t{x[0],y[0],dxdz[0],dydz[0]}; 
-    }, {"R_x_fp","R_y_fp","R_dxdz_fp","R_dydz_fp"}); 
-
-    rna.Overwrite("L_Xfp", [](const RVecD& x, const RVecD& y, const RVecD& dxdz, const RVecD& dydz)
-    {
-        return Trajectory_t{x[0],y[0],dxdz[0],dydz[0]}; 
-    }, {"L_x_fp","L_y_fp","L_dxdz_fp","L_dydz_fp"}); 
-
-    rna.Define("R_Xsv_reco", [this](const Trajectory_t& Xfp)
-    {
-        return fModel_R->Compute_Xsv_first_guess(Xfp); 
-    }, {"R_Xfp"});
-
-    rna.Define("L_Xsv_reco", [this](const Trajectory_t& Xfp)
-    {
-        return fModel_L->Compute_Xsv_first_guess(Xfp); 
-    }, {"L_Xfp"});
-
-    rna.Define("reco_position_vtx", [](const Trajectory_t& R_Xsv_scs, const Trajectory_t& L_Xsv_scs)
-    {   
-        auto R_Xsv = SCS_to_HCS(true,  R_Xsv_scs); 
-        auto L_Xsv = SCS_to_HCS(false, L_Xsv_scs); 
+        auto R = SCS_to_HCS(true,  R_scs); 
+        auto L = SCS_to_HCS(false, L_scs); 
         
-        TVector3 s1( R_Xsv.dxdz, R_Xsv.dydz, 1. );         
-        TVector3 s2( L_Xsv.dxdz, L_Xsv.dydz, 1. ); 
+        TVector3 s1( R.dxdz, R.dydz, 1. );         
+        TVector3 s2( L.dxdz, L.dydz, 1. ); 
 
-        TVector3 r1( R_Xsv.x, R_Xsv.y, 0. ); 
-        TVector3 r2( L_Xsv.x, L_Xsv.y, 0. ); 
+        TVector3 r1( R.x, R.y, 0. ); 
+        TVector3 r2( L.x, L.y, 0. ); 
 
-        TVector3 R = r1 - r2;
+        TVector3 sep = r1 - r2;
 
         //dot products
         double s1s1 = s1.Mag2(); 
         double s1s2 = s1 * s2; 
         double s2s2 = s2.Mag2(); 
 
-        RVecD B{ -R*s1, R*s2 }; 
+        RVecD B{ -sep*s1, sep*s2 }; 
 
         double det = s1s1*s2s2 - (s1s2*s1s2); 
 
@@ -152,7 +132,52 @@ ROOT::RDF::RNode FwdProdModel::DefineOutputs(ROOT::RDF::RNode node_in) const
         TVector3 closest_approach_L = s2*t[1] + r2; 
 
         return 0.5*(closest_approach_L + closest_approach_R); 
+    };
+    //___________________________________________________________________________________________
 
+    RDFNodeAccumulator rna(node_in); 
+           
+    rna.DefineIfMissing("position_vtx", [](TVector3 vtx){ return vtx; }, {"L_position_vtx"}); 
+
+    rna.Overwrite("R_Xfp", [](const RVecD& x, const RVecD& y, const RVecD& dxdz, const RVecD& dydz)
+    {
+        return Trajectory_t{x[0],y[0],dxdz[0],dydz[0]}; 
+    }, {"R_x_fp","R_y_fp","R_dxdz_fp","R_dydz_fp"}); 
+
+    rna.Overwrite("L_Xfp", [](const RVecD& x, const RVecD& y, const RVecD& dxdz, const RVecD& dydz)
+    {
+        return Trajectory_t{x[0],y[0],dxdz[0],dydz[0]}; 
+    }, {"L_x_fp","L_y_fp","L_dxdz_fp","L_dydz_fp"}); 
+
+    rna.Define("R_Xsv_fg", [this](const Trajectory_t& Xfp)
+    {
+        return fModel_R->Compute_Xsv_first_guess(Xfp); 
+    }, {"R_Xfp"});
+
+    rna.Define("L_Xsv_fg", [this](const Trajectory_t& Xfp)
+    {
+        return fModel_L->Compute_Xsv_first_guess(Xfp); 
+    }, {"L_Xfp"});
+
+    rna.Define("position_vtx_fg", [&get_closest_appoach](const Trajectory_t& R_Xsv_scs, const Trajectory_t& L_Xsv_scs)
+    {   
+        return get_closest_appoach(R_Xsv_scs, L_Xsv_scs);
+    }, {"R_Xsv_fg", "L_Xsv_fg"}); 
+
+    rna.Define("R_Xsv_reco", [this](const Trajectory_t& Xfp, const TVector3& vtx)
+    {
+        return fModel_R->Compute_Xsv(Xfp, vtx); 
+    }, {"R_Xfp", "position_vtx_fg"});
+
+    rna.Define("L_Xsv_reco", [this](const Trajectory_t& Xfp, const TVector3& vtx)
+    {
+        return fModel_L->Compute_Xsv(Xfp, vtx); 
+    }, {"L_Xfp", "position_vtx_fg"});
+
+    //now, re-compute the closest approach 
+    rna.Define("position_vtx_reco", [&get_closest_appoach](const Trajectory_t& R_Xsv_scs, const Trajectory_t& L_Xsv_scs)
+    {   
+        return get_closest_appoach(R_Xsv_scs, L_Xsv_scs);
     }, {"R_Xsv_reco", "L_Xsv_reco"}); 
 
     rna = Add_branches_from_Trajectory_t(rna.Get(), "R_Xsv_reco", {
@@ -164,3 +189,5 @@ ROOT::RDF::RNode FwdProdModel::DefineOutputs(ROOT::RDF::RNode node_in) const
 
     return rna.Get(); 
 }
+
+#endif
