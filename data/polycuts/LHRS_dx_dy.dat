@@ -1,0 +1,14 @@
+# PolynomialCut vertex file. the data format is space-delimited, and is as follows:
+#
+# [vertex-index] [vertex-x] [vertex-y]
+#
+# note that any lines startig with '#' will be ignored, so you can add comments to indicate
+# the circumstances under which this data was created, and how it should be used
+# (like which branches 'x' and 'y' correspond to.)
+0   -5.914023460e-02 -3.889411086e-02
+1   -4.191360663e-02 -8.959899883e-03
+2   -2.428005045e-02 +2.036340882e-03
+3   -1.030884823e-02 +1.282894756e-02
+4   +1.424248769e-02 +1.242167938e-02
+5   +4.096410746e-02 +2.036340882e-04
+6   +5.534223789e-02 -4.194862218e-02
