@@ -9,9 +9,16 @@
 #include <TStopwatch.h> 
 #include <TLegend.h> 
 #include <TF1.h> 
+#include <Math/LorentzVector.h>
+#include <Math/Vector4D.h> 
 
 #include <cstdio> 
 #include <string> 
+
+namespace {
+    constexpr double hrs_momentum = 1104.; //MeV 
+    constexpr double me2 = 0.511*0.511; //MeV^2  
+}
 
 void apply_pid_cut(RDFNodeAccumulator& rna, bool is_RHRS); 
 
@@ -83,15 +90,15 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
         return std::fabs(R_L_dt - center)/sigma < max_snr_stddev; 
     }, {"R_L_dt"});
 
-    //prob. that this event is an accidental coinc. event
-    rna.Define("p_accidental", [sigma, center, amplitude, base](double R_L_dt){
+    //prob. that this event is a 'true' coinc. event
+    rna.Define("p_coinc", [sigma, center, amplitude, base](double R_L_dt){
             double x = (R_L_dt - center)/sigma;
 
             //compute relative signal / bg amplitudes 
             double s = amplitude * std::exp( -x*x/2. );
             double b = base; 
             
-            return b / (s + b); 
+            return s / (s + b); 
             
         }, {"R_L_dt"});
 
@@ -99,33 +106,46 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
 
     //define output branches
     rna = model.DefineOutputs(rna.Get()); 
-
-    constexpr double hrs_momentum = 1104.;
     
     //do PID cuts
     apply_pid_cut(rna, true); 
     apply_pid_cut(rna, false); 
 
+    using FourVec = ROOT::Math::XYZTVector; 
+
     //define invariant mass
-    rna.Define("reco_invariant_mass", [hrs_momentum](const Trajectory_t& R_Xsv_scs, const Trajectory_t& L_Xsv_scs)
+    //sum of 3-momenta of both positron and electron 
+    rna.Define("P_p", [](const Trajectory_t& R_Xsv_scs)
     {
         auto R_Xsv = SCS_to_HCS(true,  R_Xsv_scs);
-        auto L_Xsv = SCS_to_HCS(false, L_Xsv_scs);
-
         TVector3 R_p( R_Xsv.dxdz, R_Xsv.dydz, 1. ); R_p = R_p.Unit() * hrs_momentum*( 1. + R_Xsv.dpp );
+        return R_p; 
+    }, {"R_Xsv_reco"}); 
+
+    rna.Define("P_e", [](const Trajectory_t& L_Xsv_scs)
+    {
+        auto L_Xsv = SCS_to_HCS(false, L_Xsv_scs);
         TVector3 L_p( L_Xsv.dxdz, L_Xsv.dydz, 1. ); L_p = L_p.Unit() * hrs_momentum*( 1. + L_Xsv.dpp );
+        return L_p; 
+    }, {"L_Xsv_reco"}); 
+
+    rna.Define("P_sum", [](const TVector3& Pe, const TVector3& Pp)
+    {
+        auto sum = Pp + Pe; 
+
+        return FourVec( 
+            sum.x(), 
+            sum.y(), 
+            sum.z(),
+            std::sqrt( Pp.Mag2() + me2 ) + std::sqrt( Pe.Mag2() + me2 )
+        ); 
         
-        //we're neglecting the electron mass
-        double m2 = 2.*( R_p.Mag()*L_p.Mag() - (R_p * L_p) );
+    }, {"P_e", "P_p"}); 
 
-        return std::sqrt(m2);
-
-    }, {"R_Xsv_reco", "L_Xsv_reco"}); 
+    rna.Define("reco_invariant_mass", [](const FourVec& P){ return std::sqrt( P.M2() ); }, {"P_sum"}); 
 
     rna.Define("x_hcs", [](TVector3 vtx){return vtx.x();}, {"position_vtx_reco"});
     rna.Define("z_hcs", [](TVector3 vtx){return vtx.z();}, {"position_vtx_reco"});
-
-    
 
     rna = rna.Get().Filter([](double x_hcs, double z_hcs){
         if (z_hcs > 0.300 || z_hcs < -0.300) return false; 
@@ -220,18 +240,22 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
         .Histo1D<double>({"h_dt", "T_{R} - T_{L} (ns)", 
             45, center - sigma*max_snr_stddev, center + sigma*max_snr_stddev}, "R_L_dt"); 
 
-    /*auto hist_p_accidental = rna.Get()
-        .Histo1D<double>({"h_dt", "p. accidental", 
-            50, 0., 1.}, "p_accidental"); */ 
-
     auto hist_m_accident = rna.Get()
-        .Filter([](double pa){ return pa >= 0.9; }, {"p_accidental"})
+        .Filter([](double pc){ return pc < 0.05; }, {"p_coinc"})
         .Histo1D<double>({"h_m", "Invariant mass (MeV);m_{A} (MeV);counts / MeV", 180, 120, 300}, "reco_invariant_mass"); 
     
     auto hist_m_signal = rna.Get()
-        .Filter([](double pa){ return pa <= 0.2; }, {"p_accidental"})
+        .Filter([](double pc){ return pc > 0.8; }, {"p_coinc"})
         .Histo1D<double>({"h_m", "Invariant mass (MeV);m_{A} (MeV);counts / MeV", 180, 120, 300}, "reco_invariant_mass"); 
 
+    //sum of 3-vector of both positron and electron 
+    rna.Get().Snapshot("track_data", path_outfile, {
+        "P_e", 
+        "P_p", 
+        "position_vtx_reco", 
+        "vertex_closest_approach_distance", 
+        "p_coinc"
+    });
 
     //set the color pallete
     gStyle->SetPalette(kSunset); 
@@ -240,7 +264,7 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
     //PolynomialCut::InteractiveApp((TH2*)hist_z_y->Clone("hclone"), "col", kSunset); 
     //return 0; 
     
-    auto outfile = new TFile(path_outfile.c_str(), "RECREATE"); 
+    auto outfile = new TFile(path_outfile.c_str(), "UPDATE"); 
 
     TCanvas* c; 
     
@@ -315,18 +339,18 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
     //prob. that this event is an accidental coinc. event
     auto hist_m_p = rna.Get()
     
-        .Redefine("p_accidental", [sigma, center, amplitude, base](double R_L_dt){
+        .Redefine("p_coinc", [sigma, center, amplitude, base](double R_L_dt){
             double x = (R_L_dt - center)/sigma;
 
             //compute relative signal / bg amplitudes 
             double s = amplitude * std::exp( -x*x/2. );
             double b = base; 
             
-            return b / (s + b); 
+            return s / (s + b); 
             
         }, {"R_L_dt"})
 
-        .Histo2D<double>({"h_m_p", ";m_{#pm} (MeV);p. accidental", 180, 120, 300, 50, 0., 1.}, "reco_invariant_mass", "p_accidental"); 
+        .Histo2D<double>({"h_m_p", ";m_{#pm} (MeV);p. accidental", 180, 120, 300, 50, 0., 1.}, "reco_invariant_mass", "p_coinc"); 
     
     c = new TCanvas; 
     hist_m_p->DrawCopy("col");
@@ -368,8 +392,6 @@ void apply_pid_cut(RDFNodeAccumulator& rna, bool is_RHRS)
     std::string branch_preshower_adc    = is_RHRS ? "R_ps_adc" : "L_ps_adc"; 
     std::string branch_shower_adc       = is_RHRS ? "R_sh_adc" : "L_sh_adc"; 
     
-    constexpr double central_momentum = 1104.; 
-
     std::string arm = is_RHRS ? "R" : "L"; 
 
     //perform a very basic cut on sum of cerenkov ADCs 
@@ -398,15 +420,15 @@ void apply_pid_cut(RDFNodeAccumulator& rna, bool is_RHRS)
 
        
         //ratio of shower energy over momentum 
-    rna.Define(arm+"_E_sh_p_ratio", [central_momentum](double E, Trajectory_t Xsv)
+    rna.Define(arm+"_E_sh_p_ratio", [](double E, Trajectory_t Xsv)
         {
-            return E / (central_momentum * ( 1. + Xsv.dpp ));  
+            return E / (hrs_momentum * ( 1. + Xsv.dpp ));  
         }, {arm+"_E_sh", arm+"_Xsv_reco"}); 
 
         //ratio of pre-shower energy over momentum 
-    rna.Define(arm+"_E_ps_p_ratio", [central_momentum](double E, Trajectory_t Xsv)
+    rna.Define(arm+"_E_ps_p_ratio", [](double E, Trajectory_t Xsv)
         {
-            return E / (central_momentum * ( 1. + Xsv.dpp ));  
+            return E / (hrs_momentum * ( 1. + Xsv.dpp ));  
         }, {arm+"_E_ps", arm+"_Xsv_reco"}); 
 
     rna = rna.Get().Filter([min_Esh_Eps_sum, min_cerenkov_sum](double Eps, double Esh, double cer_sum){
