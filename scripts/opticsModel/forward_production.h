@@ -20,6 +20,7 @@
 #include <vector>
 #include <string> 
 #include <map> 
+#include <utility> 
 #include <stdexcept> 
 
 /// @brief Implement the 'chained' optics model, and then submit it to 'measure_model_accuracy.h' to be tested
@@ -49,6 +50,8 @@ public:
         ApexOptics::Trajectory_t R_Xsv, L_Xsv; 
         double z_hcs; 
     };
+
+    struct VertexPair_t { TVector3 R,L; }; 
 
     FwdProdModel(); 
 
@@ -131,7 +134,7 @@ ROOT::RDF::RNode FwdProdModel::DefineOutputs(ROOT::RDF::RNode node_in) const
         TVector3 closest_approach_R = s1*t[0] + r1; 
         TVector3 closest_approach_L = s2*t[1] + r2; 
 
-        return 0.5*(closest_approach_L + closest_approach_R); 
+        return VertexPair_t { closest_approach_R, closest_approach_L }; 
     };
     //___________________________________________________________________________________________
 
@@ -161,7 +164,8 @@ ROOT::RDF::RNode FwdProdModel::DefineOutputs(ROOT::RDF::RNode node_in) const
 
     rna.Define("position_vtx_fg", [&get_closest_appoach](const Trajectory_t& R_Xsv_scs, const Trajectory_t& L_Xsv_scs)
     {   
-        return get_closest_appoach(R_Xsv_scs, L_Xsv_scs);
+        auto vtx_pair = get_closest_appoach(R_Xsv_scs, L_Xsv_scs);
+        return (vtx_pair.R + vtx_pair.L) * 0.5; 
     }, {"R_Xsv_fg", "L_Xsv_fg"}); 
 
     rna.Define("R_Xsv_reco", [this](const Trajectory_t& Xfp, const TVector3& vtx)
@@ -175,10 +179,20 @@ ROOT::RDF::RNode FwdProdModel::DefineOutputs(ROOT::RDF::RNode node_in) const
     }, {"L_Xfp", "position_vtx_fg"});
 
     //now, re-compute the closest approach 
-    rna.Define("position_vtx_reco", [&get_closest_appoach](const Trajectory_t& R_Xsv_scs, const Trajectory_t& L_Xsv_scs)
+    rna.Define("position_vtx_pair", [&get_closest_appoach](const Trajectory_t& R_Xsv_scs, const Trajectory_t& L_Xsv_scs)
     {   
         return get_closest_appoach(R_Xsv_scs, L_Xsv_scs);
     }, {"R_Xsv_reco", "L_Xsv_reco"}); 
+
+    rna.Define("position_vtx_reco", [](const VertexPair_t& vtx_pair)
+    {
+        return 0.5*( vtx_pair.R + vtx_pair.L ); 
+    }, {"position_vtx_pair"});
+
+    rna.Define("vertex_closest_approach_distance", [](const VertexPair_t& vtx_pair)
+    {
+        return ( vtx_pair.R - vtx_pair.L ).Mag(); 
+    }, {"position_vtx_pair"});
 
     rna = Add_branches_from_Trajectory_t(rna.Get(), "R_Xsv_reco", {
         "R_x_sv", "R_y_sv", "R_dxdz_sv", "R_dydz_sv", "R_dpp_sv"
