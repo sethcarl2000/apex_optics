@@ -22,6 +22,8 @@ namespace {
 
 void apply_pid_cut(RDFNodeAccumulator& rna, bool is_RHRS); 
 
+void apply_target_coord_cuts(RDFNodeAccumulator& rna); 
+
 int invariant_mass_reco(std::string path_infile, std::string path_outfile)
 {   
     //get our forward-model (for production data)
@@ -48,22 +50,61 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
     //Now, we are ready to process the tree using RDataFrame
     ROOT::RDataFrame df(tree_name, path_infile); 
 
+
+
+    ULong64_t n_events_total = *df.Count(); 
+    
+    //this is a little helper class which is meant to avoid some of the awkward syntax typically associated with RDataFrames creation. 
+    auto rna = RDFNodeAccumulator(df);  
+
+    
+    /*double max_snr_stddev = 5.;
+    rna = rna.Get().Filter([max_snr_stddev, sigma, center](double R_L_dt){ 
+      return std::fabs(R_L_dt - center)/sigma < max_snr_stddev; 
+      }, {"R_L_dt"});*/ 
+    
+    
+        
+
+    //define output branches
+    rna = model.DefineOutputs(rna.Get()); 
+    
+    /// do PID cuts
+    apply_pid_cut(rna, true); 
+    apply_pid_cut(rna, false); 
+    
+    /// do target coord cuts
+    rna.Define("x_hcs", [](TVector3 vtx){return vtx.x();}, {"position_vtx_reco"});
+    rna.Define("z_hcs", [](TVector3 vtx){return vtx.z();}, {"position_vtx_reco"});
+
+    apply_target_coord_cuts(rna); 
+
+    //define some parameters about the signal/noise ratio 
+    rna.Define("R_L_dt", [](const RVec<double>& R, const RVec<double>& L){
+            return (R[0] - L[0])/1e-9; 
+        }, {"R_tracks_S2time", "L_tracks_S2time"});
+
     //fit the background DT spectrum 
     auto hist_dt_fit = df
-        
-        .Filter([](const RVec<double>& R, const RVec<double>& L){ 
-            return R.size() == L.size() == 1; 
-        }, {"R_tracks_S2time", "L_tracks_S2time"})
-        
-        .Define("R_L_dt", [](const RVec<double>& R, const RVec<double>& L){
-            return (R[0] - L[0])/1e-9; 
-        }, {"R_tracks_S2time", "L_tracks_S2time"})
-
+      
         .Histo1D<double>({"h_dt", ";T_{R} - T_{L} (ns);", 200, 0., 80}, "R_L_dt");
 
     double center, sigma, amplitude, base; 
 
     fit_gaus_to_hist((TH1D*)hist_dt_fit->Clone("dt_clone"), 5., center, sigma, amplitude, base, true);
+
+    
+    //prob. that this event is a 'true' coinc. event
+    rna.Define("p_coinc", [sigma, center, amplitude, base](double R_L_dt){
+      double x = (R_L_dt - center)/sigma;
+
+      //compute relative signal / bg amplitudes 
+      double s = amplitude * std::exp( -x*x/2. );
+      double b = base; 
+      
+      return s / (s + b); 
+      
+    }, {"R_L_dt"});
     
     std::printf(
         "gauss fit results:\n"
@@ -74,45 +115,9 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
         center, sigma, amplitude, base
     );
 
-
-    ULong64_t n_events_total = *df.Count(); 
     
-    //this is a little helper class which is meant to avoid some of the awkward syntax typically associated with RDataFrames creation. 
-    auto rna = RDFNodeAccumulator(df);  
-
-    //define some parameters about the signal/noise ratio 
-    rna.Define("R_L_dt", [](const RVec<double>& R, const RVec<double>& L){
-            return (R[0] - L[0])/1e-9; 
-        }, {"R_tracks_S2time", "L_tracks_S2time"});
-
-    double max_snr_stddev = 5.;
-    rna = rna.Get().Filter([max_snr_stddev, sigma, center](double R_L_dt){ 
-        return std::fabs(R_L_dt - center)/sigma < max_snr_stddev; 
-    }, {"R_L_dt"});
-
-    //prob. that this event is a 'true' coinc. event
-    rna.Define("p_coinc", [sigma, center, amplitude, base](double R_L_dt){
-            double x = (R_L_dt - center)/sigma;
-
-            //compute relative signal / bg amplitudes 
-            double s = amplitude * std::exp( -x*x/2. );
-            double b = base; 
-            
-            return s / (s + b); 
-            
-        }, {"R_L_dt"});
-
-        
-
-    //define output branches
-    rna = model.DefineOutputs(rna.Get()); 
-    
-    //do PID cuts
-    apply_pid_cut(rna, true); 
-    apply_pid_cut(rna, false); 
-
     using FourVec = ROOT::Math::XYZTVector; 
-
+    
     //define invariant mass
     //sum of 3-momenta of both positron and electron 
     rna.Define("P_p", [](const Trajectory_t& R_Xsv_scs)
@@ -143,59 +148,7 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
     }, {"P_e", "P_p"}); 
 
     rna.Define("reco_invariant_mass", [](const FourVec& P){ return std::sqrt( P.M2() ); }, {"P_sum"}); 
-
-    rna.Define("x_hcs", [](TVector3 vtx){return vtx.x();}, {"position_vtx_reco"});
-    rna.Define("z_hcs", [](TVector3 vtx){return vtx.z();}, {"position_vtx_reco"});
-
-    rna = rna.Get().Filter([](double x_hcs, double z_hcs){
-        if (z_hcs > 0.300 || z_hcs < -0.300) return false; 
-        if (-0.02 > x_hcs || x_hcs > 0.04) return false; 
-        return true; 
-    }, {"x_hcs", "z_hcs"}); 
-
-    std::vector<std::string> R_cut_path_list{
-        "data/polycuts/RHRS_dx_dp.dat",
-        "data/polycuts/RHRS_dy_dp.dat",
-        "data/polycuts/RHRS_dx_dy.dat"
-    }; 
-    std::vector<std::string> L_cut_path_list{
-        "data/polycuts/LHRS_dx_dp.dat",
-        "data/polycuts/LHRS_dy_dp.dat",
-        "data/polycuts/LHRS_dx_dy.dat"
-    }; 
-    std::vector<PolynomialCut> polycuts_R; polycuts_R.reserve(R_cut_path_list.size()); 
-    std::vector<PolynomialCut> polycuts_L; polycuts_L.reserve(L_cut_path_list.size()); 
-    
-    for (auto& cut_path : R_cut_path_list) {
-        polycuts_R.emplace_back(); 
-        auto& polycut = polycuts_R.back(); 
-        polycut.Parse_dbfile(cut_path.c_str()); 
-    }
-    for (auto& cut_path : L_cut_path_list) {
-        polycuts_L.emplace_back(); 
-        auto& polycut = polycuts_L.back(); 
-        polycut.Parse_dbfile(cut_path.c_str()); 
-    }
-    rna = rna.Get()
-
-        //filter right arm     
-        .Filter([&polycuts_R](const Trajectory_t& t){ 
-            if (polycuts_R[0].IsInside(t.dxdz, t.dpp) &&
-                polycuts_R[1].IsInside(t.dydz, t.dpp) &&
-                polycuts_R[2].IsInside(t.dxdz, t.dydz)) return true; 
-            
-            return false; 
-        }, {"R_Xsv_reco"})
-
-        //filter left arm 
-        .Filter([&polycuts_L](const Trajectory_t& t){ 
-            if (polycuts_L[0].IsInside(t.dxdz, t.dpp) &&
-                polycuts_L[1].IsInside(t.dydz, t.dpp) &&
-                polycuts_L[2].IsInside(t.dxdz, t.dydz)) return true; 
-            
-            return false; 
-        }, {"L_Xsv_reco"});
-
+  
 
     //check the status of the RDFNodeAccumulator obejct before proceeding
     if (rna.GetStatus() != RDFNodeAccumulator::kGood) {
@@ -380,6 +333,7 @@ int invariant_mass_reco(std::string path_infile, std::string path_outfile)
     return 0; 
 }
 
+//______________________________________________________________________________________________________________
 void apply_pid_cut(RDFNodeAccumulator& rna, bool is_RHRS)
 {
     using ApexOptics::Trajectory_t; 
@@ -436,4 +390,59 @@ void apply_pid_cut(RDFNodeAccumulator& rna, bool is_RHRS)
     }, {arm+"_E_ps_p_ratio", arm+"_E_sh_p_ratio", arm+"_cer_sum"}); 
 
     return; 
+}
+
+//______________________________________________________________________________________________________________
+void apply_target_coord_cuts(RDFNodeAccumulator& rna)
+{
+  
+    rna = rna.Get().Filter([](double x_hcs, double z_hcs){
+        if (z_hcs > 0.300 || z_hcs < -0.300) return false; 
+        if (-0.02 > x_hcs || x_hcs > 0.04) return false; 
+        return true; 
+    }, {"x_hcs", "z_hcs"}); 
+
+    std::vector<std::string> R_cut_path_list{
+        "data/polycuts/RHRS_dx_dp.dat",
+        "data/polycuts/RHRS_dy_dp.dat",
+        "data/polycuts/RHRS_dx_dy.dat"
+    }; 
+    std::vector<std::string> L_cut_path_list{
+        "data/polycuts/LHRS_dx_dp.dat",
+        "data/polycuts/LHRS_dy_dp.dat",
+        "data/polycuts/LHRS_dx_dy.dat"
+    }; 
+    std::vector<PolynomialCut> polycuts_R; polycuts_R.reserve(R_cut_path_list.size()); 
+    std::vector<PolynomialCut> polycuts_L; polycuts_L.reserve(L_cut_path_list.size()); 
+    
+    for (auto& cut_path : R_cut_path_list) {
+        polycuts_R.emplace_back(); 
+        auto& polycut = polycuts_R.back(); 
+        polycut.Parse_dbfile(cut_path.c_str()); 
+    }
+    for (auto& cut_path : L_cut_path_list) {
+        polycuts_L.emplace_back(); 
+        auto& polycut = polycuts_L.back(); 
+        polycut.Parse_dbfile(cut_path.c_str()); 
+    }
+    rna = rna.Get()
+
+        //filter right arm     
+        .Filter([&polycuts_R](const Trajectory_t& t){ 
+            if (polycuts_R[0].IsInside(t.dxdz, t.dpp) &&
+                polycuts_R[1].IsInside(t.dydz, t.dpp) &&
+                polycuts_R[2].IsInside(t.dxdz, t.dydz)) return true; 
+            
+            return false; 
+        }, {"R_Xsv_reco"})
+
+        //filter left arm 
+        .Filter([&polycuts_L](const Trajectory_t& t){ 
+            if (polycuts_L[0].IsInside(t.dxdz, t.dpp) &&
+                polycuts_L[1].IsInside(t.dydz, t.dpp) &&
+                polycuts_L[2].IsInside(t.dxdz, t.dydz)) return true; 
+            
+            return false; 
+        }, {"L_Xsv_reco"});  
+  
 }
